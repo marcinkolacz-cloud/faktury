@@ -1,16 +1,15 @@
 {
   "canisters": {
-    "expense-tracker-backend": {
-      "main": "src/expense-tracker-backend/main.mo",
-      "type": "motoko"
+    "backend": {
+      "type": "custom",
+      "wasm": "src/backend/dist/backend.wasm",
+      "candid": "src/backend/dist/backend.did",
+      "build": "mops build"
+    },
+    "frontend": {
+      "type": "assets",
+      "source": ["src/frontend/dist"],
+      "build": "cd src/frontend && npm run build"
     }
-  },
-  "defaults": {
-    "build": {
-      "args": "",
-      "packtool": ""
-    }
-  },
-  "output_env_file": ".env",
-  "version": 1
+  }
 }

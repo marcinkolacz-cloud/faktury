@@ -1,0 +1,16 @@
+[package]
+name = "backend"
+version = "0.1.0"
+
+[build]
+outputDir = "src/backend/dist"
+args = [ "--release" ]
+
+[canisters.backend]
+main = "src/expense-tracker-backend/main.mo"
+
+[dependencies]
+core = "2.6.0"
+
+[toolchain]
+moc = "1.11.0"
