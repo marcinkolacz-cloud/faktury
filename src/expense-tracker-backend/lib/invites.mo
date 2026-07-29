@@ -3,12 +3,14 @@ import List "mo:core/List";
 import Principal "mo:core/Principal";
 import Time "mo:core/Time";
 import Random "mo:core/Random";
+import Types "../types";
 import Char "mo:core/Char";
 import Text "mo:core/Text";
 
 module {
   public type InviteCode = {
     code : Text;
+    role : Types.Role;
     createdAt : Int;
     usedBy : ?Principal;
     usedAt : ?Int;
@@ -36,11 +38,11 @@ module {
     codes : Map.Map<Text, InviteCode>,
     code : Text,
     caller : Principal,
-  ) : Bool {
+  ) : ?Types.Role {
     switch (codes.get(code)) {
       case (?inviteCode) {
         switch (inviteCode.usedBy) {
-          case (?_) { false };
+          case (?_) { null };
           case null {
             let updated : InviteCode = {
               inviteCode with
@@ -48,11 +50,11 @@ module {
               usedAt = ?Time.now();
             };
             codes.add(code, updated);
-            true;
+            ?inviteCode.role;
           };
         };
       };
-      case null { false };
+      case null { null };
     };
   };
 

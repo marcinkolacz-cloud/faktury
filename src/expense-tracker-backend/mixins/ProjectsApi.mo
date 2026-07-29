@@ -5,42 +5,39 @@ import Principal "mo:core/Principal";
 import Time "mo:core/Time";
 import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
+import AccessLib "../lib/access";
 
 mixin (
   projects : Map.Map<Nat, Types.Project>,
+  accessRoles : Map.Map<Principal, Types.Role>,
 ) {
   public shared ({ caller }) func createProject(name : Text) : async Nat {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     let newId = projects.size();
     let project : Types.Project = {
       id = newId;
       name;
       createdAt = Time.now();
-      ownerId = caller;
     };
     projects.add(newId, project);
     newId;
   };
 
-  public shared ({ caller }) func listMyProjects() : async [Types.Project] {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+  public query ({ caller }) func listMyProjects() : async [Types.Project] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.Project>();
     for ((_, p) in projects.entries()) {
-      if (Principal.equal(p.ownerId, caller)) {
-        result.add(p);
-      };
+      result.add(p);
     };
     result.toArray();
   };
 
   public shared ({ caller }) func deleteProject(id : Nat) : async Bool {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (projects.get(id)) {
-      case (?existing) {
-        if (Principal.equal(existing.ownerId, caller)) {
-          projects.remove(id);
-          true;
-        } else { false };
+      case (?_) {
+        projects.remove(id);
+        true;
       };
       case null { false };
     };

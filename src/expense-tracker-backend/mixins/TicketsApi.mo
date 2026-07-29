@@ -1,0 +1,185 @@
+import Map "mo:core/Map";
+import List "mo:core/List";
+import Types "../types";
+import Principal "mo:core/Principal";
+import Time "mo:core/Time";
+import Runtime "mo:core/Runtime";
+import Nat "mo:core/Nat";
+import AccessLib "../lib/access";
+import InvitesLib "../lib/invites";
+import Array "mo:core/Array";
+import Text "mo:core/Text";
+
+mixin (
+  tickets : Map.Map<Nat, Types.Ticket>,
+  accessRoles : Map.Map<Principal, Types.Role>,
+  recentSubmissionTimes : List.List<Int>,
+  ticketTokens : Map.Map<Text, Nat>,
+  ticketExtras : Map.Map<Nat, Types.TicketExtras>,
+  ticketArchived : Map.Map<Nat, Bool>,
+  ticketSeenCounts : Map.Map<Nat, Nat>,
+) {
+  public shared func submitTicket(
+    clientName : Text,
+    clientEmail : Text,
+    subject : Text,
+    description : Text,
+    honeypot : Text,
+    company : Text,
+    deviceNumber : Text,
+  ) : async (Nat, Text) {
+    if (honeypot != "") { Runtime.trap("Rejected"); };
+
+    let now = Time.now();
+    let oneMinuteAgo : Int = now - 60_000_000_000;
+    var stillValid = List.empty<Int>();
+    for (t in recentSubmissionTimes.values()) {
+      if (t > oneMinuteAgo) { stillValid.add(t); };
+    };
+    if (stillValid.size() >= 5) { Runtime.trap("Rate limit exceeded, try again later"); };
+    stillValid.add(now);
+    recentSubmissionTimes.clear();
+    for (t in stillValid.values()) { recentSubmissionTimes.add(t); };
+
+    let newId = tickets.size();
+    let tokenPart1 = await InvitesLib.generateRandomCode();
+    let tokenPart2 = await InvitesLib.generateRandomCode();
+    let trackingToken = tokenPart1 # tokenPart2;
+    let ticket : Types.Ticket = {
+      id = newId;
+      clientName;
+      clientEmail;
+      subject;
+      description;
+      status = #open_;
+      replies = [];
+      createdAt = Time.now();
+    };
+    tickets.add(newId, ticket);
+    ticketTokens.add(trackingToken, newId);
+    ticketExtras.add(newId, { company; deviceNumber });
+    (newId, trackingToken);
+  };
+
+  public query ({ caller }) func listTicketExtras() : async [(Nat, Types.TicketExtras)] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<(Nat, Types.TicketExtras)>();
+    for ((id, extras) in ticketExtras.entries()) {
+      result.add((id, extras));
+    };
+    result.toArray();
+  };
+
+  public query ({ caller }) func getTicketTrackingToken(id : Nat) : async ?Text {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var found : ?Text = null;
+    for ((token, ticketId) in ticketTokens.entries()) {
+      if (ticketId == id) { found := ?token; };
+    };
+    found;
+  };
+
+  public query func getTicketByToken(token : Text) : async ?Types.PublicTicketView {
+    let ticketId = ticketTokens.get(token);
+    let found = switch (ticketId) {
+      case (?id) { tickets.get(id) };
+      case null { null };
+    };
+    switch (found) {
+      case (?t) {
+        let publicReplies = Array.filter<Types.TicketReply>(t.replies, func(r : Types.TicketReply) : Bool { not r.isInternal });
+        let extras = switch (ticketExtras.get(t.id)) {
+          case (?e) { e };
+          case null { { company = ""; deviceNumber = "" } };
+        };
+        ?{
+          id = t.id;
+          subject = t.subject;
+          description = t.description;
+          status = t.status;
+          replies = publicReplies;
+          createdAt = t.createdAt;
+          company = extras.company;
+          deviceNumber = extras.deviceNumber;
+        };
+      };
+      case null { null };
+    };
+  };
+
+  public query ({ caller }) func listTickets() : async [Types.Ticket] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<Types.Ticket>();
+    for ((_, t) in tickets.entries()) {
+      result.add(t);
+    };
+    result.toArray();
+  };
+
+  public shared ({ caller }) func updateTicketStatus(id : Nat, status : Types.TicketStatus) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (tickets.get(id)) {
+      case (?t) {
+        tickets.add(id, { t with status });
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func addTicketReply(id : Nat, author : Text, message : Text, isInternal : Bool) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (tickets.get(id)) {
+      case (?t) {
+        let newReply : Types.TicketReply = { author; message; isInternal; createdAt = Time.now() };
+        let updatedReplies = List.fromArray<Types.TicketReply>(t.replies);
+        updatedReplies.add(newReply);
+        tickets.add(id, { t with replies = updatedReplies.toArray() });
+        true;
+      };
+      case null { false };
+    };
+  };
+  public shared ({ caller }) func archiveTicket(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (tickets.get(id)) {
+      case (?_) { ticketArchived.add(id, true); true };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func unarchiveTicket(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (tickets.get(id)) {
+      case (?_) { ticketArchived.add(id, false); true };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func listArchivedTicketIds() : async [Nat] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<Nat>();
+    for ((id, archived) in ticketArchived.entries()) {
+      if (archived) { result.add(id); };
+    };
+    result.toArray();
+  };
+
+  public shared ({ caller }) func markTicketSeen(id : Nat) : async Bool {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    switch (tickets.get(id)) {
+      case (?t) { ticketSeenCounts.add(id, t.replies.size()); true };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func getTicketSeenCounts() : async [(Nat, Nat)] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<(Nat, Nat)>();
+    for ((id, count) in ticketSeenCounts.entries()) {
+      result.add((id, count));
+    };
+    result.toArray();
+  };
+
+};

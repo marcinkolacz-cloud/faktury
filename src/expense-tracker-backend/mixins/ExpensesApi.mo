@@ -4,10 +4,24 @@ import Types "../types";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
+import AccessLib "../lib/access";
 
 mixin (
   expenses : Map.Map<Nat, Types.Expense>,
+  accessRoles : Map.Map<Principal, Types.Role>,
+  expenseKsefSent : Map.Map<Nat, Bool>,
 ) {
+  public shared ({ caller }) func adminClearAllExpenses() : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can clear expenses"); };
+    let count = expenses.size();
+    expenses.clear();
+    count;
+  };
+
+  public query func adminCountAllExpenses() : async Nat {
+    expenses.size();
+  };
+
   public shared ({ caller }) func createExpense(
     projectId : Nat,
     productService : Text,
@@ -24,7 +38,7 @@ mixin (
     ksefNote : Text,
     note : Text,
   ) : async Nat {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     let newId = expenses.size();
     let expense : Types.Expense = {
       id = newId;
@@ -45,57 +59,69 @@ mixin (
       confirmed = false;
       ksefNote;
       note;
-      ownerId = caller;
     };
     expenses.add(newId, expense);
     newId;
   };
 
-  public shared ({ caller }) func listMyExpenses() : async [Types.Expense] {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+  public query ({ caller }) func listMyExpenses() : async [Types.Expense] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.Expense>();
     for ((_, e) in expenses.entries()) {
-      if (Principal.equal(e.ownerId, caller)) {
-        result.add(e);
-      };
+      result.add(e);
     };
     result.toArray();
   };
 
   public shared ({ caller }) func togglePaid(id : Nat) : async Bool {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (expenses.get(id)) {
       case (?e) {
-        if (Principal.equal(e.ownerId, caller)) {
-          expenses.add(id, { e with paid = not e.paid });
-          true;
-        } else { false };
+        expenses.add(id, { e with paid = not e.paid });
+        true;
       };
       case null { false };
     };
   };
 
+  public shared ({ caller }) func toggleKsefSent(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (expenses.get(id)) {
+      case (?_) {
+        let current = switch (expenseKsefSent.get(id)) { case (?v) { v }; case null { false } };
+        expenseKsefSent.add(id, not current);
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func listExpenseKsefSent() : async [(Nat, Bool)] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<(Nat, Bool)>();
+    for ((id, sent) in expenseKsefSent.entries()) {
+      result.add((id, sent));
+    };
+    result.toArray();
+  };
+
   public shared ({ caller }) func toggleHasInvoice(id : Nat) : async Bool {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (expenses.get(id)) {
       case (?e) {
-        if (Principal.equal(e.ownerId, caller)) {
-          expenses.add(id, { e with hasInvoice = not e.hasInvoice });
-          true;
-        } else { false };
+        expenses.add(id, { e with hasInvoice = not e.hasInvoice });
+        true;
       };
       case null { false };
     };
   };
 
   public shared ({ caller }) func toggleConfirmed(id : Nat) : async Bool {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (expenses.get(id)) {
       case (?e) {
-        if (Principal.equal(e.ownerId, caller)) {
-          expenses.add(id, { e with confirmed = not e.confirmed });
-          true;
-        } else { false };
+        expenses.add(id, { e with confirmed = not e.confirmed });
+        true;
       };
       case null { false };
     };
@@ -118,31 +144,27 @@ mixin (
     ksefNote : Text,
     note : Text,
   ) : async Bool {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (expenses.get(id)) {
       case (?existing) {
-        if (Principal.equal(existing.ownerId, caller)) {
-          expenses.add(id, {
-            existing with
-            projectId; productService; supplier; serialNumber; quantity;
-            priceEur; priceUsd; pricePln; priceNet; orderDate; paidBy;
-            invoiceNumber; ksefNote; note;
-          });
-          true;
-        } else { false };
+        expenses.add(id, {
+          existing with
+          projectId; productService; supplier; serialNumber; quantity;
+          priceEur; priceUsd; pricePln; priceNet; orderDate; paidBy;
+          invoiceNumber; ksefNote; note;
+        });
+        true;
       };
       case null { false };
     };
   };
 
   public shared ({ caller }) func deleteExpense(id : Nat) : async Bool {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (expenses.get(id)) {
-      case (?existing) {
-        if (Principal.equal(existing.ownerId, caller)) {
-          expenses.remove(id);
-          true;
-        } else { false };
+      case (?_) {
+        expenses.remove(id);
+        true;
       };
       case null { false };
     };

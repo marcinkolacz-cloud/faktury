@@ -1,0 +1,50 @@
+import { useEffect, useState } from "react";
+import { useBackendActor } from "../lib/useBackend";
+
+export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => void }) {
+  const actor = useBackendActor();
+  const [allowedModules, setAllowedModules] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!actor) return;
+    actor.getMyModules().then(setAllowedModules);
+  }, [actor]);
+
+  const tiles = [
+    { id: "invoices", title: "Rejestr Faktur", desc: "Zaliczki, wydatki, projekty" },
+    { id: "warehouse", title: "Magazyn", desc: "Stany, przyjęcia, wydania do projektów" },
+    { id: "tickets", title: "Zgłoszenia", desc: "System ticketów" },
+    { id: "ksef", title: "KSeF", desc: "Pobieranie faktur" },
+    { id: "drive", title: "Dysk", desc: "Pliki, zdjęcia, dokumenty" },
+  ];
+
+  const visibleTiles = allowedModules === null ? [] : tiles.filter((t) => allowedModules.includes(t.id));
+
+  return (
+    <div className="min-h-screen bg-[var(--bg-page)] flex items-center justify-center p-6">
+      <div className="max-w-3xl w-full space-y-6">
+        <div className="flex items-center gap-4 justify-center">
+          <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-10" />
+        </div>
+        {allowedModules === null ? (
+          <p className="text-center text-gray-500">Ładowanie...</p>
+        ) : visibleTiles.length === 0 ? (
+          <p className="text-center text-gray-500">Brak dostępnych modułów. Skontaktuj się z administratorem.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {visibleTiles.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => onSelectModule(t.id)}
+                className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-6 text-left shadow-sm hover:shadow-md hover:border-[var(--border-color)] transition-all"
+              >
+                <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t.title}</h2>
+                <p className="text-sm text-gray-500 mt-1">{t.desc}</p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

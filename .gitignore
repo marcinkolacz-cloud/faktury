@@ -26,3 +26,5 @@ dist/
 
 .mops
 .migrations-*/
+excel_invoices.json
+import_args.txt

@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export function PaymentsLedger({ payments, actor, onChange }: { payments: any[]; actor: any; onChange: () => void }) {
+export function PaymentsLedger({ payments, actor, onChange, canWrite }: { payments: any[]; actor: any; onChange: () => void; canWrite: boolean }) {
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState("");
   const [amount, setAmount] = useState("");
@@ -40,25 +40,27 @@ export function PaymentsLedger({ payments, actor, onChange }: { payments: any[];
   const sorted = [...payments].sort((a, b) => (a.date < b.date ? 1 : -1));
 
   return (
-    <div className="lg:col-span-2 bg-white border border-gray-200 rounded-lg p-4 space-y-3 shadow-sm">
+    <div className="lg:col-span-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-gray-900">Rejestr wpłat (zaliczki)</h2>
-        <button onClick={() => setOpen(!open)} className="px-3 py-1 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium">
-          + Wpłata
-        </button>
+        <h2 className="font-semibold text-[var(--text-primary)]">Rejestr wpłat (zaliczki)</h2>
+        {canWrite && (
+          <button onClick={() => setOpen(!open)} className="px-3 py-1 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium">
+            + Wpłata
+          </button>
+        )}
       </div>
       {open && (
-        <div className="flex gap-2 bg-gray-50 p-3 rounded border border-gray-200">
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-white border border-gray-300 px-2 py-1 rounded text-sm text-gray-900" />
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" placeholder="Kwota" className="bg-white border border-gray-300 px-2 py-1 rounded text-sm text-gray-900 w-28" />
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Notatka" className="bg-white border border-gray-300 px-2 py-1 rounded text-sm text-gray-900 flex-1" />
+        <div className="flex gap-2 bg-[var(--bg-page)] p-3 rounded border border-[var(--border-color)]">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-1 rounded text-sm text-[var(--text-primary)]" />
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" placeholder="Kwota" className="bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-1 rounded text-sm text-[var(--text-primary)] w-28" />
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Notatka" className="bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-1 rounded text-sm text-[var(--text-primary)] flex-1" />
           <button onClick={submit} className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm">Dodaj</button>
         </div>
       )}
       <div className="overflow-auto max-h-48">
         <table className="w-full text-xs">
           <thead>
-            <tr className="text-left text-gray-500 border-b border-gray-200">
+            <tr className="text-left text-gray-500 border-b border-[var(--border-color)]">
               <th className="p-1">Data</th>
               <th className="p-1 text-right">Kwota</th>
               <th className="p-1">Notatka</th>
@@ -68,23 +70,27 @@ export function PaymentsLedger({ payments, actor, onChange }: { payments: any[];
           <tbody>
             {sorted.map((p) =>
               editingId === p.id ? (
-                <tr key={String(p.id)} className="border-t border-gray-100 bg-yellow-50">
-                  <td className="p-1"><input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="border border-gray-300 rounded px-1 py-0.5 text-xs w-full" /></td>
-                  <td className="p-1"><input type="number" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} className="border border-gray-300 rounded px-1 py-0.5 text-xs w-full" /></td>
-                  <td className="p-1"><input value={editNote} onChange={(e) => setEditNote(e.target.value)} className="border border-gray-300 rounded px-1 py-0.5 text-xs w-full" /></td>
+                <tr key={String(p.id)} className="border-t border-[var(--border-color-light)] bg-amber-500/10">
+                  <td className="p-1"><input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full" /></td>
+                  <td className="p-1"><input type="number" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full" /></td>
+                  <td className="p-1"><input value={editNote} onChange={(e) => setEditNote(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full" /></td>
                   <td className="p-1 whitespace-nowrap">
                     <button onClick={() => saveEdit(p.id)} className="text-emerald-600 text-xs mr-2">Zapisz</button>
                     <button onClick={() => setEditingId(null)} className="text-gray-500 text-xs">Anuluj</button>
                   </td>
                 </tr>
               ) : (
-                <tr key={String(p.id)} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="p-1 font-mono text-gray-700">{p.date}</td>
-                  <td className="p-1 text-right font-mono text-gray-900">{p.amount.toFixed(2)}</td>
+                <tr key={String(p.id)} className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-page)]">
+                  <td className="p-1 font-mono text-[var(--text-secondary)]">{p.date}</td>
+                  <td className="p-1 text-right font-mono text-[var(--text-primary)]">{p.amount.toFixed(2)}</td>
                   <td className="p-1 text-gray-500">{p.note}</td>
                   <td className="p-1 whitespace-nowrap">
-                    <button onClick={() => startEdit(p)} className="text-cyan-600 text-xs mr-2">Edytuj</button>
-                    <button onClick={() => deletePayment(p.id)} className="text-red-500 text-xs">✕</button>
+                    {canWrite && (
+                      <>
+                        <button onClick={() => startEdit(p)} className="text-cyan-600 text-xs mr-2">Edytuj</button>
+                        <button onClick={() => deletePayment(p.id)} className="text-red-500 text-xs">✕</button>
+                      </>
+                    )}
                   </td>
                 </tr>
               )

@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { ExpenseRow } from "./ExpenseRow";
 
-export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, filterProject }: {
-  expenses: any[]; projects: any[]; actor: any; onChange: () => void; onToggle: (id: bigint, method: string) => void; filterProject: string | null;
+export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, filterProject, canWrite, ksefSentMap, onToggleKsef }: {
+  expenses: any[]; projects: any[]; actor: any; onChange: () => void; onToggle: (id: bigint, method: string) => void; filterProject: string | null; canWrite: boolean;
+  ksefSentMap: Record<string, boolean>; onToggleKsef: (id: bigint) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [productService, setProductService] = useState("");
@@ -93,27 +94,29 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
     );
   });
   const sorted = [...visible].sort((a, b) => (a.orderDate < b.orderDate ? 1 : -1));
-  const inputClass = "bg-white border border-gray-300 px-2 py-1.5 rounded text-sm text-gray-900 placeholder-gray-400";
+  const inputClass = "bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-1.5 rounded text-sm text-[var(--text-primary)] placeholder-gray-400";
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3 shadow-sm">
+    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="font-semibold text-gray-900">Wydatki {filterProject ? `— ${filterProject}` : ""}</h2>
+        <h2 className="font-semibold text-[var(--text-primary)]">Wydatki {filterProject ? `— ${filterProject}` : ""}</h2>
         <div className="flex gap-2 items-center">
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-[var(--border-color)] rounded px-2 py-1 text-sm text-[var(--text-secondary)]">
             <option value="all">Wszystkie statusy</option>
             <option value="unpaid">Nieopłacone</option>
             <option value="noinvoice">Bez faktury</option>
             <option value="unconfirmed">Niepotwierdzone</option>
           </select>
-          <button onClick={() => setOpen(!open)} className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium">
-            + Dodaj wydatek
-          </button>
+          {canWrite && (
+            <button onClick={() => setOpen(!open)} className="px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium">
+              + Dodaj wydatek
+            </button>
+          )}
         </div>
       </div>
       {open && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
-          <div className="grid grid-cols-4 gap-2">
+        <div className="bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg p-3 space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
             <input ref={(el) => { fieldRefs.current[0] = el; }} onKeyDown={handleKeyDown(0)} value={productService} onChange={(e) => setProductService(e.target.value)} placeholder="Produkt/usługa" className={inputClass} />
             <input ref={(el) => { fieldRefs.current[1] = el; }} onKeyDown={handleKeyDown(1)} value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Dostawca" className={inputClass} />
             <div>
@@ -138,13 +141,13 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
           {error && <p className="text-red-600 text-sm">{error}</p>}
           <div className="flex gap-2">
             <button onClick={submit} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm">Dodaj</button>
-            <button onClick={() => setOpen(false)} className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded text-sm">Anuluj</button>
+            <button onClick={() => setOpen(false)} className="px-3 py-1.5 border border-[var(--border-color)] text-[var(--text-secondary)] rounded text-sm">Anuluj</button>
           </div>
         </div>
       )}
-      <div className="overflow-auto rounded border border-gray-200">
+      <div className="overflow-auto rounded border border-[var(--border-color)]">
         <table className="w-full text-xs">
-          <thead className="bg-gray-50 sticky top-0">
+          <thead className="bg-[var(--bg-page)] sticky top-0">
             <tr className="text-left text-gray-500">
               <th className="p-2">Produkt</th>
               <th className="p-2">Dostawca</th>
@@ -156,20 +159,21 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
               <th className="p-2">Kto płaci</th>
               <th className="p-2">Notatka</th>
               <th className="p-2 text-center">Opł.</th>
+              <th className="p-2 text-center">KSeF</th>
               <th className="p-2 text-center">FV</th>
               <th className="p-2 text-center">Potw.</th>
               <th className="p-2"></th>
             </tr>
-            <tr className="bg-white">
-              <th className="p-1"><input value={colFilters.productService} onChange={(e) => setColFilter("productService", e.target.value)} placeholder="filtruj..." className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs" /></th>
-              <th className="p-1"><input value={colFilters.supplier} onChange={(e) => setColFilter("supplier", e.target.value)} placeholder="filtruj..." className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs" /></th>
-              <th className="p-1"><input value={colFilters.project} onChange={(e) => setColFilter("project", e.target.value)} placeholder="filtruj..." className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs" /></th>
-              <th className="p-1"><input value={colFilters.orderDate} onChange={(e) => setColFilter("orderDate", e.target.value)} placeholder="filtruj..." className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs" /></th>
+            <tr className="bg-[var(--bg-card)]">
+              <th className="p-1"><input value={colFilters.productService} onChange={(e) => setColFilter("productService", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
+              <th className="p-1"><input value={colFilters.supplier} onChange={(e) => setColFilter("supplier", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
+              <th className="p-1"><input value={colFilters.project} onChange={(e) => setColFilter("project", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
+              <th className="p-1"><input value={colFilters.orderDate} onChange={(e) => setColFilter("orderDate", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
               <th className="p-1"></th>
               <th className="p-1"></th>
-              <th className="p-1"><input value={colFilters.invoiceNumber} onChange={(e) => setColFilter("invoiceNumber", e.target.value)} placeholder="filtruj..." className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs" /></th>
-              <th className="p-1"><input value={colFilters.paidBy} onChange={(e) => setColFilter("paidBy", e.target.value)} placeholder="filtruj..." className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs" /></th>
-              <th className="p-1"><input value={colFilters.note} onChange={(e) => setColFilter("note", e.target.value)} placeholder="filtruj..." className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs" /></th>
+              <th className="p-1"><input value={colFilters.invoiceNumber} onChange={(e) => setColFilter("invoiceNumber", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
+              <th className="p-1"><input value={colFilters.paidBy} onChange={(e) => setColFilter("paidBy", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
+              <th className="p-1"><input value={colFilters.note} onChange={(e) => setColFilter("note", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
               <th className="p-1"></th>
               <th className="p-1"></th>
               <th className="p-1"></th>
@@ -178,7 +182,7 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
           </thead>
           <tbody>
             {sorted.map((e) => (
-              <ExpenseRow key={String(e.id)} expense={e} projectName={projectNameById(e.projectId)} projects={projects} actor={actor} onChange={onChange} onToggle={onToggle} />
+              <ExpenseRow key={String(e.id)} expense={e} projectName={projectNameById(e.projectId)} projects={projects} actor={actor} onChange={onChange} onToggle={onToggle} canWrite={canWrite} ksefSent={ksefSentMap[String(e.id)] || false} onToggleKsef={onToggleKsef} />
             ))}
           </tbody>
         </table>

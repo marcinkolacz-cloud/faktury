@@ -5,17 +5,23 @@ import Principal "mo:core/Principal";
 import Time "mo:core/Time";
 import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
+import AccessLib "../lib/access";
 
 mixin (
   advancePayments : Map.Map<Nat, Types.AdvancePayment>,
+  accessRoles : Map.Map<Principal, Types.Role>,
 ) {
+  public query func adminCountAllPayments() : async Nat {
+    advancePayments.size();
+  };
+
   public shared ({ caller }) func recordAdvancePayment(
     date : Text,
     amount : Float,
     currency : Text,
     note : Text,
   ) : async Nat {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     let newId = advancePayments.size();
     let payment : Types.AdvancePayment = {
       id = newId;
@@ -24,19 +30,16 @@ mixin (
       currency;
       note;
       createdAt = Time.now();
-      ownerId = caller;
     };
     advancePayments.add(newId, payment);
     newId;
   };
 
-  public shared ({ caller }) func listMyAdvancePayments() : async [Types.AdvancePayment] {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+  public query ({ caller }) func listMyAdvancePayments() : async [Types.AdvancePayment] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.AdvancePayment>();
     for ((_, p) in advancePayments.entries()) {
-      if (Principal.equal(p.ownerId, caller)) {
-        result.add(p);
-      };
+      result.add(p);
     };
     result.toArray();
   };
@@ -48,26 +51,22 @@ mixin (
     currency : Text,
     note : Text,
   ) : async Bool {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (advancePayments.get(id)) {
       case (?existing) {
-        if (Principal.equal(existing.ownerId, caller)) {
-          advancePayments.add(id, { existing with date; amount; currency; note });
-          true;
-        } else { false };
+        advancePayments.add(id, { existing with date; amount; currency; note });
+        true;
       };
       case null { false };
     };
   };
 
   public shared ({ caller }) func deleteAdvancePayment(id : Nat) : async Bool {
-    if (caller.isAnonymous()) { Runtime.trap("Anonymous caller not allowed"); };
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (advancePayments.get(id)) {
-      case (?existing) {
-        if (Principal.equal(existing.ownerId, caller)) {
-          advancePayments.remove(id);
-          true;
-        } else { false };
+      case (?_) {
+        advancePayments.remove(id);
+        true;
       };
       case null { false };
     };

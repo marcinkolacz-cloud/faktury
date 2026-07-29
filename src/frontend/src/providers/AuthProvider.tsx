@@ -7,6 +7,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isInitializing: boolean;
   login: () => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -39,6 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIdentity(id);
   };
 
+  const loginWithGoogle = async () => {
+    const googleClient = new AuthClient({ openIdProvider: "google" });
+    const id = await googleClient.signIn();
+    setAuthClient(googleClient);
+    setIdentity(id);
+  };
+
   const logout = async () => {
     if (!authClient) return;
     await authClient.signOut();
@@ -48,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = !!identity && !identity.getPrincipal().isAnonymous();
 
   return (
-    <AuthContext.Provider value={{ identity, isAuthenticated, isInitializing, login, logout }}>
+    <AuthContext.Provider value={{ identity, isAuthenticated, isInitializing, login, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );
