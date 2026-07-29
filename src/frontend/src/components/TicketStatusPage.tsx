@@ -1,23 +1,72 @@
 import { useEffect, useState } from "react";
 import { createPublicActor } from "../lib/publicActor";
+import { useTheme } from "../providers/ThemeProvider";
 
-const STATUS_LABELS: Record<string, string> = {
-  open: "Otwarte",
-  inProgress: "W trakcie",
-  waitingForClient: "Oczekuje na Ciebie",
-  closed: "Zamknięte",
+type Lang = "pl" | "en";
+
+const STATUS_LABELS: Record<Lang, Record<string, string>> = {
+  pl: {
+    open: "Otwarte",
+    inProgress: "W trakcie",
+    waitingForClient: "Oczekuje na Ciebie",
+    closed: "Zamknięte",
+  },
+  en: {
+    open: "Open",
+    inProgress: "In progress",
+    waitingForClient: "Waiting for you",
+    closed: "Closed",
+  },
+};
+
+const translations = {
+  pl: {
+    title: "Sprawdź status zgłoszenia",
+    tokenPlaceholder: "Numer zgłoszenia",
+    check: "Sprawdź",
+    checking: "...",
+    createdLabel: "Utworzone:",
+    attachmentsLabel: "Załączniki:",
+    repliesLabel: "Odpowiedzi:",
+    replyPlaceholder: "Napisz odpowiedź...",
+    send: "Wyślij wiadomość",
+    sending: "Wysyłanie...",
+    noResults: "Brak wyników.",
+    notFound: "Nie znaleziono zgłoszenia o podanym numerze.",
+    genericError: "Wystąpił błąd. Spróbuj ponownie.",
+    replyFailed: "Nie udało się wysłać wiadomości.",
+  },
+  en: {
+    title: "Check ticket status",
+    tokenPlaceholder: "Ticket number",
+    check: "Check",
+    checking: "...",
+    createdLabel: "Created:",
+    attachmentsLabel: "Attachments:",
+    repliesLabel: "Replies:",
+    replyPlaceholder: "Write a reply...",
+    send: "Send message",
+    sending: "Sending...",
+    noResults: "No results.",
+    notFound: "No ticket found with this number.",
+    genericError: "An error occurred. Please try again.",
+    replyFailed: "Failed to send message.",
+  },
 };
 
 function statusFromVariant(v: any): string {
   return Object.keys(v)[0];
 }
 
-function formatDate(ns: bigint): string {
+function formatDate(ns: bigint, lang: Lang): string {
   const ms = Number(ns) / 1_000_000;
-  return new Date(ms).toLocaleDateString("pl-PL", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date(ms).toLocaleDateString(lang === "pl" ? "pl-PL" : "en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export function TicketStatusPage() {
+  const { theme, toggleTheme } = useTheme();
+  const [lang, setLang] = useState<Lang>("pl");
+  const t = translations[lang];
   const params = new URLSearchParams(window.location.search);
   const tokenFromUrl = params.get("token") || "";
   const [tokenInput, setTokenInput] = useState(tokenFromUrl);
@@ -26,6 +75,10 @@ export function TicketStatusPage() {
   const [error, setError] = useState("");
   const [searched, setSearched] = useState(false);
   const [attachments, setAttachments] = useState<any[]>([]);
+  const [replyMessage, setReplyMessage] = useState("");
+  const [replyHoneypot, setReplyHoneypot] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyError, setReplyError] = useState("");
 
   const downloadAttachment = async (a: any) => {
     const actor = await createPublicActor();
@@ -59,12 +112,31 @@ export function TicketStatusPage() {
       } else {
         setTicket(null);
         setAttachments([]);
-        setError("Nie znaleziono zgłoszenia o podanym numerze.");
+        setError(t.notFound);
       }
     } catch (e) {
-      setError("Wystąpił błąd. Spróbuj ponownie.");
+      setError(t.genericError);
     }
     setLoading(false);
+  };
+
+  const sendReply = async () => {
+    if (!replyMessage.trim() || !ticket) return;
+    setSendingReply(true);
+    setReplyError("");
+    try {
+      const actor = await createPublicActor();
+      const ok = await actor.addClientReply(tokenInput.trim(), replyMessage.trim(), replyHoneypot);
+      if (ok) {
+        setReplyMessage("");
+        await lookup(tokenInput);
+      } else {
+        setReplyError(t.replyFailed);
+      }
+    } catch (e) {
+      setReplyError(t.genericError);
+    }
+    setSendingReply(false);
   };
 
   useEffect(() => {
@@ -77,13 +149,32 @@ export function TicketStatusPage() {
       style={{ backgroundImage: "url(/login-background.png)" }}
     >
       <div className="max-w-md w-full bg-[var(--bg-card)]/95 rounded-lg p-6 shadow-lg space-y-3">
+        <div className="flex justify-between items-center mb-1">
+          <button onClick={toggleTheme} className="px-2 py-0.5 text-xs border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]">
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setLang("pl")}
+              className={"px-2 py-0.5 text-xs rounded " + (lang === "pl" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
+            >
+              PL
+            </button>
+            <button
+              onClick={() => setLang("en")}
+              className={"px-2 py-0.5 text-xs rounded " + (lang === "en" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
+            >
+              EN
+            </button>
+          </div>
+        </div>
         <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-9" />
-        <h1 className="text-lg font-semibold text-[var(--text-primary)]">Sprawdź status zgłoszenia</h1>
+        <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t.title}</h1>
         <div className="flex gap-2">
           <input
             value={tokenInput}
             onChange={(e) => setTokenInput(e.target.value)}
-            placeholder="Numer zgłoszenia"
+            placeholder={t.tokenPlaceholder}
             className="flex-1 border border-[var(--border-color)] rounded px-3 py-2 text-sm"
           />
           <button
@@ -91,7 +182,7 @@ export function TicketStatusPage() {
             disabled={loading}
             className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50"
           >
-            {loading ? "..." : "Sprawdź"}
+            {loading ? t.checking : t.check}
           </button>
         </div>
         {error && <p className="text-red-600 text-sm">{error}</p>}
@@ -99,15 +190,15 @@ export function TicketStatusPage() {
           <div className="space-y-3 pt-2">
             <div>
               <h2 className="font-semibold text-[var(--text-primary)]">{ticket.subject}</h2>
-              <p className="text-xs text-[var(--text-muted)]">Utworzone: {formatDate(ticket.createdAt)}</p>
+              <p className="text-xs text-[var(--text-muted)]">{t.createdLabel} {formatDate(ticket.createdAt, lang)}</p>
             </div>
             <div className="inline-block px-2 py-1 rounded text-xs text-white bg-cyan-600">
-              {STATUS_LABELS[statusFromVariant(ticket.status)] || "—"}
+              {STATUS_LABELS[lang][statusFromVariant(ticket.status)] || "—"}
             </div>
             <p className="text-sm text-[var(--text-secondary)] bg-[var(--bg-page)] rounded p-3">{ticket.description}</p>
             {attachments.length > 0 && (
               <div className="space-y-1">
-                <p className="text-[10px] font-medium text-[var(--text-muted)]">Załączniki:</p>
+                <p className="text-[10px] font-medium text-[var(--text-muted)]">{t.attachmentsLabel}</p>
                 {attachments.map((a) => (
                   <button
                     key={String(a.id)}
@@ -121,22 +212,48 @@ export function TicketStatusPage() {
             )}
             {ticket.replies.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-medium text-[var(--text-muted)]">Odpowiedzi:</p>
+                <p className="text-xs font-medium text-[var(--text-muted)]">{t.repliesLabel}</p>
                 {ticket.replies.map((r: any, idx: number) => (
-                  <div key={idx} className="text-sm bg-cyan-50 rounded p-2">
+                  <div key={idx} className="text-sm bg-cyan-500/10 rounded p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-[var(--text-primary)]">{r.author}</p>
-                      <p className="text-[10px] text-[var(--text-muted)]">{formatDate(r.createdAt)}</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">{formatDate(r.createdAt, lang)}</p>
                     </div>
                     <p className="text-[var(--text-secondary)]">{r.message}</p>
                   </div>
                 ))}
               </div>
             )}
+            <div className="space-y-2 pt-2">
+              <textarea
+                value={replyMessage}
+                onChange={(e) => setReplyMessage(e.target.value)}
+                placeholder={t.replyPlaceholder}
+                rows={3}
+                className="w-full border border-[var(--border-color)] rounded px-3 py-2 text-sm resize-none"
+              />
+              <input
+                type="text"
+                value={replyHoneypot}
+                onChange={(e) => setReplyHoneypot(e.target.value)}
+                tabIndex={-1}
+                autoComplete="off"
+                className="hidden"
+                aria-hidden="true"
+              />
+              {replyError && <p className="text-red-600 text-sm">{replyError}</p>}
+              <button
+                onClick={sendReply}
+                disabled={sendingReply || !replyMessage.trim()}
+                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50 text-sm"
+              >
+                {sendingReply ? t.sending : t.send}
+              </button>
+            </div>
           </div>
         )}
         {searched && !ticket && !loading && !error && (
-          <p className="text-sm text-[var(--text-muted)]">Brak wyników.</p>
+          <p className="text-sm text-[var(--text-muted)]">{t.noResults}</p>
         )}
       </div>
     </div>

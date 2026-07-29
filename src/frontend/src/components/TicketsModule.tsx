@@ -73,7 +73,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   };
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const CHUNK_SIZE = 1_500_000;
-  const MAX_FILE_SIZE = 2_000_000;
+  const MAX_FILE_SIZE = 5_000_000;
 
   const loadAttachments = async (ticketId: bigint) => {
     try {
@@ -87,7 +87,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   const uploadTeamAttachment = async (file: File) => {
     if (!selected) return;
     if (file.size > MAX_FILE_SIZE) {
-      alert("Plik zbyt duży (max 2MB): " + file.name);
+      alert("Plik zbyt duży (max 5MB): " + file.name);
       return;
     }
     setUploadingAttachment(true);

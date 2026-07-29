@@ -34,6 +34,7 @@ persistent actor {
   let fileChunks = Map.empty<Text, Blob>();
   let folders = Map.empty<Nat, Types.Folder>();
   let recentSubmissionTimes = List.empty<Int>();
+  let recentClientReplyTimes = List.empty<Int>();
   let accessRoles = Map.empty<Principal, Types.Role>();
   let moduleAccess = Map.empty<Principal, [Text]>();
   var adminPrincipal : ?Principal = null;
@@ -42,7 +43,7 @@ persistent actor {
   include AdvancePaymentsApi(advancePayments, accessRoles);
   include ExpensesApi(expenses, accessRoles, expenseKsefSent);
   include WarehouseApi(warehouseItems, stockMovements, accessRoles);
-  include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts);
+  include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes);
   include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles);
   include FilesApi(files, fileChunks, folders, accessRoles);
 

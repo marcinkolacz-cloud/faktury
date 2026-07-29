@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createPublicActor } from "../lib/publicActor";
+import { useTheme } from "../providers/ThemeProvider";
 
 type Lang = "pl" | "en";
 
@@ -37,6 +38,7 @@ const translations = {
 };
 
 export function PublicTicketForm() {
+  const { theme, toggleTheme } = useTheme();
   const [lang, setLang] = useState<Lang>("pl");
   const t = translations[lang];
   const [name, setName] = useState("");
@@ -45,7 +47,7 @@ export function PublicTicketForm() {
   const [deviceNumber, setDeviceNumber] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState("");
-  const MAX_FILE_SIZE = 2_000_000;
+  const MAX_FILE_SIZE = 5_000_000;
   const CHUNK_SIZE = 1_500_000;
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -95,19 +97,24 @@ export function PublicTicketForm() {
   };
 
   const LangSwitcher = () => (
-    <div className="flex justify-end gap-1 mb-1">
-      <button
-        onClick={() => setLang("pl")}
-        className={"px-2 py-0.5 text-xs rounded " + (lang === "pl" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
-      >
-        PL
+    <div className="flex justify-between items-center mb-1">
+      <button onClick={toggleTheme} className="px-2 py-0.5 text-xs border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]">
+        {theme === "dark" ? "☀️" : "🌙"}
       </button>
-      <button
-        onClick={() => setLang("en")}
-        className={"px-2 py-0.5 text-xs rounded " + (lang === "en" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
-      >
-        EN
-      </button>
+      <div className="flex gap-1">
+        <button
+          onClick={() => setLang("pl")}
+          className={"px-2 py-0.5 text-xs rounded " + (lang === "pl" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
+        >
+          PL
+        </button>
+        <button
+          onClick={() => setLang("en")}
+          className={"px-2 py-0.5 text-xs rounded " + (lang === "en" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
+        >
+          EN
+        </button>
+      </div>
     </div>
   );
 
@@ -159,7 +166,7 @@ export function PublicTicketForm() {
               const selected = Array.from(e.target.files || []);
               const tooBig = selected.filter((f) => f.size > MAX_FILE_SIZE);
               if (tooBig.length > 0) {
-                setError((lang === "pl" ? "Plik zbyt duży (max 2MB): " : "File too large (max 2MB): ") + tooBig.map((f) => f.name).join(", "));
+                setError((lang === "pl" ? "Plik zbyt duży (max 5MB): " : "File too large (max 5MB): ") + tooBig.map((f) => f.name).join(", "));
                 return;
               }
               setError("");
@@ -168,7 +175,7 @@ export function PublicTicketForm() {
             className="w-full text-xs text-[var(--text-secondary)]"
           />
           <p className="text-[10px] text-[var(--text-muted)] mt-1">
-            {lang === "pl" ? "Załączniki (opcjonalnie, max 2MB każdy)" : "Attachments (optional, max 2MB each)"}
+            {lang === "pl" ? "Załączniki (opcjonalnie, max 5MB każdy)" : "Attachments (optional, max 5MB each)"}
           </p>
           {files.length > 0 && (
             <ul className="text-xs text-[var(--text-secondary)] mt-1">

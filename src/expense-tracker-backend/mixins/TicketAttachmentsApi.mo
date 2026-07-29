@@ -15,7 +15,7 @@ mixin (
   recentAttachmentTimes : List.List<Int>,
   accessRoles : Map.Map<Principal, Types.Role>,
 ) {
-  let maxAttachmentSize = 2_000_000;
+  let maxAttachmentSize = 5_000_000;
 
   public shared func createTicketAttachment(
     ticketId : Nat,
@@ -27,7 +27,7 @@ mixin (
     honeypot : Text,
   ) : async Nat {
     if (honeypot != "") { Runtime.trap("Rejected"); };
-    if (size > maxAttachmentSize) { Runtime.trap("File too large, max 2MB"); };
+    if (size > maxAttachmentSize) { Runtime.trap("File too large, max 5MB"); };
     switch (tickets.get(ticketId)) {
       case null { Runtime.trap("Ticket not found"); };
       case (?_) {};

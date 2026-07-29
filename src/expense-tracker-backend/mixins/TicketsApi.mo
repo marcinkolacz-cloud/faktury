@@ -18,6 +18,7 @@ mixin (
   ticketExtras : Map.Map<Nat, Types.TicketExtras>,
   ticketArchived : Map.Map<Nat, Bool>,
   ticketSeenCounts : Map.Map<Nat, Nat>,
+  recentClientReplyTimes : List.List<Int>,
 ) {
   public shared func submitTicket(
     clientName : Text,
@@ -140,6 +141,43 @@ mixin (
       case null { false };
     };
   };
+
+  public shared func addClientReply(token : Text, message : Text, honeypot : Text) : async Bool {
+    if (honeypot != "") { Runtime.trap("Rejected"); };
+
+    let now = Time.now();
+    let oneMinuteAgo : Int = now - 60_000_000_000;
+    var stillValid = List.empty<Int>();
+    for (t in recentClientReplyTimes.values()) {
+      if (t > oneMinuteAgo) { stillValid.add(t); };
+    };
+    if (stillValid.size() >= 5) { Runtime.trap("Rate limit exceeded, try again later"); };
+    stillValid.add(now);
+    recentClientReplyTimes.clear();
+    for (t in stillValid.values()) { recentClientReplyTimes.add(t); };
+
+    switch (ticketTokens.get(token)) {
+      case (?id) {
+        switch (tickets.get(id)) {
+          case (?t) {
+            let newReply : Types.TicketReply = {
+              author = t.clientName;
+              message;
+              isInternal = false;
+              createdAt = Time.now();
+            };
+            let updatedReplies = List.fromArray<Types.TicketReply>(t.replies);
+            updatedReplies.add(newReply);
+            tickets.add(id, { t with replies = updatedReplies.toArray() });
+            true;
+          };
+          case null { false };
+        };
+      };
+      case null { false };
+    };
+  };
+
   public shared ({ caller }) func archiveTicket(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (tickets.get(id)) {
