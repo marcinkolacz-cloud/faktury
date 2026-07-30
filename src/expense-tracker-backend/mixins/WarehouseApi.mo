@@ -26,7 +26,12 @@ mixin (
       if (exists) {
         skipped += 1;
       } else {
-        let newId = warehouseItems.size();
+        var maxId2 = 0;
+        var any2 = false;
+        for ((id, _) in warehouseItems.entries()) {
+          if (not any2 or id >= maxId2) { maxId2 := id; any2 := true; };
+        };
+        let newId = if (any2) { maxId2 + 1 } else { 0 };
         let item : Types.WarehouseItem = {
           id = newId;
           name;
@@ -66,7 +71,12 @@ mixin (
     note : Text,
   ) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
-    let newId = warehouseItems.size();
+    var maxId1 = 0;
+    var any1 = false;
+    for ((id, _) in warehouseItems.entries()) {
+      if (not any1 or id >= maxId1) { maxId1 := id; any1 := true; };
+    };
+    let newId = if (any1) { maxId1 + 1 } else { 0 };
     let item : Types.WarehouseItem = {
       id = newId;
       name; partDescription; model; link; manufacturer; serialNo; category;
@@ -159,7 +169,12 @@ mixin (
         let newQty = item.currentQuantity + delta;
         warehouseItems.add(itemId, { item with currentQuantity = newQty });
 
-        let newId = stockMovements.size();
+        var maxId3 = 0;
+        var any3 = false;
+        for ((id, _) in stockMovements.entries()) {
+          if (not any3 or id >= maxId3) { maxId3 := id; any3 := true; };
+        };
+        let newId = if (any3) { maxId3 + 1 } else { 0 };
         let movement : Types.StockMovement = {
           id = newId;
           itemId;

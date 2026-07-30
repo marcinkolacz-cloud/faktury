@@ -13,7 +13,12 @@ mixin (
 ) {
   public shared ({ caller }) func createProject(name : Text) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
-    let newId = projects.size();
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in projects.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
     let project : Types.Project = {
       id = newId;
       name;

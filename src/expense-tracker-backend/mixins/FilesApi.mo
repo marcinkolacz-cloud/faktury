@@ -16,7 +16,13 @@ mixin (
 ) {
   public shared ({ caller }) func createFolder(name : Text, parentId : ?Nat) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
-    let newId = folders.size();
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in folders.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
+    if (parentId == ?newId) { Runtime.trap("Invalid parent: folder cannot be its own parent"); };
     let folder : Types.Folder = {
       id = newId;
       name;
@@ -36,7 +42,12 @@ mixin (
     parentId : ?Nat,
   ) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
-    let newId = files.size();
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in files.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
     let meta : Types.FileMeta = {
       id = newId;
       name;
@@ -105,6 +116,21 @@ mixin (
     { folders = f.toArray(); files = fl.toArray() };
   };
 
+  public shared ({ caller }) func bulkMoveFiles(fileIds : [Nat], newParentId : ?Nat) : async Nat {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    var count = 0;
+    for (fileId in fileIds.vals()) {
+      switch (files.get(fileId)) {
+        case (?meta) {
+          files.add(fileId, { meta with parentId = newParentId });
+          count += 1;
+        };
+        case null {};
+      };
+    };
+    count;
+  };
+
   public shared ({ caller }) func moveFile(fileId : Nat, newParentId : ?Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (files.get(fileId)) {
@@ -125,6 +151,27 @@ mixin (
       };
       case null { false };
     };
+  };
+
+  public shared ({ caller }) func bulkDeleteFiles(fileIds : [Nat]) : async Nat {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    var count = 0;
+    for (fileId in fileIds.vals()) {
+      switch (files.get(fileId)) {
+        case (?meta) {
+          var i = 0;
+          while (i < meta.totalChunks) {
+            let key = Nat.toText(fileId) # "-" # Nat.toText(i);
+            fileChunks.remove(key);
+            i += 1;
+          };
+          files.remove(fileId);
+          count += 1;
+        };
+        case null {};
+      };
+    };
+    count;
   };
 
   public shared ({ caller }) func deleteFile(fileId : Nat) : async Bool {

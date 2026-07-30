@@ -5,6 +5,8 @@ import { useBackendActor } from "./lib/useBackend";
 import { Dashboard } from "./components/Dashboard";
 import { HomeScreen } from "./components/HomeScreen";
 import { WarehouseModule } from "./components/WarehouseModule";
+import { ProjectsModule } from "./components/ProjectsModule";
+import { UploadProvider } from "./providers/UploadContext";
 import { PublicTicketForm } from "./components/PublicTicketForm";
 import { TicketStatusPage } from "./components/TicketStatusPage";
 import { TicketsModule } from "./components/TicketsModule";
@@ -39,7 +41,11 @@ function AccessGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!actor || !isAuthenticated) return;
-    actor.isCallerGranted().then(setGranted);
+    let cancelled = false;
+    actor.isCallerGranted().then((result: boolean) => {
+      if (!cancelled) setGranted(result);
+    });
+    return () => { cancelled = true; };
   }, [actor, isAuthenticated]);
 
   useEffect(() => {
@@ -146,6 +152,9 @@ function ModuleRouter() {
   if (module === "warehouse") {
     return <WarehouseModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
   }
+  if (module === "projects") {
+    return <ProjectsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  }
   if (module === "tickets") {
     return <TicketsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
   }
@@ -181,9 +190,11 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AccessGate>
-          <ModuleRouter />
-        </AccessGate>
+        <UploadProvider>
+          <AccessGate>
+            <ModuleRouter />
+          </AccessGate>
+        </UploadProvider>
       </AuthProvider>
     </ThemeProvider>
   );

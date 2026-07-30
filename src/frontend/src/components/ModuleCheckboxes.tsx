@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 const ALL_MODULES = [
   { id: "invoices", label: "Faktury" },
+  { id: "projects", label: "Projekty" },
   { id: "warehouse", label: "Magazyn" },
   { id: "tickets", label: "Zgłoszenia" },
   { id: "ksef", label: "KSeF" },

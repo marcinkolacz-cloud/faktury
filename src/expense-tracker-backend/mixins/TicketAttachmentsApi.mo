@@ -42,7 +42,12 @@ mixin (
     stillValid.add(now);
     recentAttachmentTimes.clear();
     for (t in stillValid.values()) { recentAttachmentTimes.add(t); };
-    let newId = ticketAttachments.size();
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in ticketAttachments.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
     let meta : Types.TicketAttachmentMeta = {
       id = newId;
       ticketId;

@@ -39,7 +39,12 @@ mixin (
     note : Text,
   ) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
-    let newId = expenses.size();
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in expenses.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
     let expense : Types.Expense = {
       id = newId;
       projectId;
@@ -62,6 +67,44 @@ mixin (
     };
     expenses.add(newId, expense);
     newId;
+  };
+
+  public shared ({ caller }) func bulkImportExpenses(
+    rows : [(Nat, Text, Text, ?Float, ?Float, Text, Text, Text, Text, Bool, Bool, Bool)]
+  ) : async Nat {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    var count = 0;
+    for ((projectId, productService, supplier, pricePln, priceNet, orderDate, paidBy, invoiceNumber, note, paid, hasInvoice, confirmed) in rows.vals()) {
+      var maxId = 0;
+      var any = false;
+      for ((id, _) in expenses.entries()) {
+        if (not any or id >= maxId) { maxId := id; any := true; };
+      };
+      let newId = if (any) { maxId + 1 } else { 0 };
+      let expense : Types.Expense = {
+        id = newId;
+        projectId;
+        productService;
+        supplier;
+        serialNumber = "";
+        quantity = null;
+        priceEur = null;
+        priceUsd = null;
+        pricePln;
+        priceNet;
+        orderDate;
+        paid;
+        paidBy;
+        hasInvoice;
+        invoiceNumber;
+        confirmed;
+        ksefNote = "";
+        note;
+      };
+      expenses.add(newId, expense);
+      count += 1;
+    };
+    count;
   };
 
   public query ({ caller }) func listMyExpenses() : async [Types.Expense] {

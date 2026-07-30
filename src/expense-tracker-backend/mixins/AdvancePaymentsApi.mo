@@ -22,7 +22,12 @@ mixin (
     note : Text,
   ) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
-    let newId = advancePayments.size();
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in advancePayments.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
     let payment : Types.AdvancePayment = {
       id = newId;
       date;

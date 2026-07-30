@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
+import { useUpload } from "../providers/UploadContext";
 import { TopBar } from "./TopBar";
 import { DriveThumbnail } from "./DriveThumbnail";
 
-const CHUNK_SIZE = 1_500_000;
-
 export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
   const actor = useBackendActor();
+  const { uploading, progress, lastCompletedAt, uploadFiles: uploadFilesGlobal, uploadFolderEntries } = useUpload();
+  const [downloadProgress, setDownloadProgress] = useState("");
   const [folders, setFolders] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
   const [breadcrumb, setBreadcrumb] = useState<{ id: bigint | null; name: string }[]>([{ id: null, name: "Dysk" }]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState("");
   const [myRole, setMyRole] = useState<string>("read");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<any[] | null>(null);
@@ -31,10 +30,13 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
   };
 
   const currentFolderId = breadcrumb[breadcrumb.length - 1].id;
+  const reloadTokenRef = useRef(0);
 
   const reload = async () => {
     if (!actor) return;
+    const myToken = ++reloadTokenRef.current;
     const contents = await actor.listFolderContents(currentFolderId === null ? [] : [currentFolderId]);
+    if (myToken !== reloadTokenRef.current) return;
     setFolders(contents.folders);
     setFiles(contents.files);
     setLoading(false);
@@ -54,6 +56,10 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
     const interval = setInterval(() => { reload(); }, 3000);
     return () => clearInterval(interval);
   }, [actor, currentFolderId]);
+
+  useEffect(() => {
+    if (lastCompletedAt > 0) reload();
+  }, [lastCompletedAt]);
 
   const canWrite = myRole === "write" || myRole === "admin";
 
@@ -76,74 +82,20 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
     reload();
   };
 
-  const uploadFile = async (file: File, parentId: bigint | null) => {
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    setProgress("Wysyłam " + file.name + "...");
-    const fileId = await actor.createFileUpload(
-      file.name,
-      file.type || "application/octet-stream",
-      file.size,
-      totalChunks,
-      parentId === null ? [] : [parentId]
-    );
-    for (let i = 0; i < totalChunks; i++) {
-      setProgress("Wysyłam " + file.name + ": " + (i + 1) + "/" + totalChunks);
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
-      await actor.uploadChunk(fileId, i, chunk);
-    }
-  };
-
-  const handleFiles = async (fileList: FileList | File[]) => {
-    setUploading(true);
-    for (const file of Array.from(fileList)) {
-      await uploadFile(file, currentFolderId);
-    }
-    setProgress("");
-    setUploading(false);
-    reload();
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-    await handleFiles(e.target.files);
+    uploadFilesGlobal(e.target.files, currentFolderId);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const uploadFilesWithPaths = async (entries: { file: File; relativePath: string }[]) => {
-    setUploading(true);
-    const folderCache = new Map<string, bigint>();
-    for (const { file, relativePath } of entries) {
-      const parts = relativePath.split("/");
-      const pathParts = parts.slice(0, -1);
-      let parentId: bigint | null = currentFolderId;
-      let cacheKey = String(currentFolderId);
-      for (const part of pathParts) {
-        cacheKey += "/" + part;
-        if (folderCache.has(cacheKey)) {
-          parentId = folderCache.get(cacheKey)!;
-        } else {
-          const newId = await actor.createFolder(part, parentId === null ? [] : [parentId]);
-          folderCache.set(cacheKey, newId);
-          parentId = newId;
-        }
-      }
-      await uploadFile(file, parentId);
-    }
-    setProgress("");
-    setUploading(false);
-    reload();
-  };
-
-  const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
     if (!selected) return;
     const entries = Array.from(selected).map((file) => ({
       file,
       relativePath: (file as any).webkitRelativePath || file.name,
     }));
-    await uploadFilesWithPaths(entries);
+    uploadFolderEntries(entries, currentFolderId);
     if (folderInputRef.current) folderInputRef.current.value = "";
   };
 
@@ -189,20 +141,20 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
         const found = await readEntry(entry, "");
         entries.push(...found);
       }
-      await uploadFilesWithPaths(entries);
+      uploadFolderEntries(entries, currentFolderId);
     } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      await handleFiles(e.dataTransfer.files);
+      uploadFilesGlobal(e.dataTransfer.files, currentFolderId);
     }
   };
 
   const downloadFile = async (f: any) => {
-    setProgress("Pobieram " + f.name + "...");
+    setDownloadProgress("Pobieram " + f.name + "...");
     const parts: Uint8Array[] = [];
     for (let i = 0; i < Number(f.totalChunks); i++) {
       const chunk = await actor.getChunk(f.id, i);
       if (chunk && chunk.length > 0) parts.push(new Uint8Array(chunk[0]));
     }
-    setProgress("");
+    setDownloadProgress("");
     const blob = new Blob(parts as BlobPart[], { type: f.contentType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -272,6 +224,18 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
   const bulkDelete = async () => {
     const total = selectedFiles.size + selectedFolders.size;
     if (total === 0) return;
+    const nonEmptyFolders: string[] = [];
+    for (const id of selectedFolders) {
+      const contents = await actor.listFolderContents([BigInt(id)]);
+      if (contents.folders.length > 0 || contents.files.length > 0) {
+        const f = folders.find((fo: any) => String(fo.id) === id);
+        nonEmptyFolders.push(f ? f.name : id);
+      }
+    }
+    if (nonEmptyFolders.length > 0) {
+      alert("Te foldery nie są puste i nie zostaną usunięte: " + nonEmptyFolders.join(", ") + ". Usuń najpierw ich zawartość.");
+      return;
+    }
     if (!confirm("Usunąć zaznaczone " + total + " element(y/ów)?")) return;
     for (const id of selectedFiles) {
       await actor.deleteFile(BigInt(id));
@@ -359,7 +323,8 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
               </>
             )}
           </div>
-          {progress && <p className="text-xs text-[var(--text-muted)]">{progress}</p>}
+          {downloadProgress && <p className="text-xs text-[var(--text-muted)]">{downloadProgress}</p>}
+          {progress && uploading && <p className="text-xs text-[var(--text-muted)]">{progress}</p>}
           {(selectedFiles.size + selectedFolders.size) > 0 && (
             <div className="flex items-center gap-2 bg-cyan-950/20 border border-cyan-800 rounded p-2 text-sm">
               <span>Zaznaczono: {selectedFiles.size + selectedFolders.size}</span>
@@ -372,7 +337,23 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
             <table className="w-full text-xs">
               <thead className="bg-[var(--bg-hover)] sticky top-0">
                 <tr className="text-left text-[var(--text-muted)]">
-                  <th className="p-2 w-8"></th>
+                  <th className="p-2 w-8">
+                    {canWrite && (folders.length > 0 || files.length > 0) && (
+                      <input
+                        type="checkbox"
+                        checked={selectedFiles.size + selectedFolders.size > 0 && selectedFiles.size === files.length && selectedFolders.size === folders.length}
+                        onChange={() => {
+                          const allSelected = selectedFiles.size === files.length && selectedFolders.size === folders.length && (files.length + folders.length) > 0;
+                          if (allSelected) {
+                            clearSelection();
+                          } else {
+                            setSelectedFiles(new Set(files.map((f: any) => String(f.id))));
+                            setSelectedFolders(new Set(folders.map((f: any) => String(f.id))));
+                          }
+                        }}
+                      />
+                    )}
+                  </th>
                   <th className="p-2 w-14"></th>
                   <th className="p-2">Nazwa</th>
                   <th className="p-2">Typ</th>
