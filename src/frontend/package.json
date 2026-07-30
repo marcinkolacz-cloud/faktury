@@ -13,6 +13,7 @@
     "@azure/msal-browser": "^5.17.3",
     "@icp-sdk/auth": "^7.1.0",
     "@icp-sdk/core": "^5.4.0",
+    "jszip": "^3.10.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "xlsx": "^0.18.5"

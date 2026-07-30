@@ -1,7 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { useUpload } from "../providers/UploadContext";
+import JSZip from "jszip";
 import { odList, odCreateFolder, odDownloadUrl, odDelete, odSearch, odRename, odShare, odPermissions, odMove, odPreview } from "../lib/oneDriveConfig";
+
+async function collectFilesRecursive(basePath: string, relPrefix: string): Promise<{ name: string; id: string }[]> {
+  const listing = await odList(basePath);
+  const out: { name: string; id: string }[] = [];
+  for (const it of listing.items || []) {
+    const rel = relPrefix + it.name;
+    if (it.isFolder) {
+      const sub = await collectFilesRecursive(basePath ? basePath + "/" + it.name : it.name, rel + "/");
+      out.push(...sub);
+    } else {
+      out.push({ name: rel, id: it.id });
+    }
+  }
+  return out;
+}
 import { TopBar } from "./TopBar";
 
 export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
@@ -179,6 +195,48 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
     setDownloadProgress("");
   };
 
+  const downloadAsZip = async (rootItems: { id: string; name: string; isFolder: boolean }[], zipName: string) => {
+    setDownloadProgress("Przygotowuję listę plików...");
+    const zip = new JSZip();
+    let allFiles: { name: string; id: string }[] = [];
+    for (const it of rootItems) {
+      if (it.isFolder) {
+        const files = await collectFilesRecursive(currentPath ? currentPath + "/" + it.name : it.name, it.name + "/");
+        allFiles.push(...files);
+      } else {
+        allFiles.push({ name: it.name, id: it.id });
+      }
+    }
+    let done = 0;
+    for (const f of allFiles) {
+      setDownloadProgress("Pobieram " + (done + 1) + "/" + allFiles.length + ": " + f.name);
+      const result = await odDownloadUrl(f.id);
+      if (result.downloadUrl) {
+        const resp = await fetch(result.downloadUrl);
+        const blob = await resp.blob();
+        zip.file(f.name, blob);
+      }
+      done++;
+    }
+    setDownloadProgress("Pakuję archiwum ZIP...");
+    const content = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = zipName + ".zip";
+    a.click();
+    URL.revokeObjectURL(url);
+    setDownloadProgress("");
+  };
+
+  const downloadFolder = (item: any) => downloadAsZip([item], item.name);
+
+  const bulkDownload = async () => {
+    const matched = items.filter((i) => selected.has(i.id));
+    if (matched.length === 0) return;
+    await downloadAsZip(matched, "Bartolini-Drive-eksport");
+  };
+
   const removeItem = async (item: any) => {
     if (!confirm((item.isFolder ? "Usunąć folder" : "Usunąć plik") + " \"" + item.name + "\"?")) return;
     await odDelete(item.id);
@@ -223,6 +281,17 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
     if (!newName || !newName.trim() || newName === item.name) return;
     await odRename(item.id, newName.trim());
     reload();
+  };
+
+  const isOfficeFile = (name: string) => /\.(docx?|xlsx?|pptx?)$/i.test(name);
+
+  const editFile = async (item: any) => {
+    const result = await odShare(item.id, "edit");
+    if (result.url) {
+      window.open(result.url, "_blank");
+    } else {
+      alert("Nie udało się otworzyć edycji.");
+    }
   };
 
   const shareItem = async (item: any) => {
@@ -325,6 +394,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
           {selected.size > 0 && (
             <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-800 rounded p-2 text-sm">
               <span>Zaznaczono: {selected.size}</span>
+              <button onClick={bulkDownload} className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs">Pobierz (ZIP)</button>
               <button onClick={bulkDelete} className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Usuń</button>
               <button onClick={clearSelection} className="px-2 py-1 border border-[var(--border-color)] rounded text-xs">Anuluj zaznaczenie</button>
             </div>
@@ -371,7 +441,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
                 {items.map((item) => (
                   <div
                     key={item.id}
-                    onClick={() => (item.isFolder ? openFolder(item) : previewFile(item))}
+                    onClick={() => (item.isFolder ? openFolder(item) : isOfficeFile(item.name) ? editFile(item) : previewFile(item))}
                     className="border border-[var(--border-color)] rounded-lg p-3 flex flex-col items-center gap-1 text-center hover:bg-[var(--bg-hover)] cursor-pointer"
                   >
                     {!item.isFolder && item.thumbnailUrl ? (
@@ -430,7 +500,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
                             📁 {item.name}
                           </button>
                         ) : (
-                          <button onClick={() => previewFile(item)} className="hover:text-cyan-500 hover:underline flex items-center gap-1">
+                          <button onClick={() => (isOfficeFile(item.name) ? editFile(item) : previewFile(item))} className="hover:text-cyan-500 hover:underline flex items-center gap-1">
                             📄 {item.name}
                           </button>
                         )}
@@ -438,7 +508,8 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
                       <td className={cell + " text-right font-mono text-[var(--text-muted)]"}>{item.isFolder ? "—" : formatSize(item.size)}</td>
                       {viewMode !== "compact" && <td className="p-2 text-[var(--text-secondary)]">{formatDate(item.lastModified)}</td>}
                       <td className={cell + " whitespace-nowrap"}>
-                        {!item.isFolder && <button onClick={() => downloadFile(item)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Pobierz</button>}
+                        <button onClick={() => (item.isFolder ? downloadFolder(item) : downloadFile(item))} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Pobierz</button>
+                        {canWrite && !item.isFolder && isOfficeFile(item.name) && <button onClick={() => editFile(item)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Edytuj online</button>}
                         {canWrite && <button onClick={() => shareItem(item)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Udostępnij</button>}
                         {canWrite && viewMode !== "compact" && <button onClick={() => renameItem(item)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs mr-2">Zmień nazwę</button>}
                         {canWrite && viewMode !== "compact" && <button onClick={() => moveItem(item)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs mr-2">Przenieś</button>}
@@ -463,7 +534,8 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
             className="fixed z-50 bg-[var(--bg-card)] border border-[var(--border-color)] rounded shadow-lg py-1 flex flex-col whitespace-nowrap"
             style={{ left: menuPos.x, top: menuPos.y, transform: "translate(-50%, -100%)" }}
           >
-            {!menuItem.isFolder && <button onClick={() => { setTileMenuId(null); downloadFile(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-cyan-600">Pobierz</button>}
+            <button onClick={() => { setTileMenuId(null); menuItem.isFolder ? downloadFolder(menuItem) : downloadFile(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-cyan-600">Pobierz</button>
+            {canWrite && !menuItem.isFolder && isOfficeFile(menuItem.name) && <button onClick={() => { setTileMenuId(null); editFile(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-cyan-600">Edytuj online</button>}
             {canWrite && <button onClick={() => { setTileMenuId(null); shareItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-cyan-600">Udostępnij</button>}
             {canWrite && <button onClick={() => { setTileMenuId(null); renameItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]">Zmień nazwę</button>}
             {canWrite && <button onClick={() => { setTileMenuId(null); moveItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]">Przenieś</button>}
