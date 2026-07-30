@@ -2,6 +2,12 @@ import Map "mo:core/Map";
 import List "mo:core/List";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
+import Text "mo:core/Text";
+import Time "mo:core/Time";
+import Int "mo:core/Int";
+import Blob "mo:core/Blob";
+import ExperimentalCycles "mo:base/ExperimentalCycles";
+import Json "mo:json";
 import Types "types";
 import AccessLib "lib/access";
 import InvitesLib "lib/invites";
@@ -38,6 +44,28 @@ persistent actor {
   let accessRoles = Map.empty<Principal, Types.Role>();
   let moduleAccess = Map.empty<Principal, [Text]>();
   var adminPrincipal : ?Principal = null;
+  var oneDriveTokens : ?Types.OneDriveTokens = null;
+  var pendingDeviceCode : ?Text = null;
+  var pendingInterval : Nat = 5;
+
+  let oneDriveClientId = "427bbeee-c6bd-4dfc-9946-9b230aec7861";
+
+  type HttpHeader = { name : Text; value : Text };
+  type HttpMethod = { #get; #post; #head };
+  type TransformArgs = { context : Blob; response : HttpResponsePayload };
+  type HttpResponsePayload = { status : Nat; headers : [HttpHeader]; body : Blob };
+  type HttpRequestArgs = {
+    url : Text;
+    max_response_bytes : ?Nat64;
+    headers : [HttpHeader];
+    body : ?Blob;
+    method : HttpMethod;
+    transform : ?{ function : shared query (TransformArgs) -> async HttpResponsePayload; context : Blob };
+  };
+  type IC = actor {
+    http_request : HttpRequestArgs -> async HttpResponsePayload;
+  };
+  let ic : IC = actor ("aaaaa-aa");
 
   include ProjectsApi(projects, accessRoles);
   include AdvancePaymentsApi(advancePayments, accessRoles);

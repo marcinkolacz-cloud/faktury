@@ -1,8 +1,7 @@
-import { createContext, useContext, useRef, useState, type ReactNode } from "react";
-import { useBackendActor } from "../lib/useBackend";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { odList, odCreateFolder, odUploadFile } from "../lib/oneDriveConfig";
 
-const CHUNK_SIZE = 1_500_000;
-const UPLOAD_CONCURRENCY = 4;
+const UPLOAD_CONCURRENCY = 3;
 
 async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {
   let idx = 0;
@@ -19,8 +18,8 @@ interface UploadContextValue {
   uploading: boolean;
   progress: string;
   lastCompletedAt: number;
-  uploadFiles: (fileList: FileList | File[], targetFolderId: bigint | null) => void;
-  uploadFolderEntries: (entries: { file: File; relativePath: string }[], targetFolderId: bigint | null) => void;
+  uploadFiles: (fileList: FileList | File[], targetPath: string) => void;
+  uploadFolderEntries: (entries: { file: File; relativePath: string }[], targetPath: string) => void;
 }
 
 const UploadContext = createContext<UploadContextValue | null>(null);
@@ -32,45 +31,24 @@ export function useUpload(): UploadContextValue {
 }
 
 export function UploadProvider({ children }: { children: ReactNode }) {
-  const actor = useBackendActor();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
   const [lastCompletedAt, setLastCompletedAt] = useState(0);
-  const busyRef = useRef(false);
 
-  const uploadOneFile = async (file: File, parentId: bigint | null) => {
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    const fileId = await actor.createFileUpload(
-      file.name,
-      file.type || "application/octet-stream",
-      file.size,
-      totalChunks,
-      parentId === null ? [] : [parentId]
-    );
-    const chunkIndexes = Array.from({ length: totalChunks }, (_, i) => i);
-    await runWithConcurrency(chunkIndexes, UPLOAD_CONCURRENCY, async (i) => {
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
-      await actor.uploadChunk(fileId, i, chunk);
-    });
-  };
-
-  const uploadFiles = (fileList: FileList | File[], targetFolderId: bigint | null) => {
+  const uploadFiles = (fileList: FileList | File[], targetPath: string) => {
     const run = async () => {
-      busyRef.current = true;
       setUploading(true);
       setProgress("Sprawdzam istniejące pliki...");
       const filesArr = Array.from(fileList);
-      const contents = await actor.listFolderContents(targetFolderId === null ? [] : [targetFolderId]);
-      const existingNames = new Set(contents.files.map((f: any) => f.name.toLowerCase()));
+      const listing = await odList(targetPath);
+      const existingNames = new Set((listing.items || []).map((i: any) => i.name.toLowerCase()));
       const toUpload = filesArr.filter((f) => !existingNames.has(f.name.toLowerCase()));
       const skippedCount = filesArr.length - toUpload.length;
       const failed: string[] = [];
       let done = 0;
       await runWithConcurrency(toUpload, UPLOAD_CONCURRENCY, async (file) => {
         try {
-          await uploadOneFile(file, targetFolderId);
+          await odUploadFile(targetPath, file);
         } catch (e) {
           failed.push(file.name);
         }
@@ -79,66 +57,59 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       });
       setProgress(failed.length > 0 ? "Nie udało się wgrać: " + failed.join(", ") : (skippedCount ? "Pominięto " + skippedCount + " duplikat(ów)." : "Gotowe."));
       setUploading(false);
-      busyRef.current = false;
       setLastCompletedAt(Date.now());
     };
     run();
   };
 
-  const uploadFolderEntries = (entries: { file: File; relativePath: string }[], targetFolderId: bigint | null) => {
+  const uploadFolderEntries = (entries: { file: File; relativePath: string }[], targetPath: string) => {
     const run = async () => {
-      busyRef.current = true;
       setUploading(true);
-      const folderCache = new Map<string, bigint>();
+      setProgress("Tworzę strukturę folderów...");
+      const folderCache = new Set<string>();
 
-      const resolveParent = async (relativePath: string): Promise<bigint | null> => {
+      const resolveParentPath = async (relativePath: string): Promise<string> => {
         const parts = relativePath.split("/");
         const pathParts = parts.slice(0, -1);
-        let parentId: bigint | null = targetFolderId;
-        let cacheKey = String(targetFolderId);
+        let currentPath = targetPath;
         for (const part of pathParts) {
-          cacheKey += "/" + part;
-          if (folderCache.has(cacheKey)) {
-            parentId = folderCache.get(cacheKey)!;
-          } else {
-            const newId = await actor.createFolder(part, parentId === null ? [] : [parentId]);
-            folderCache.set(cacheKey, newId);
-            parentId = newId;
+          const nextPath = currentPath ? currentPath + "/" + part : part;
+          if (!folderCache.has(nextPath)) {
+            await odCreateFolder(currentPath, part);
+            folderCache.add(nextPath);
           }
+          currentPath = nextPath;
         }
-        return parentId;
+        return currentPath;
       };
 
-      setProgress("Tworzę strukturę folderów...");
-      const resolved: { file: File; parentId: bigint | null }[] = [];
+      const resolved: { file: File; parentPath: string }[] = [];
       for (const { file, relativePath } of entries) {
-        const parentId = await resolveParent(relativePath);
-        resolved.push({ file, parentId });
+        const parentPath = await resolveParentPath(relativePath);
+        resolved.push({ file, parentPath });
       }
 
       setProgress("Sprawdzam istniejące pliki...");
-      const existingNamesByParent = new Map<string, Set<string>>();
-      const uniqueParentIds = Array.from(new Set(resolved.map((r) => String(r.parentId))));
+      const existingByPath = new Map<string, Set<string>>();
+      const uniquePaths = Array.from(new Set(resolved.map((r) => r.parentPath)));
       await Promise.all(
-        uniqueParentIds.map(async (key) => {
-          const pid = key === "null" ? null : BigInt(key);
-          const contents = await actor.listFolderContents(pid === null ? [] : [pid]);
-          existingNamesByParent.set(key, new Set(contents.files.map((f: any) => f.name.toLowerCase())));
+        uniquePaths.map(async (path) => {
+          const listing = await odList(path);
+          existingByPath.set(path, new Set((listing.items || []).map((i: any) => i.name.toLowerCase())));
         })
       );
 
-      const toUpload = resolved.filter(({ file, parentId }) => {
-        const key = String(parentId);
-        const existing = existingNamesByParent.get(key);
+      const toUpload = resolved.filter(({ file, parentPath }) => {
+        const existing = existingByPath.get(parentPath);
         return !existing || !existing.has(file.name.toLowerCase());
       });
       const skippedCount = resolved.length - toUpload.length;
 
       const failed: string[] = [];
       let done = 0;
-      await runWithConcurrency(toUpload, UPLOAD_CONCURRENCY, async ({ file, parentId }) => {
+      await runWithConcurrency(toUpload, UPLOAD_CONCURRENCY, async ({ file, parentPath }) => {
         try {
-          await uploadOneFile(file, parentId);
+          await odUploadFile(parentPath, file);
         } catch (e) {
           failed.push(file.name);
         }
@@ -148,7 +119,6 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
       setProgress(failed.length > 0 ? "Nie udało się wgrać: " + failed.join(", ") : (skippedCount ? "Pominięto " + skippedCount + " duplikat(ów)." : "Gotowe."));
       setUploading(false);
-      busyRef.current = false;
       setLastCompletedAt(Date.now());
     };
     run();

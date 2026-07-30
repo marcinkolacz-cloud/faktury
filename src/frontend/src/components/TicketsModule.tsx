@@ -385,7 +385,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                       await actor.markTicketSeen(t.id);
                       loadSeenCounts();
                     }}
-                    className={"w-full text-left p-3 border-b border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (selected?.id === t.id ? "bg-cyan-50" : "")}
+                    className={"w-full text-left p-3 border-b border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (selected?.id === t.id ? "bg-cyan-500/10" : "")}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-sm text-[var(--text-primary)] truncate flex items-center gap-1.5">
@@ -526,7 +526,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                 </div>
                 <div className="space-y-2">
                   {selected.replies.map((r: any, idx: number) => (
-                    <div key={idx} className={"text-sm rounded p-2 " + (r.isInternal ? "bg-amber-50 border border-amber-200" : "bg-cyan-50")}>
+                    <div key={idx} className={"text-sm rounded p-2 " + (r.isInternal ? "bg-amber-500/10 border border-amber-800/30" : "bg-cyan-500/10")}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5">
                           <p className="font-medium text-[var(--text-primary)]">{r.author}</p>

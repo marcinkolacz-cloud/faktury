@@ -31,7 +31,7 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
     { id: "warehouse", label: "Magazyn" },
     { id: "tickets", label: "Zgłoszenia" },
     { id: "ksef", label: "KSeF" },
-    { id: "drive", label: "Dysk" },
+    { id: "drive", label: "Bartolini Drive" },
   ].filter((t) => allowedModules.includes(t.id));
 
   return (

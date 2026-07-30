@@ -1,25 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { useUpload } from "../providers/UploadContext";
+import { odList, odCreateFolder, odDownloadUrl, odDelete, odSearch, odRename, odShare, odPermissions, odMove, odPreview } from "../lib/oneDriveConfig";
 import { TopBar } from "./TopBar";
-import { DriveThumbnail } from "./DriveThumbnail";
 
 export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
   const actor = useBackendActor();
   const { uploading, progress, lastCompletedAt, uploadFiles: uploadFilesGlobal, uploadFolderEntries } = useUpload();
-  const [downloadProgress, setDownloadProgress] = useState("");
-  const [folders, setFolders] = useState<any[]>([]);
-  const [files, setFiles] = useState<any[]>([]);
-  const [breadcrumb, setBreadcrumb] = useState<{ id: bigint | null; name: string }[]>([{ id: null, name: "Dysk" }]);
+  const [items, setItems] = useState<any[]>([]);
+  const [breadcrumb, setBreadcrumb] = useState<{ path: string; name: string }[]>([{ path: "", name: "Dysk" }]);
   const [loading, setLoading] = useState(true);
+  const [downloadProgress, setDownloadProgress] = useState("");
   const [myRole, setMyRole] = useState<string>("read");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<any[] | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<string>(() => localStorage.getItem("drive_view_mode") || "tiles");
+  const [detailsItem, setDetailsItem] = useState<any>(null);
+  const [detailsPerms, setDetailsPerms] = useState<any[]>([]);
+  const [tileMenuId, setTileMenuId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const reloadTokenRef = useRef(0);
 
   const setFolderInputRef = (el: HTMLInputElement | null) => {
     folderInputRef.current = el;
@@ -29,16 +35,13 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
     }
   };
 
-  const currentFolderId = breadcrumb[breadcrumb.length - 1].id;
-  const reloadTokenRef = useRef(0);
+  const currentPath = breadcrumb[breadcrumb.length - 1].path;
 
   const reload = async () => {
-    if (!actor) return;
     const myToken = ++reloadTokenRef.current;
-    const contents = await actor.listFolderContents(currentFolderId === null ? [] : [currentFolderId]);
+    const result = await odList(currentPath);
     if (myToken !== reloadTokenRef.current) return;
-    setFolders(contents.folders);
-    setFiles(contents.files);
+    setItems(result.items || []);
     setLoading(false);
   };
 
@@ -49,22 +52,29 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
       });
     }
-  }, [actor, currentFolderId]);
+  }, [actor, currentPath]);
 
   useEffect(() => {
-    if (!actor) return;
-    const interval = setInterval(() => { reload(); }, 3000);
+    const interval = setInterval(() => { reload(); }, 5000);
     return () => clearInterval(interval);
-  }, [actor, currentFolderId]);
+  }, [currentPath]);
 
   useEffect(() => {
     if (lastCompletedAt > 0) reload();
   }, [lastCompletedAt]);
 
+  useEffect(() => {
+    if (!tileMenuId) return;
+    const closeMenu = () => setTileMenuId(null);
+    document.addEventListener("click", closeMenu);
+    return () => document.removeEventListener("click", closeMenu);
+  }, [tileMenuId]);
+
   const canWrite = myRole === "write" || myRole === "admin";
 
-  const openFolder = (folder: any) => {
-    setBreadcrumb((prev) => [...prev, { id: folder.id, name: folder.name }]);
+  const openFolder = (item: any) => {
+    const newPath = currentPath ? currentPath + "/" + item.name : item.name;
+    setBreadcrumb((prev) => [...prev, { path: newPath, name: item.name }]);
     setSearchResults(null);
     setSearch("");
   };
@@ -78,24 +88,24 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
   const createNewFolder = async () => {
     const name = prompt("Nazwa nowego folderu:");
     if (!name || !name.trim()) return;
-    await actor.createFolder(name.trim(), currentFolderId === null ? [] : [currentFolderId]);
+    await odCreateFolder(currentPath, name.trim());
     reload();
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-    uploadFilesGlobal(e.target.files, currentFolderId);
+    uploadFilesGlobal(e.target.files, currentPath);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files;
-    if (!selected) return;
-    const entries = Array.from(selected).map((file) => ({
+    const selectedFiles = e.target.files;
+    if (!selectedFiles) return;
+    const entries = Array.from(selectedFiles).map((file) => ({
       file,
       relativePath: (file as any).webkitRelativePath || file.name,
     }));
-    uploadFolderEntries(entries, currentFolderId);
+    uploadFolderEntries(entries, currentPath);
     if (folderInputRef.current) folderInputRef.current.value = "";
   };
 
@@ -131,62 +141,55 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setDragActive(false);
-    const items = e.dataTransfer.items;
-    if (items && items.length > 0 && "webkitGetAsEntry" in items[0]) {
+    const dtItems = e.dataTransfer.items;
+    if (dtItems && dtItems.length > 0 && "webkitGetAsEntry" in dtItems[0]) {
       const entries: { file: File; relativePath: string }[] = [];
-      const topEntries = Array.from(items)
+      const topEntries = Array.from(dtItems)
         .map((item) => (item as any).webkitGetAsEntry())
         .filter((entry) => entry !== null);
       for (const entry of topEntries) {
         const found = await readEntry(entry, "");
         entries.push(...found);
       }
-      uploadFolderEntries(entries, currentFolderId);
+      uploadFolderEntries(entries, currentPath);
     } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      uploadFilesGlobal(e.dataTransfer.files, currentFolderId);
+      uploadFilesGlobal(e.dataTransfer.files, currentPath);
     }
   };
 
-  const downloadFile = async (f: any) => {
-    setDownloadProgress("Pobieram " + f.name + "...");
-    const parts: Uint8Array[] = [];
-    for (let i = 0; i < Number(f.totalChunks); i++) {
-      const chunk = await actor.getChunk(f.id, i);
-      if (chunk && chunk.length > 0) parts.push(new Uint8Array(chunk[0]));
+  const previewFile = async (item: any) => {
+    const result = await odPreview(item.id);
+    if (result.url) {
+      setPreviewUrl(result.url);
+      setPreviewName(item.name);
+    } else {
+      downloadFile(item);
+    }
+  };
+
+  const downloadFile = async (item: any) => {
+    setDownloadProgress("Pobieram " + item.name + "...");
+    const result = await odDownloadUrl(item.id);
+    if (result.downloadUrl) {
+      const a = document.createElement("a");
+      a.href = result.downloadUrl;
+      a.download = item.name;
+      a.click();
     }
     setDownloadProgress("");
-    const blob = new Blob(parts as BlobPart[], { type: f.contentType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = f.name;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
-  const removeFile = async (id: bigint) => {
-    if (!confirm("Usunąć ten plik?")) return;
-    await actor.deleteFile(id);
-    reload();
-  };
-
-  const removeFolder = async (folder: any) => {
-    const contents = await actor.listFolderContents([folder.id]);
-    if (contents.folders.length > 0 || contents.files.length > 0) {
-      alert("Folder nie jest pusty. Usuń najpierw jego zawartość.");
-      return;
-    }
-    if (!confirm("Usunąć folder \"" + folder.name + "\"?")) return;
-    await actor.deleteFolder(folder.id);
+  const removeItem = async (item: any) => {
+    if (!confirm((item.isFolder ? "Usunąć folder" : "Usunąć plik") + " \"" + item.name + "\"?")) return;
+    await odDelete(item.id);
     reload();
   };
 
   const runSearch = async (q: string) => {
     setSearch(q);
     if (!q.trim()) { setSearchResults(null); return; }
-    const all = await actor.listFiles();
-    const matches = all.filter((f: any) => f.name.toLowerCase().includes(q.toLowerCase()));
-    setSearchResults(matches);
+    const result = await odSearch(q);
+    setSearchResults(result.items || []);
   };
 
   const formatSize = (bytes: number) => {
@@ -195,77 +198,67 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
 
-  const formatDate = (ns: bigint) => {
-    const ms = Number(ns) / 1_000_000;
-    return new Date(ms).toLocaleDateString("pl-PL", { year: "numeric", month: "short", day: "numeric" });
+  const formatDate = (iso: string) => {
+    if (!iso) return "";
+    return new Date(iso).toLocaleDateString("pl-PL", { year: "numeric", month: "short", day: "numeric" });
   };
 
-  const toggleFileSelect = (id: string) => {
-    setSelectedFiles((prev) => {
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) { next.delete(id); } else { next.add(id); }
       return next;
     });
   };
 
-  const toggleFolderSelect = (id: string) => {
-    setSelectedFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); } else { next.add(id); }
-      return next;
-    });
+  const clearSelection = () => setSelected(new Set());
+
+  const changeViewMode = (mode: string) => {
+    setViewMode(mode);
+    localStorage.setItem("drive_view_mode", mode);
   };
 
-  const clearSelection = () => {
-    setSelectedFiles(new Set());
-    setSelectedFolders(new Set());
-  };
-
-  const bulkDelete = async () => {
-    const total = selectedFiles.size + selectedFolders.size;
-    if (total === 0) return;
-    const nonEmptyFolders: string[] = [];
-    for (const id of selectedFolders) {
-      const contents = await actor.listFolderContents([BigInt(id)]);
-      if (contents.folders.length > 0 || contents.files.length > 0) {
-        const f = folders.find((fo: any) => String(fo.id) === id);
-        nonEmptyFolders.push(f ? f.name : id);
-      }
-    }
-    if (nonEmptyFolders.length > 0) {
-      alert("Te foldery nie są puste i nie zostaną usunięte: " + nonEmptyFolders.join(", ") + ". Usuń najpierw ich zawartość.");
-      return;
-    }
-    if (!confirm("Usunąć zaznaczone " + total + " element(y/ów)?")) return;
-    for (const id of selectedFiles) {
-      await actor.deleteFile(BigInt(id));
-    }
-    for (const id of selectedFolders) {
-      await actor.deleteFolder(BigInt(id));
-    }
-    clearSelection();
+  const renameItem = async (item: any) => {
+    const newName = prompt("Nowa nazwa:", item.name);
+    if (!newName || !newName.trim() || newName === item.name) return;
+    await odRename(item.id, newName.trim());
     reload();
   };
 
-  const bulkMove = async () => {
-    const total = selectedFiles.size + selectedFolders.size;
-    if (total === 0) return;
-    const targetName = prompt("Podaj nazwę folderu docelowego (musi już istnieć w tym samym miejscu, albo wpisz pusto dla katalogu głównego bieżącego poziomu):");
-    if (targetName === null) return;
-    let targetId: bigint | null = null;
-    if (targetName.trim()) {
-      const target = folders.find((f) => f.name.toLowerCase() === targetName.trim().toLowerCase());
-      if (!target) {
-        alert("Nie znaleziono folderu o tej nazwie w bieżącym widoku.");
-        return;
-      }
-      targetId = target.id;
+  const shareItem = async (item: any) => {
+    const result = await odShare(item.id, "edit");
+    if (result.url) {
+      await navigator.clipboard.writeText(result.url).catch(() => {});
+      alert("Link skopiowany do schowka:\n" + result.url);
+    } else {
+      alert("Nie udało się utworzyć linku.");
     }
-    for (const id of selectedFiles) {
-      await actor.moveFile(BigInt(id), targetId === null ? [] : [targetId]);
+  };
+
+  const moveItem = async (item: any) => {
+    const targetName = prompt("Nazwa folderu docelowego (musi być widoczny w bieżącym widoku):");
+    if (!targetName || !targetName.trim()) return;
+    const target = items.find((i) => i.isFolder && i.name.toLowerCase() === targetName.trim().toLowerCase());
+    if (!target) {
+      alert("Nie znaleziono takiego folderu w bieżącym widoku.");
+      return;
     }
-    for (const id of selectedFolders) {
-      await actor.moveFolder(BigInt(id), targetId === null ? [] : [targetId]);
+    await odMove(item.id, target.id);
+    reload();
+  };
+
+  const showDetails = async (item: any) => {
+    setDetailsItem(item);
+    setDetailsPerms([]);
+    const result = await odPermissions(item.id);
+    setDetailsPerms(result.permissions || []);
+  };
+
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm("Usunąć zaznaczone " + selected.size + " element(y/ów)?")) return;
+    for (const id of selected) {
+      await odDelete(id);
     }
     clearSelection();
     reload();
@@ -280,7 +273,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
       <div className="max-w-[1600px] mx-auto p-6 space-y-6">
         <div className="flex items-center gap-4 pb-2">
           <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Dysk</h1>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Bartolini Drive</h1>
         </div>
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
         <div
@@ -289,7 +282,6 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
           onDragLeave={() => setDragActive(false)}
           onDrop={handleDrop}
         >
-
           <div className="flex items-center gap-1 text-sm text-[var(--text-secondary)] flex-wrap">
             {breadcrumb.map((b, i) => (
               <span key={i} className="flex items-center gap-1">
@@ -307,6 +299,11 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
               placeholder="Szukaj plików..."
               className="flex-1 min-w-[180px] border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm"
             />
+            <select value={viewMode} onChange={(e) => changeViewMode(e.target.value)} className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm text-[var(--text-secondary)]">
+              <option value="list">Lista</option>
+              <option value="compact">Lista kompaktowa</option>
+              <option value="tiles">Kafelki</option>
+            </select>
             {canWrite && (
               <>
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
@@ -325,112 +322,194 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
           </div>
           {downloadProgress && <p className="text-xs text-[var(--text-muted)]">{downloadProgress}</p>}
           {progress && uploading && <p className="text-xs text-[var(--text-muted)]">{progress}</p>}
-          {(selectedFiles.size + selectedFolders.size) > 0 && (
-            <div className="flex items-center gap-2 bg-cyan-950/20 border border-cyan-800 rounded p-2 text-sm">
-              <span>Zaznaczono: {selectedFiles.size + selectedFolders.size}</span>
-              <button onClick={bulkMove} className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs">Przenieś</button>
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-800 rounded p-2 text-sm">
+              <span>Zaznaczono: {selected.size}</span>
               <button onClick={bulkDelete} className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Usuń</button>
               <button onClick={clearSelection} className="px-2 py-1 border border-[var(--border-color)] rounded text-xs">Anuluj zaznaczenie</button>
             </div>
           )}
-          <div className="overflow-auto rounded border border-[var(--border-color)] max-h-[600px]">
-            <table className="w-full text-xs">
-              <thead className="bg-[var(--bg-hover)] sticky top-0">
-                <tr className="text-left text-[var(--text-muted)]">
-                  <th className="p-2 w-8">
-                    {canWrite && (folders.length > 0 || files.length > 0) && (
-                      <input
-                        type="checkbox"
-                        checked={selectedFiles.size + selectedFolders.size > 0 && selectedFiles.size === files.length && selectedFolders.size === folders.length}
-                        onChange={() => {
-                          const allSelected = selectedFiles.size === files.length && selectedFolders.size === folders.length && (files.length + folders.length) > 0;
-                          if (allSelected) {
-                            clearSelection();
-                          } else {
-                            setSelectedFiles(new Set(files.map((f: any) => String(f.id))));
-                            setSelectedFolders(new Set(folders.map((f: any) => String(f.id))));
-                          }
-                        }}
-                      />
-                    )}
-                  </th>
-                  <th className="p-2 w-14"></th>
-                  <th className="p-2">Nazwa</th>
-                  <th className="p-2">Typ</th>
-                  <th className="p-2 text-right">Rozmiar</th>
-                  <th className="p-2">Data</th>
-                  <th className="p-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {searchResults !== null ? (
-                  searchResults.length === 0 ? (
-                    <tr><td colSpan={7} className="p-4 text-center text-[var(--text-muted)]">Brak wyników.</td></tr>
+          {searchResults !== null ? (
+            <div className="overflow-auto rounded border border-[var(--border-color)] max-h-[600px]">
+              <table className="w-full text-xs">
+                <thead className="bg-[var(--bg-hover)] sticky top-0">
+                  <tr className="text-left text-[var(--text-muted)]">
+                    <th className="p-2 w-8">Lp.</th>
+                    <th className="p-2 w-8"></th>
+                    <th className="p-2">Nazwa</th>
+                    <th className="p-2 text-right">Rozmiar</th>
+                    <th className="p-2">Data</th>
+                    <th className="p-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {searchResults.length === 0 ? (
+                    <tr><td colSpan={6} className="p-4 text-center text-[var(--text-muted)]">Brak wyników.</td></tr>
                   ) : (
-                    searchResults.map((f) => (
-                      <tr key={String(f.id)} className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-hover)]">
+                    searchResults.map((f, idx) => (
+                      <tr key={f.id} className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-hover)]">
+                        <td className="p-2 text-gray-400">{idx + 1}</td>
                         <td className="p-2"></td>
-                        <td className="p-2">
-                          {f.contentType.startsWith("image/") && <DriveThumbnail link={"drive:" + String(f.id)} actor={actor} />}
-                        </td>
                         <td className="p-2">{f.name}</td>
-                        <td className="p-2 text-[var(--text-secondary)]">{f.contentType}</td>
-                        <td className="p-2 text-right font-mono">{formatSize(Number(f.size))}</td>
-                        <td className="p-2 text-[var(--text-secondary)]">{formatDate(f.createdAt)}</td>
+                        <td className="p-2 text-right font-mono">{formatSize(f.size)}</td>
+                        <td className="p-2 text-[var(--text-secondary)]">{formatDate(f.lastModified)}</td>
                         <td className="p-2 whitespace-nowrap">
                           <button onClick={() => downloadFile(f)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Pobierz</button>
-                          {canWrite && <button onClick={() => removeFile(f.id)} className="text-red-500 hover:text-red-400 text-xs">✕</button>}
+                          {canWrite && <button onClick={() => removeItem(f)} className="text-red-500 hover:text-red-400 text-xs">✕</button>}
                         </td>
                       </tr>
                     ))
-                  )
-                ) : folders.length === 0 && files.length === 0 ? (
-                  <tr><td colSpan={7} className="p-4 text-center text-[var(--text-muted)]">Ten folder jest pusty. Przeciągnij tu pliki, żeby je wgrać.</td></tr>
-                ) : (
-                  <>
-                    {folders.map((f) => (
-                      <tr key={"folder-" + String(f.id)} className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-hover)]">
-                        <td className="p-2">
-                          {canWrite && <input type="checkbox" checked={selectedFolders.has(String(f.id))} onChange={() => toggleFolderSelect(String(f.id))} />}
-                        </td>
-                        <td className="p-2">
-                          <button onClick={() => openFolder(f)} className="hover:text-cyan-500 hover:underline flex items-center gap-1">
-                            📁 {f.name}
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : viewMode === "tiles" ? (
+            items.length === 0 ? (
+              <p className="p-4 text-center text-sm text-[var(--text-muted)]">Ten folder jest pusty. Przeciągnij tu pliki, żeby je wgrać.</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[600px] overflow-auto p-1">
+                {items.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => (item.isFolder ? openFolder(item) : previewFile(item))}
+                    className="border border-[var(--border-color)] rounded-lg p-3 flex flex-col items-center gap-1 text-center hover:bg-[var(--bg-hover)] cursor-pointer"
+                  >
+                    {!item.isFolder && item.thumbnailUrl ? (
+                      <img src={item.thumbnailUrl} alt={item.name} className="w-16 h-16 object-cover rounded" />
+                    ) : (
+                      <span className="text-3xl">{item.isFolder ? "📁" : "📄"}</span>
+                    )}
+                    <span className="text-xs truncate w-full" title={item.name}>{item.name}</span>
+                    <span className="text-[10px] text-[var(--text-muted)]">{item.isFolder ? "—" : formatSize(item.size)}</span>
+                    <div className="relative mt-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={(e) => {
+                          if (tileMenuId === item.id) {
+                            setTileMenuId(null);
+                          } else {
+                            const rect = (e.target as HTMLElement).getBoundingClientRect();
+                            setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+                            setTileMenuId(item.id);
+                          }
+                        }}
+                        className="text-lg font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded px-3 py-0.5"
+                      >⋯</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            <div className="overflow-auto rounded border border-[var(--border-color)] max-h-[600px]">
+              <table className="w-full text-xs">
+                <thead className="bg-[var(--bg-hover)] sticky top-0">
+                  <tr className="text-left text-[var(--text-muted)]">
+                    <th className={viewMode === "compact" ? "p-1 w-8" : "p-2 w-8"}>Lp.</th>
+                    <th className={viewMode === "compact" ? "p-1 w-8" : "p-2 w-8"}></th>
+                    <th className={viewMode === "compact" ? "p-1" : "p-2"}>Nazwa</th>
+                    <th className={(viewMode === "compact" ? "p-1" : "p-2") + " text-right"}>Rozmiar</th>
+                    {viewMode !== "compact" && <th className="p-2">Data</th>}
+                    <th className={viewMode === "compact" ? "p-1" : "p-2"}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.length === 0 ? (
+                    <tr><td colSpan={viewMode === "compact" ? 5 : 6} className="p-4 text-center text-[var(--text-muted)]">Ten folder jest pusty. Przeciągnij tu pliki, żeby je wgrać.</td></tr>
+                  ) : (
+                    items.map((item, idx) => {
+                      const cell = viewMode === "compact" ? "p-1" : "p-2";
+                      return (
+                        <tr key={item.id} className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-hover)]">
+                      <td className={cell + " text-gray-400"}>{idx + 1}</td>
+                      <td className={cell}>
+                        {canWrite && <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelect(item.id)} />}
+                      </td>
+                      <td className={cell}>
+                        {item.isFolder ? (
+                          <button onClick={() => openFolder(item)} className="hover:text-cyan-500 hover:underline flex items-center gap-1">
+                            📁 {item.name}
                           </button>
-                        </td>
-                        <td className="p-2 text-[var(--text-secondary)]">Folder</td>
-                        <td className="p-2 text-right font-mono text-[var(--text-muted)]">—</td>
-                        <td className="p-2 text-[var(--text-secondary)]">{formatDate(f.createdAt)}</td>
-                        <td className="p-2 whitespace-nowrap">
-                          {canWrite && <button onClick={() => removeFolder(f)} className="text-red-500 hover:text-red-400 text-xs">✕</button>}
-                        </td>
-                      </tr>
-                    ))}
-                    {files.map((f) => (
-                      <tr key={"file-" + String(f.id)} className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-hover)]">
-                        <td className="p-2">
-                          {canWrite && <input type="checkbox" checked={selectedFiles.has(String(f.id))} onChange={() => toggleFileSelect(String(f.id))} />}
-                        </td>
-                        <td className="p-2">
-                          {f.contentType.startsWith("image/") && <DriveThumbnail link={"drive:" + String(f.id)} actor={actor} />}
-                        </td>
-                        <td className="p-2">{f.name}</td>
-                        <td className="p-2 text-[var(--text-secondary)]">{f.contentType}</td>
-                        <td className="p-2 text-right font-mono">{formatSize(Number(f.size))}</td>
-                        <td className="p-2 text-[var(--text-secondary)]">{formatDate(f.createdAt)}</td>
-                        <td className="p-2 whitespace-nowrap">
-                          <button onClick={() => downloadFile(f)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Pobierz</button>
-                          {canWrite && <button onClick={() => removeFile(f.id)} className="text-red-500 hover:text-red-400 text-xs">✕</button>}
-                        </td>
-                      </tr>
-                    ))}
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
+                        ) : (
+                          <button onClick={() => previewFile(item)} className="hover:text-cyan-500 hover:underline flex items-center gap-1">
+                            📄 {item.name}
+                          </button>
+                        )}
+                      </td>
+                      <td className={cell + " text-right font-mono text-[var(--text-muted)]"}>{item.isFolder ? "—" : formatSize(item.size)}</td>
+                      {viewMode !== "compact" && <td className="p-2 text-[var(--text-secondary)]">{formatDate(item.lastModified)}</td>}
+                      <td className={cell + " whitespace-nowrap"}>
+                        {!item.isFolder && <button onClick={() => downloadFile(item)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Pobierz</button>}
+                        {canWrite && <button onClick={() => shareItem(item)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Udostępnij</button>}
+                        {canWrite && viewMode !== "compact" && <button onClick={() => renameItem(item)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs mr-2">Zmień nazwę</button>}
+                        {canWrite && viewMode !== "compact" && <button onClick={() => moveItem(item)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs mr-2">Przenieś</button>}
+                        <button onClick={() => showDetails(item)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs mr-2">Szczegóły</button>
+                        {canWrite && <button onClick={() => removeItem(item)} className="text-red-500 hover:text-red-400 text-xs">✕</button>}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
+      {tileMenuId && menuPos && (() => {
+        const menuItem = items.find((i) => i.id === tileMenuId);
+        if (!menuItem) return null;
+        return (
+          <div
+            className="fixed z-50 bg-[var(--bg-card)] border border-[var(--border-color)] rounded shadow-lg py-1 flex flex-col whitespace-nowrap"
+            style={{ left: menuPos.x, top: menuPos.y, transform: "translate(-50%, -100%)" }}
+          >
+            {!menuItem.isFolder && <button onClick={() => { setTileMenuId(null); downloadFile(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-cyan-600">Pobierz</button>}
+            {canWrite && <button onClick={() => { setTileMenuId(null); shareItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-cyan-600">Udostępnij</button>}
+            {canWrite && <button onClick={() => { setTileMenuId(null); renameItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]">Zmień nazwę</button>}
+            {canWrite && <button onClick={() => { setTileMenuId(null); moveItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]">Przenieś</button>}
+            <button onClick={() => { setTileMenuId(null); showDetails(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]">Szczegóły</button>
+            {canWrite && <button onClick={() => { setTileMenuId(null); removeItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-red-500">✕ Usuń</button>}
+          </div>
+        );
+      })()}
+      {previewUrl && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setPreviewUrl(null)}>
+          <div className="bg-[var(--bg-card)] rounded-lg w-full h-full max-w-5xl flex flex-col shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-3 border-b border-[var(--border-color)]">
+              <span className="font-medium text-sm text-[var(--text-primary)] truncate">{previewName}</span>
+              <button onClick={() => setPreviewUrl(null)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xl leading-none px-2">✕</button>
+            </div>
+            <iframe src={previewUrl} className="flex-1 w-full rounded-b-lg" title={previewName} />
+          </div>
+        </div>
+      )}
+      {detailsItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setDetailsItem(null)}>
+          <div className="bg-[var(--bg-card)] rounded-lg p-5 max-w-md w-full space-y-3 shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-semibold text-[var(--text-primary)]">{detailsItem.name}</h2>
+            <p className="text-xs text-[var(--text-muted)]">Rozmiar: {detailsItem.isFolder ? "—" : formatSize(detailsItem.size)}</p>
+            <p className="text-xs text-[var(--text-muted)]">Ostatnia zmiana: {formatDate(detailsItem.lastModified)}</p>
+            <div>
+              <p className="text-xs font-medium text-[var(--text-muted)] mb-1">Dostęp:</p>
+              {detailsPerms.length === 0 ? (
+                <p className="text-xs text-[var(--text-muted)]">Tylko Ty (brak udostępnień).</p>
+              ) : (
+                <ul className="text-xs text-[var(--text-secondary)] space-y-1">
+                  {detailsPerms.map((p, i) => (
+                    <li key={i}>
+                      {p.grantedTo ? p.grantedTo : (p.type === "edit" ? "Link do edycji" : p.type === "view" ? "Link do podglądu" : "Nieznany")}
+                      {p.roles.length > 0 && " (" + p.roles.join(", ") + ")"}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <button onClick={() => setDetailsItem(null)} className="px-3 py-1.5 text-sm border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]">
+              Zamknij
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

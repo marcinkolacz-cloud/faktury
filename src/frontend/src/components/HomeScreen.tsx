@@ -16,7 +16,7 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
     { id: "warehouse", title: "Magazyn", desc: "Stany, przyjęcia, wydania do projektów" },
     { id: "tickets", title: "Zgłoszenia", desc: "System ticketów" },
     { id: "ksef", title: "KSeF", desc: "Pobieranie faktur" },
-    { id: "drive", title: "Dysk", desc: "Pliki, zdjęcia, dokumenty" },
+    { id: "drive", title: "Bartolini Drive", desc: "Pliki, zdjęcia, dokumenty (OneDrive)" },
   ];
 
   const visibleTiles = allowedModules === null ? [] : tiles.filter((t) => allowedModules.includes(t.id));

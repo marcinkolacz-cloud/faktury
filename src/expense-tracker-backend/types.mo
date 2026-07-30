@@ -80,6 +80,21 @@ module {
     deviceNumber : Text;
   };
 
+  public type OneDriveTokens = {
+    accessToken : Text;
+    refreshToken : Text;
+    expiresAt : Int;
+  };
+
+  public type OneDriveItem = {
+    id : Text;
+    name : Text;
+    isFolder : Bool;
+    size : Nat;
+    parentPath : Text;
+    lastModified : Text;
+  };
+
   public type Folder = {
     id : Nat;
     name : Text;
