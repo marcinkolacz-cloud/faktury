@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPublicActor } from "../lib/publicActor";
 import { useTheme } from "../providers/ThemeProvider";
 
@@ -41,6 +41,10 @@ export function PublicTicketForm() {
   const { theme, toggleTheme } = useTheme();
   const [lang, setLang] = useState<Lang>("pl");
   const t = translations[lang];
+
+  useEffect(() => {
+    document.title = "Bas App Ticket";
+  }, []);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");

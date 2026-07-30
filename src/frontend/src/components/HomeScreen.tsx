@@ -13,6 +13,7 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
   const tiles = [
     { id: "invoices", title: "Rejestr Faktur", desc: "Zaliczki, wydatki, projekty" },
     { id: "projects", title: "Projekty", desc: "Koszty projektów — cały zespół" },
+    { id: "calendar", title: "Kalendarz", desc: "Spotkania, wyjazdy, ważne daty, zadania" },
     { id: "warehouse", title: "Magazyn", desc: "Stany, przyjęcia, wydania do projektów" },
     { id: "tickets", title: "Zgłoszenia", desc: "System ticketów" },
     { id: "ksef", title: "KSeF", desc: "Pobieranie faktur" },

@@ -6,6 +6,7 @@ import { Dashboard } from "./components/Dashboard";
 import { HomeScreen } from "./components/HomeScreen";
 import { WarehouseModule } from "./components/WarehouseModule";
 import { ProjectsModule } from "./components/ProjectsModule";
+import { CalendarModule } from "./components/CalendarModule";
 import { UploadProvider } from "./providers/UploadContext";
 import { PublicTicketForm } from "./components/PublicTicketForm";
 import { TicketStatusPage } from "./components/TicketStatusPage";
@@ -154,6 +155,9 @@ function ModuleRouter() {
   }
   if (module === "projects") {
     return <ProjectsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  }
+  if (module === "calendar") {
+    return <CalendarModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
   }
   if (module === "tickets") {
     return <TicketsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;

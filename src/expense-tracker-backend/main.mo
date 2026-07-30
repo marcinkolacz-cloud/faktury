@@ -19,6 +19,7 @@ import WarehouseApi "mixins/WarehouseApi";
 import TicketsApi "mixins/TicketsApi";
 import TicketAttachmentsApi "mixins/TicketAttachmentsApi";
 import FilesApi "mixins/FilesApi";
+import CalendarApi "mixins/CalendarApi";
 
 persistent actor {
   let projects = Map.empty<Nat, Types.Project>();
@@ -39,6 +40,9 @@ persistent actor {
   let files = Map.empty<Nat, Types.FileMeta>();
   let fileChunks = Map.empty<Text, Blob>();
   let folders = Map.empty<Nat, Types.Folder>();
+  let calendarEvents = Map.empty<Nat, Types.CalendarEvent>();
+  let calendarAttachments = Map.empty<Nat, [(Text, Text)]>();
+  let calendarNotes = Map.empty<Nat, Types.CalendarNote>();
   let recentSubmissionTimes = List.empty<Int>();
   let recentClientReplyTimes = List.empty<Int>();
   let accessRoles = Map.empty<Principal, Types.Role>();
@@ -74,6 +78,7 @@ persistent actor {
   include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes);
   include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles);
   include FilesApi(files, fileChunks, folders, accessRoles);
+  include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles);
 
   func isAdmin(caller : Principal) : Bool {
     let bootstrapMatch = switch (adminPrincipal) { case (?admin) { Principal.equal(admin, caller) }; case null { false } };

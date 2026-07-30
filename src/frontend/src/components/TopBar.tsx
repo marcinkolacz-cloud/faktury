@@ -28,6 +28,7 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
   const tabs = [
     { id: "invoices", label: "Rejestr Faktur" },
     { id: "projects", label: "Projekty" },
+    { id: "calendar", label: "Kalendarz" },
     { id: "warehouse", label: "Magazyn" },
     { id: "tickets", label: "Zgłoszenia" },
     { id: "ksef", label: "KSeF" },

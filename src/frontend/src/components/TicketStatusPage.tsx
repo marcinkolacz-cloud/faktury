@@ -67,6 +67,11 @@ export function TicketStatusPage() {
   const { theme, toggleTheme } = useTheme();
   const [lang, setLang] = useState<Lang>("pl");
   const t = translations[lang];
+
+  useEffect(() => {
+    document.title = "Bas App Check Status";
+  }, []);
+
   const params = new URLSearchParams(window.location.search);
   const tokenFromUrl = params.get("token") || "";
   const [tokenInput, setTokenInput] = useState(tokenFromUrl);

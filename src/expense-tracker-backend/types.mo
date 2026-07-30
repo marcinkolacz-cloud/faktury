@@ -80,6 +80,28 @@ module {
     deviceNumber : Text;
   };
 
+  public type CalendarEventType = { #meeting; #trip; #importantDate; #task };
+
+  public type CalendarEvent = {
+    id : Nat;
+    title : Text;
+    description : Text;
+    startDate : Text;
+    endDate : Text;
+    eventType : CalendarEventType;
+    createdBy : Text;
+    createdAt : Int;
+    done : Bool;
+  };
+
+  public type CalendarNote = {
+    id : Nat;
+    eventId : Nat;
+    title : Text;
+    content : Text;
+    createdAt : Int;
+  };
+
   public type OneDriveTokens = {
     accessToken : Text;
     refreshToken : Text;
