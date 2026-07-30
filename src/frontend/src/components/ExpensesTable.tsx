@@ -149,6 +149,7 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
         <table className="w-full text-xs">
           <thead className="bg-[var(--bg-page)] sticky top-0">
             <tr className="text-left text-gray-500">
+              <th className="p-2 w-8">Lp.</th>
               <th className="p-2">Produkt</th>
               <th className="p-2">Dostawca</th>
               <th className="p-2">Projekt</th>
@@ -165,6 +166,7 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
               <th className="p-2"></th>
             </tr>
             <tr className="bg-[var(--bg-card)]">
+              <th className="p-1"></th>
               <th className="p-1"><input value={colFilters.productService} onChange={(e) => setColFilter("productService", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
               <th className="p-1"><input value={colFilters.supplier} onChange={(e) => setColFilter("supplier", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
               <th className="p-1"><input value={colFilters.project} onChange={(e) => setColFilter("project", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
@@ -181,8 +183,8 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
             </tr>
           </thead>
           <tbody>
-            {sorted.map((e) => (
-              <ExpenseRow key={String(e.id)} expense={e} projectName={projectNameById(e.projectId)} projects={projects} actor={actor} onChange={onChange} onToggle={onToggle} canWrite={canWrite} ksefSent={ksefSentMap[String(e.id)] || false} onToggleKsef={onToggleKsef} />
+            {sorted.map((e, idx) => (
+              <ExpenseRow key={String(e.id)} rowNumber={idx + 1} expense={e} projectName={projectNameById(e.projectId)} projects={projects} actor={actor} onChange={onChange} onToggle={onToggle} canWrite={canWrite} ksefSent={ksefSentMap[String(e.id)] || false} onToggleKsef={onToggleKsef} />
             ))}
           </tbody>
         </table>

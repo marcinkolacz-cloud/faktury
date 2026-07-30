@@ -160,6 +160,7 @@ export function StockMovementsPanel({ items, movements, projects, actor, onChang
         <table className="w-full text-xs">
           <thead className="bg-[var(--bg-page)] sticky top-0">
             <tr className="text-left text-gray-500">
+              <th className="p-2 w-8">Lp.</th>
               <th className="p-2 w-8"></th>
               <th className="p-2">Data</th>
               <th className="p-2">Pozycja</th>
@@ -172,6 +173,7 @@ export function StockMovementsPanel({ items, movements, projects, actor, onChang
             <tr className="bg-[var(--bg-card)]">
               <th className="p-1"></th>
               <th className="p-1"></th>
+              <th className="p-1"></th>
               <th className="p-1"><input value={movementFilters.item} onChange={(e) => setMovementFilter("item", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
               <th className="p-1"></th>
               <th className="p-1"></th>
@@ -181,9 +183,10 @@ export function StockMovementsPanel({ items, movements, projects, actor, onChang
             </tr>
           </thead>
           <tbody>
-            {[...filteredMovements].reverse().map((m) => (
+            {[...filteredMovements].reverse().map((m, idx) => (
               <StockMovementRow
                 key={String(m.id)}
+                rowNumber={idx + 1}
                 movement={m}
                 itemName={itemName(m.itemId)}
                 projects={projects}

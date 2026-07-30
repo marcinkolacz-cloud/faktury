@@ -191,6 +191,21 @@ mixin (
     };
   };
 
+  public shared ({ caller }) func bulkDeleteFolders(folderIds : [Nat]) : async Nat {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    var count = 0;
+    for (folderId in folderIds.vals()) {
+      switch (folders.get(folderId)) {
+        case (?_) {
+          folders.remove(folderId);
+          count += 1;
+        };
+        case null {};
+      };
+    };
+    count;
+  };
+
   public shared ({ caller }) func deleteFolder(folderId : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (folders.get(folderId)) {

@@ -6,6 +6,12 @@
       "candid": "src/backend/dist/backend.did",
       "build": "mops build"
     },
+    "backend2": {
+      "type": "custom",
+      "wasm": "src/backend/dist/backend.wasm",
+      "candid": "src/backend/dist/backend.did",
+      "build": "mops build"
+    },
     "frontend": {
       "type": "assets",
       "source": ["src/frontend/dist"],

@@ -28,6 +28,16 @@ mixin (
     newId;
   };
 
+  public shared ({ caller }) func importProjects(rows : [Types.Project]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (p in rows.vals()) {
+      projects.add(p.id, p);
+      count += 1;
+    };
+    count;
+  };
+
   public query ({ caller }) func listMyProjects() : async [Types.Project] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.Project>();

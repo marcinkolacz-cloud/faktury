@@ -32,6 +32,16 @@ mixin (
     };
   };
 
+  public shared ({ caller }) func importInviteCodes(rows : [InvitesLib.InviteCode]) : async Nat {
+    if (not isAdmin(caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (c in rows.vals()) {
+      inviteCodes.add(c.code, c);
+      count += 1;
+    };
+    count;
+  };
+
   public shared ({ caller }) func listInviteCodes() : async [InvitesLib.InviteCode] {
     if (not isAdmin(caller)) { Runtime.trap("Only admin can list codes"); };
     InvitesLib.listCodes(inviteCodes);

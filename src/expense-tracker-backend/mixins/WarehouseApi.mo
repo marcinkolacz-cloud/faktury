@@ -88,6 +88,16 @@ mixin (
     newId;
   };
 
+  public shared ({ caller }) func importWarehouseItems(rows : [Types.WarehouseItem]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (i in rows.vals()) {
+      warehouseItems.add(i.id, i);
+      count += 1;
+    };
+    count;
+  };
+
   public query ({ caller }) func listWarehouseItems() : async [Types.WarehouseItem] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.WarehouseItem>();
@@ -191,6 +201,16 @@ mixin (
       };
       case null { null };
     };
+  };
+
+  public shared ({ caller }) func importStockMovements(rows : [Types.StockMovement]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (m in rows.vals()) {
+      stockMovements.add(m.id, m);
+      count += 1;
+    };
+    count;
   };
 
   public query ({ caller }) func listStockMovements() : async [Types.StockMovement] {

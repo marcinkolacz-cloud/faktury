@@ -373,7 +373,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
               {filteredTickets.length === 0 ? (
                 <p className="p-4 text-sm text-gray-500">{tickets.length === 0 ? "Brak zgłoszeń." : "Brak wyników dla podanych filtrów."}</p>
               ) : (
-                [...filteredTickets].reverse().map((t) => (
+                [...filteredTickets].reverse().map((t, idx) => (
                   <button
                     key={String(t.id)}
                     onClick={async () => {
@@ -389,6 +389,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-sm text-[var(--text-primary)] truncate flex items-center gap-1.5">
+                        <span className="shrink-0 text-[10px] text-gray-400 font-mono">{idx + 1}.</span>
                         {unreadCount(t) > 0 && (
                           <span className="shrink-0 bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
                             {unreadCount(t)}

@@ -2,8 +2,8 @@ import { useState } from "react";
 import { DriveFilePicker } from "./DriveFilePicker";
 import { DriveThumbnail } from "./DriveThumbnail";
 
-export function WarehouseItemRow({ item, categories, projects, movements, actor, onChange, canWrite, selected, onToggleSelect }: {
-  item: any; categories: string[]; projects: any[]; movements: any[]; actor: any; onChange: () => void; canWrite: boolean; selected: boolean; onToggleSelect: () => void;
+export function WarehouseItemRow({ rowNumber, item, categories, projects, movements, actor, onChange, canWrite, selected, onToggleSelect }: {
+  rowNumber: number; item: any; categories: string[]; projects: any[]; movements: any[]; actor: any; onChange: () => void; canWrite: boolean; selected: boolean; onToggleSelect: () => void;
 }) {
   const currentAllocation = (projectId: bigint): number => {
     let total = 0;
@@ -95,6 +95,7 @@ export function WarehouseItemRow({ item, categories, projects, movements, actor,
     const c = "border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full";
     return (
       <tr className="border-t border-[var(--border-color-light)] bg-amber-500/10">
+        <td className="p-1 text-gray-400">{rowNumber}</td>
         <td className="p-1">{canWrite && <input type="checkbox" checked={selected} onChange={onToggleSelect} />}</td>
         <td className="p-1"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={c} /></td>
         <td className="p-1">
@@ -147,6 +148,7 @@ export function WarehouseItemRow({ item, categories, projects, movements, actor,
 
   return (
     <tr className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-page)]">
+      <td className="p-2 text-gray-400">{rowNumber}</td>
       <td className="p-2">{canWrite && <input type="checkbox" checked={selected} onChange={onToggleSelect} />}</td>
       <td className="p-2 text-[var(--text-primary)]">{item.name}</td>
       <td className="p-2">

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-export function ExpenseRow({ expense, projectName, projects, actor, onChange, onToggle, canWrite, ksefSent, onToggleKsef }: {
-  expense: any; projectName: string; projects: any[]; actor: any; onChange: () => void; onToggle: (id: bigint, method: string) => void; canWrite: boolean;
+export function ExpenseRow({ rowNumber, expense, projectName, projects, actor, onChange, onToggle, canWrite, ksefSent, onToggleKsef }: {
+  rowNumber: number; expense: any; projectName: string; projects: any[]; actor: any; onChange: () => void; onToggle: (id: bigint, method: string) => void; canWrite: boolean;
   ksefSent: boolean; onToggleKsef: (id: bigint) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -57,6 +57,7 @@ export function ExpenseRow({ expense, projectName, projects, actor, onChange, on
     const c = "border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full";
     return (
       <tr className="border-t border-[var(--border-color-light)] bg-amber-500/10">
+        <td className="p-1 text-gray-400">{rowNumber}</td>
         <td className="p-1"><input value={form.productService} onChange={(e) => setForm({ ...form, productService: e.target.value })} className={c} /></td>
         <td className="p-1"><input value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })} className={c} /></td>
         <td className="p-1"><input value={form.projectName} onChange={(e) => setForm({ ...form, projectName: e.target.value })} className={c} /></td>
@@ -77,6 +78,7 @@ export function ExpenseRow({ expense, projectName, projects, actor, onChange, on
 
   return (
     <tr className={"border-t border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (hasIssue ? "bg-red-500/10" : "")}>
+      <td className="p-2 text-gray-400">{rowNumber}</td>
       <td className="p-2 text-[var(--text-primary)]">{expense.productService}</td>
       <td className="p-2 text-[var(--text-muted)]">{expense.supplier}</td>
       <td className="p-2">

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { ModuleCheckboxes } from "./ModuleCheckboxes";
+import { BackupExport } from "./BackupExport";
+import { BackupImport } from "./BackupImport";
 
 const ROLE_LABELS: Record<string, string> = { read: "Odczyt", write: "Zapis", admin: "Admin" };
 
@@ -50,6 +52,8 @@ export function AdminPanel({ actor }: { actor: any }) {
 
   return (
     <div className="space-y-6">
+      <BackupExport actor={actor} />
+      <BackupImport actor={actor} />
       <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
         <h2 className="font-semibold text-[var(--text-primary)]">Wygeneruj kod zaproszenia</h2>
         <div className="flex gap-2 items-center">

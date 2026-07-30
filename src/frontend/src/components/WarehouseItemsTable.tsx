@@ -122,6 +122,7 @@ export function WarehouseItemsTable({ items, categories, projects, movements, ac
         <table className="w-full text-xs">
           <thead className="bg-[var(--bg-page)] sticky top-0">
             <tr className="text-left text-gray-500">
+              <th className="p-2 w-8">Lp.</th>
               <th className="p-2 w-8"></th>
               <th className="p-2">Produkt</th>
               <th className="p-2">Kategoria</th>
@@ -135,6 +136,7 @@ export function WarehouseItemsTable({ items, categories, projects, movements, ac
               <th className="p-2"></th>
             </tr>
             <tr className="bg-[var(--bg-card)]">
+              <th className="p-1"></th>
               <th className="p-1"></th>
               <th className="p-1"><input value={colFilters.name} onChange={(e) => setColFilter("name", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
               <th className="p-1"><input value={colFilters.category} onChange={(e) => setColFilter("category", e.target.value)} placeholder="filtruj..." className="w-full border border-[var(--border-color)] rounded px-1 py-0.5 text-xs" /></th>
@@ -157,8 +159,8 @@ export function WarehouseItemsTable({ items, categories, projects, movements, ac
                 i.serialNo.toLowerCase().includes(colFilters.serialNo.toLowerCase()) &&
                 i.location.toLowerCase().includes(colFilters.location.toLowerCase())
               )
-              .map((i) => (
-              <WarehouseItemRow key={String(i.id)} item={i} categories={categories} projects={projects} movements={movements} actor={actor} onChange={onChange} canWrite={canWrite} selected={selected.has(String(i.id))} onToggleSelect={() => toggleSelect(String(i.id))} />
+              .map((i, idx) => (
+              <WarehouseItemRow key={String(i.id)} rowNumber={idx + 1} item={i} categories={categories} projects={projects} movements={movements} actor={actor} onChange={onChange} canWrite={canWrite} selected={selected.has(String(i.id))} onToggleSelect={() => toggleSelect(String(i.id))} />
             ))}
           </tbody>
         </table>

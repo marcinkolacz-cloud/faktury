@@ -107,6 +107,26 @@ mixin (
     count;
   };
 
+  public shared ({ caller }) func importExpenses(rows : [Types.Expense]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (e in rows.vals()) {
+      expenses.add(e.id, e);
+      count += 1;
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importExpenseKsefSent(rows : [(Nat, Bool)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, sent) in rows.vals()) {
+      expenseKsefSent.add(id, sent);
+      count += 1;
+    };
+    count;
+  };
+
   public query ({ caller }) func listMyExpenses() : async [Types.Expense] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.Expense>();

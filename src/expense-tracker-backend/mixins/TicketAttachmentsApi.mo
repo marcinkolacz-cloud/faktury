@@ -73,6 +73,16 @@ mixin (
     };
   };
 
+  public shared ({ caller }) func importTicketAttachments(rows : [Types.TicketAttachmentMeta]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (a in rows.vals()) {
+      ticketAttachments.add(a.id, a);
+      count += 1;
+    };
+    count;
+  };
+
   public query func listTicketAttachments(ticketId : Nat) : async [Types.TicketAttachmentMeta] {
     var result = List.empty<Types.TicketAttachmentMeta>();
     for ((_, a) in ticketAttachments.entries()) {

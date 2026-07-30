@@ -61,6 +61,7 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
         <table className="w-full text-xs">
           <thead>
             <tr className="text-left text-gray-500 border-b border-[var(--border-color)]">
+              <th className="p-1 w-8">Lp.</th>
               <th className="p-1">Data</th>
               <th className="p-1 text-right">Kwota</th>
               <th className="p-1">Notatka</th>
@@ -68,9 +69,10 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
             </tr>
           </thead>
           <tbody>
-            {sorted.map((p) =>
+            {sorted.map((p, idx) =>
               editingId === p.id ? (
                 <tr key={String(p.id)} className="border-t border-[var(--border-color-light)] bg-amber-500/10">
+                  <td className="p-1 text-gray-400">{idx + 1}</td>
                   <td className="p-1"><input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full" /></td>
                   <td className="p-1"><input type="number" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full" /></td>
                   <td className="p-1"><input value={editNote} onChange={(e) => setEditNote(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full" /></td>
@@ -81,6 +83,7 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
                 </tr>
               ) : (
                 <tr key={String(p.id)} className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-page)]">
+                  <td className="p-1 text-gray-400">{idx + 1}</td>
                   <td className="p-1 font-mono text-[var(--text-secondary)]">{p.date}</td>
                   <td className="p-1 text-right font-mono text-[var(--text-primary)]">{p.amount.toFixed(2)}</td>
                   <td className="p-1 text-gray-500">{p.note}</td>

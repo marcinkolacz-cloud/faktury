@@ -71,7 +71,9 @@ export function Dashboard({ onHome, onNavigate, currentModule }: { onHome: () =>
 
   const canWrite = myRole === "write" || myRole === "admin";
   const totalReceived = payments.reduce((s: number, p: any) => s + p.amount, 0);
-  const totalSpent = expenses.reduce((s: number, e: any) => s + (e.pricePln?.[0] ?? 0), 0);
+  const totalSpent = expenses
+    .filter((e: any) => e.paidBy.trim().toLowerCase() === "marcin")
+    .reduce((s: number, e: any) => s + (e.pricePln?.[0] ?? 0), 0);
 
   if (loading) {
     return <div className="min-h-screen bg-[var(--bg-page)] flex items-center justify-center text-gray-500">Ładowanie...</div>;

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
-export function StockMovementRow({ movement, itemName, projects, actor, onChange, canWrite, selected, onToggleSelect }: {
-  movement: any; itemName: string; projects: any[]; actor: any; onChange: () => void; canWrite: boolean; selected: boolean; onToggleSelect: () => void;
+export function StockMovementRow({ rowNumber, movement, itemName, projects, actor, onChange, canWrite, selected, onToggleSelect }: {
+  rowNumber: number; movement: any; itemName: string; projects: any[]; actor: any; onChange: () => void; canWrite: boolean; selected: boolean; onToggleSelect: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const currentProjectName = movement.projectId?.[0] !== undefined
@@ -38,6 +38,7 @@ export function StockMovementRow({ movement, itemName, projects, actor, onChange
     const c = "border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full";
     return (
       <tr className="border-t border-[var(--border-color-light)] bg-amber-500/10">
+        <td className="p-1 text-gray-400">{rowNumber}</td>
         <td className="p-1">{canWrite && <input type="checkbox" checked={selected} onChange={onToggleSelect} />}</td>
         <td className="p-2"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={c} /></td>
         <td className="p-2 text-[var(--text-primary)]">{itemName}</td>
@@ -62,6 +63,7 @@ export function StockMovementRow({ movement, itemName, projects, actor, onChange
 
   return (
     <tr className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-page)]">
+      <td className="p-2 text-gray-400">{rowNumber}</td>
       <td className="p-2">{canWrite && <input type="checkbox" checked={selected} onChange={onToggleSelect} />}</td>
       <td className="p-2 font-mono text-gray-500">{movement.date}</td>
       <td className="p-2 text-[var(--text-primary)]">{itemName}</td>

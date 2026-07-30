@@ -71,6 +71,15 @@ mixin (
     result.toArray();
   };
 
+  public query ({ caller }) func listTicketTokens() : async [(Text, Nat)] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<(Text, Nat)>();
+    for ((token, id) in ticketTokens.entries()) {
+      result.add((token, id));
+    };
+    result.toArray();
+  };
+
   public query ({ caller }) func getTicketTrackingToken(id : Nat) : async ?Text {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var found : ?Text = null;
@@ -106,6 +115,56 @@ mixin (
       };
       case null { null };
     };
+  };
+
+  public shared ({ caller }) func importTickets(rows : [Types.Ticket]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (t in rows.vals()) {
+      tickets.add(t.id, t);
+      count += 1;
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importTicketExtras(rows : [(Nat, Types.TicketExtras)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, extras) in rows.vals()) {
+      ticketExtras.add(id, extras);
+      count += 1;
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importTicketArchived(rows : [Nat]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (id in rows.vals()) {
+      ticketArchived.add(id, true);
+      count += 1;
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importTicketSeenCounts(rows : [(Nat, Nat)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, seenCount) in rows.vals()) {
+      ticketSeenCounts.add(id, seenCount);
+      count += 1;
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importTicketTokens(rows : [(Text, Nat)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((token, id) in rows.vals()) {
+      ticketTokens.add(token, id);
+      count += 1;
+    };
+    count;
   };
 
   public query ({ caller }) func listTickets() : async [Types.Ticket] {

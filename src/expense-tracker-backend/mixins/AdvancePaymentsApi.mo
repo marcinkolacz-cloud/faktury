@@ -40,6 +40,16 @@ mixin (
     newId;
   };
 
+  public shared ({ caller }) func importAdvancePayments(rows : [Types.AdvancePayment]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (p in rows.vals()) {
+      advancePayments.add(p.id, p);
+      count += 1;
+    };
+    count;
+  };
+
   public query ({ caller }) func listMyAdvancePayments() : async [Types.AdvancePayment] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.AdvancePayment>();
