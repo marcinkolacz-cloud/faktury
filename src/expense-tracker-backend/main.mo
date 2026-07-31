@@ -76,7 +76,7 @@ persistent actor {
   include ExpensesApi(expenses, accessRoles, expenseKsefSent);
   include WarehouseApi(warehouseItems, stockMovements, accessRoles);
   include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes);
-  include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles);
+  include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens);
   include FilesApi(files, fileChunks, folders, accessRoles);
   include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles);
 

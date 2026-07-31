@@ -77,7 +77,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
 
   const loadAttachments = async (ticketId: bigint) => {
     try {
-      const result = await actor.listTicketAttachments(ticketId);
+      const result = await actor.listTicketAttachments(ticketId, []);
       setAttachments(result as any[]);
     } catch {
       setAttachments([]);
@@ -100,6 +100,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
       totalChunks,
       authorName.trim() || "Zespół",
       "",
+      [],
     );
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE;
@@ -114,7 +115,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   const downloadAttachment = async (a: any) => {
     const parts: Uint8Array[] = [];
     for (let i = 0; i < Number(a.totalChunks); i++) {
-      const chunk = await actor.getTicketAttachmentChunk(a.id, i);
+      const chunk = await actor.getTicketAttachmentChunk(a.id, i, []);
       if (chunk && chunk.length > 0) parts.push(new Uint8Array(chunk[0]));
     }
     const blob = new Blob(parts as BlobPart[], { type: a.contentType });

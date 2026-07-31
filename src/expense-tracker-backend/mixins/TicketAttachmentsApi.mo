@@ -14,10 +14,23 @@ mixin (
   tickets : Map.Map<Nat, Types.Ticket>,
   recentAttachmentTimes : List.List<Int>,
   accessRoles : Map.Map<Principal, Types.Role>,
+  ticketTokens : Map.Map<Text, Nat>,
 ) {
+  func callerAuthorizedForTicket(caller : Principal, ticketId : Nat, token : ?Text) : Bool {
+    if (AccessLib.hasAnyRole(accessRoles, caller)) { return true; };
+    switch (token) {
+      case (?t) {
+        switch (ticketTokens.get(t)) {
+          case (?id) { id == ticketId };
+          case null { false };
+        };
+      };
+      case null { false };
+    };
+  };
   let maxAttachmentSize = 5_000_000;
 
-  public shared func createTicketAttachment(
+  public shared ({ caller }) func createTicketAttachment(
     ticketId : Nat,
     name : Text,
     contentType : Text,
@@ -25,9 +38,11 @@ mixin (
     totalChunks : Nat,
     uploadedBy : Text,
     honeypot : Text,
+    token : ?Text,
   ) : async Nat {
     if (honeypot != "") { Runtime.trap("Rejected"); };
     if (size > maxAttachmentSize) { Runtime.trap("File too large, max 5MB"); };
+    if (not callerAuthorizedForTicket(caller, ticketId, token)) { Runtime.trap("Not authorized for this ticket"); };
     switch (tickets.get(ticketId)) {
       case null { Runtime.trap("Ticket not found"); };
       case (?_) {};
@@ -83,7 +98,8 @@ mixin (
     count;
   };
 
-  public query func listTicketAttachments(ticketId : Nat) : async [Types.TicketAttachmentMeta] {
+  public query ({ caller }) func listTicketAttachments(ticketId : Nat, token : ?Text) : async [Types.TicketAttachmentMeta] {
+    if (not callerAuthorizedForTicket(caller, ticketId, token)) { Runtime.trap("Not authorized for this ticket"); };
     var result = List.empty<Types.TicketAttachmentMeta>();
     for ((_, a) in ticketAttachments.entries()) {
       if (a.ticketId == ticketId) { result.add(a); };
@@ -91,7 +107,13 @@ mixin (
     result.toArray();
   };
 
-  public query func getTicketAttachmentChunk(attachmentId : Nat, chunkIndex : Nat) : async ?Blob {
+  public query ({ caller }) func getTicketAttachmentChunk(attachmentId : Nat, chunkIndex : Nat, token : ?Text) : async ?Blob {
+    switch (ticketAttachments.get(attachmentId)) {
+      case (?meta) {
+        if (not callerAuthorizedForTicket(caller, meta.ticketId, token)) { Runtime.trap("Not authorized for this ticket"); };
+      };
+      case null { Runtime.trap("Attachment not found"); };
+    };
     let key = Nat.toText(attachmentId) # "-" # Nat.toText(chunkIndex);
     ticketAttachmentChunks.get(key);
   };

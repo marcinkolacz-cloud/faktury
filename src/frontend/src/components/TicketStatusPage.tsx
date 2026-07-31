@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPublicActor } from "../lib/publicActor";
 import { useTheme } from "../providers/ThemeProvider";
+
+const CHUNK_SIZE = 1_500_000;
+const MAX_FILE_SIZE = 5_000_000;
 
 type Lang = "pl" | "en";
 
@@ -85,11 +88,50 @@ export function TicketStatusPage() {
   const [sendingReply, setSendingReply] = useState(false);
   const [replyError, setReplyError] = useState("");
 
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadAttachment = async (file: File) => {
+    if (!ticket) return;
+    if (file.size > MAX_FILE_SIZE) {
+      setUploadError("Plik zbyt duży (max 5MB): " + file.name);
+      return;
+    }
+    setUploadingAttachment(true);
+    setUploadError("");
+    try {
+      const actor = await createPublicActor();
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const attachmentId = await actor.createTicketAttachment(
+        ticket.id,
+        file.name,
+        file.type || "application/octet-stream",
+        file.size,
+        totalChunks,
+        "Klient",
+        "",
+        [tokenInput.trim()]
+      );
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
+        await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk);
+      }
+      const attResult = await actor.listTicketAttachments(ticket.id, [tokenInput.trim()]);
+      setAttachments(attResult as any[]);
+    } catch (e) {
+      setUploadError(t.genericError);
+    }
+    setUploadingAttachment(false);
+  };
+
   const downloadAttachment = async (a: any) => {
     const actor = await createPublicActor();
     const parts: Uint8Array[] = [];
     for (let i = 0; i < Number(a.totalChunks); i++) {
-      const chunk = await actor.getTicketAttachmentChunk(a.id, i) as any[];
+      const chunk = await actor.getTicketAttachmentChunk(a.id, i, [tokenInput.trim()]) as any[];
       if (chunk && chunk.length > 0) parts.push(new Uint8Array(chunk[0]));
     }
     const blob = new Blob(parts as BlobPart[], { type: a.contentType });
@@ -112,7 +154,7 @@ export function TicketStatusPage() {
       const arr = result as any[];
       if (arr.length > 0) {
         setTicket(arr[0]);
-        const attResult = await actor.listTicketAttachments(arr[0].id);
+        const attResult = await actor.listTicketAttachments(arr[0].id, [token.trim()]);
         setAttachments(attResult as any[]);
       } else {
         setTicket(null);
@@ -215,6 +257,26 @@ export function TicketStatusPage() {
                 ))}
               </div>
             )}
+            <div className="space-y-1">
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadAttachment(f);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingAttachment}
+                className="text-xs text-cyan-600 hover:underline disabled:opacity-50"
+              >
+                {uploadingAttachment ? "Wgrywanie..." : "📎 Dodaj załącznik (max 5MB)"}
+              </button>
+              {uploadError && <p className="text-xs text-red-600">{uploadError}</p>}
+            </div>
             {ticket.replies.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-medium text-[var(--text-muted)]">{t.repliesLabel}</p>
