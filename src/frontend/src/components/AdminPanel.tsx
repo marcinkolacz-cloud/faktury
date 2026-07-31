@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ModuleCheckboxes } from "./ModuleCheckboxes";
 import { BackupExport } from "./BackupExport";
 import { TrashView } from "./TrashView";
+import { KsefInvoicesView } from "./KsefInvoicesView";
 import { BackupImport } from "./BackupImport";
 
 const ROLE_LABELS: Record<string, string> = { read: "Odczyt", write: "Zapis", admin: "Admin" };
@@ -53,6 +54,7 @@ export function AdminPanel({ actor }: { actor: any }) {
 
   return (
     <div className="space-y-6">
+      <KsefInvoicesView actor={actor} />
       <TrashView actor={actor} />
       <BackupExport actor={actor} />
       <BackupImport actor={actor} />

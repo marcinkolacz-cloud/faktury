@@ -102,6 +102,40 @@ module {
     createdAt : Int;
   };
 
+  public type PendingInvoiceStatus = { #pending; #addedToWarehouse; #rejected };
+
+  public type PendingInvoice = {
+    ksefNumber : Text;
+    invoiceNumber : Text;
+    issueDate : Text;
+    sellerNip : Text;
+    sellerName : Text;
+    netAmount : Float;
+    grossAmount : Float;
+    vatAmount : Float;
+    currency : Text;
+    status : PendingInvoiceStatus;
+    importedAt : Int;
+  };
+
+  public type PendingInvoiceImportItem = {
+    ksefNumber : Text;
+    invoiceNumber : Text;
+    issueDate : Text;
+    sellerNip : Text;
+    sellerName : Text;
+    netAmount : Float;
+    grossAmount : Float;
+    vatAmount : Float;
+    currency : Text;
+  };
+
+  public type InvoiceLineItem = {
+    name : Text;
+    quantity : Float;
+    unit : Text;
+  };
+
   public type OneDriveTokens = {
     accessToken : Text;
     refreshToken : Text;

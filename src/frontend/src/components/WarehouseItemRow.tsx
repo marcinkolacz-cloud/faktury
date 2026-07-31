@@ -1,10 +1,27 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { DriveFilePicker } from "./DriveFilePicker";
 import { DriveThumbnail } from "./DriveThumbnail";
+import { renderReadableInvoiceHtml, printInvoiceHtml } from "../lib/ksefInvoicePreview";
 
 export function WarehouseItemRow({ rowNumber, item, categories, projects, movements, actor, onChange, canWrite, selected, onToggleSelect }: {
   rowNumber: number; item: any; categories: string[]; projects: any[]; movements: any[]; actor: any; onChange: () => void; canWrite: boolean; selected: boolean; onToggleSelect: () => void;
 }) {
+  const [readableHtml, setReadableHtml] = useState<string | null>(null);
+  const [readableLoading, setReadableLoading] = useState(false);
+
+  const showReadableInvoice = async (ksefNumber: string) => {
+    setReadableLoading(true);
+    setReadableHtml("");
+    try {
+      const html = await renderReadableInvoiceHtml(ksefNumber);
+      setReadableHtml(html);
+    } catch (e: any) {
+      setReadableHtml("<p>Nie udało się wygenerować podglądu: " + String(e?.message || e) + "</p>");
+    }
+    setReadableLoading(false);
+  };
+
   const currentAllocation = (projectId: bigint): number => {
     let total = 0;
     for (const m of movements) {
@@ -147,6 +164,7 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
   }
 
   return (
+    <>
     <tr className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-page)]">
       <td className="p-2 text-gray-400">{rowNumber}</td>
       <td className="p-2">{canWrite && <input type="checkbox" checked={selected} onChange={onToggleSelect} />}</td>
@@ -164,6 +182,9 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
         ) : (
           <span className="text-[var(--text-secondary)]">—</span>
         )}
+        {item.category === "Z faktur KSeF" && item.serialNo && (
+          <button onClick={() => showReadableInvoice(item.serialNo)} className="text-cyan-600 hover:underline block text-[10px] mt-0.5">📄 Podgląd</button>
+        )}
       </td>
       <td className="p-2 text-gray-500">{item.location}</td>
       <td className="p-2 text-center">{item.appliesFnpt2 ? "✓" : ""}</td>
@@ -180,5 +201,25 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
         )}
       </td>
     </tr>
+    {readableHtml !== null && createPortal(
+      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setReadableHtml(null)}>
+        <div className="bg-white rounded-lg w-full h-full max-w-4xl overflow-auto shadow-lg" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-3 border-b sticky top-0 bg-white">
+            <span className="font-medium text-sm text-gray-800">Podgląd faktury</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => printInvoiceHtml(readableHtml || "")} className="text-cyan-600 hover:underline text-sm">🖨️ Zapisz jako / Drukuj</button>
+              <button onClick={() => setReadableHtml(null)} className="text-gray-600 hover:text-gray-900 text-xl leading-none px-2">✕</button>
+            </div>
+          </div>
+          {readableLoading ? (
+            <p className="p-4 text-sm text-gray-500">Generuję podgląd...</p>
+          ) : (
+            <div className="p-4" dangerouslySetInnerHTML={{ __html: readableHtml }} />
+          )}
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }

@@ -22,6 +22,7 @@ import TicketsApi "mixins/TicketsApi";
 import TicketAttachmentsApi "mixins/TicketAttachmentsApi";
 import FilesApi "mixins/FilesApi";
 import CalendarApi "mixins/CalendarApi";
+import KsefApi "mixins/KsefApi";
 
 persistent actor {
   let projects = Map.empty<Nat, Types.Project>();
@@ -36,6 +37,10 @@ persistent actor {
   let calendarEventsTrashed = Map.empty<Nat, Int>();
   let calendarNotesTrashed = Map.empty<Nat, Int>();
   let projectsTrashed = Map.empty<Nat, Int>();
+  let pendingInvoices = Map.empty<Text, Types.PendingInvoice>();
+  let invoiceSharedToTeam = Map.empty<Text, Bool>();
+  let invoiceLineItems = Map.empty<Text, [Types.InvoiceLineItem]>();
+  let invoiceOneDriveLink = Map.empty<Text, Text>();
   let inviteCodes = Map.empty<Text, InvitesLib.InviteCode>();
   let warehouseItems = Map.empty<Nat, Types.WarehouseItem>();
   let stockMovements = Map.empty<Nat, Types.StockMovement>();
@@ -62,6 +67,7 @@ persistent actor {
   var pendingDeviceCode : ?Text = null;
   var pendingInterval : Nat = 5;
   let driveTokens = Map.empty<Text, Int>();
+  let adminTokens = Map.empty<Text, Int>();
 
   let oneDriveClientId = "427bbeee-c6bd-4dfc-9946-9b230aec7861";
 
@@ -90,6 +96,7 @@ persistent actor {
   include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens, ticketAttachmentsTrashed);
   include FilesApi(files, fileChunks, folders, accessRoles);
   include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles, calendarEventsTrashed, calendarNotesTrashed);
+  include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink);
 
   func isAdmin(caller : Principal) : Bool {
     let bootstrapMatch = switch (adminPrincipal) { case (?admin) { Principal.equal(admin, caller) }; case null { false } };
@@ -126,6 +133,33 @@ persistent actor {
 
   public query func validateDriveToken(token : Text) : async Bool {
     switch (driveTokens.get(token)) {
+      case (?exp) { Time.now() < exp };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func requestAdminAccessToken() : async Text {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Admin access required"); };
+    let now = Time.now();
+    var expired = List.empty<Text>();
+    for ((t, exp) in adminTokens.entries()) {
+      if (exp < now) { expired.add(t); };
+    };
+    for (t in expired.values()) { adminTokens.remove(t); };
+    let rng = Random.crypto();
+    var token = "";
+    var i = 0;
+    while (i < 32) {
+      let idx = await* rng.natRange(0, 36);
+      token := token # driveTokenChars[idx].toText();
+      i += 1;
+    };
+    adminTokens.add(token, now + 300_000_000_000);
+    token;
+  };
+
+  public query func validateAdminToken(token : Text) : async Bool {
+    switch (adminTokens.get(token)) {
       case (?exp) { Time.now() < exp };
       case null { false };
     };

@@ -12,6 +12,7 @@ import { PublicTicketForm } from "./components/PublicTicketForm";
 import { TicketStatusPage } from "./components/TicketStatusPage";
 import { TicketsModule } from "./components/TicketsModule";
 import { DriveModule } from "./components/DriveModule";
+import { KsefTeamView } from "./components/KsefTeamView";
 import { AdminPanel } from "./components/AdminPanel";
 import { TopBar } from "./components/TopBar";
 import { useBackendActor as useActor2 } from "./lib/useBackend";
@@ -164,6 +165,9 @@ function ModuleRouter() {
   }
   if (module === "drive") {
     return <DriveModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  }
+  if (module === "ksef") {
+    return <KsefTeamView onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} actor={actor} />;
   }
   return (
     <div className="min-h-screen bg-[#0a0e14] flex flex-col items-center justify-center gap-4">
