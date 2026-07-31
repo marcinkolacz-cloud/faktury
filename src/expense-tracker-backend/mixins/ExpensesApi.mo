@@ -4,12 +4,14 @@ import Types "../types";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
+import Time "mo:core/Time";
 import AccessLib "../lib/access";
 
 mixin (
   expenses : Map.Map<Nat, Types.Expense>,
   accessRoles : Map.Map<Principal, Types.Role>,
   expenseKsefSent : Map.Map<Nat, Bool>,
+  expensesTrashed : Map.Map<Nat, Int>,
 ) {
   public shared ({ caller }) func adminClearAllExpenses() : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can clear expenses"); };
@@ -18,7 +20,8 @@ mixin (
     count;
   };
 
-  public query func adminCountAllExpenses() : async Nat {
+  public query ({ caller }) func adminCountAllExpenses() : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Admin access required"); };
     expenses.size();
   };
 
@@ -130,8 +133,8 @@ mixin (
   public query ({ caller }) func listMyExpenses() : async [Types.Expense] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.Expense>();
-    for ((_, e) in expenses.entries()) {
-      result.add(e);
+    for ((id, e) in expenses.entries()) {
+      if (expensesTrashed.get(id) == null) { result.add(e); };
     };
     result.toArray();
   };
@@ -222,14 +225,40 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func deleteExpense(id : Nat) : async Bool {
+  public shared ({ caller }) func trashExpense(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (expenses.get(id)) {
-      case (?_) {
-        expenses.remove(id);
-        true;
-      };
+      case (?_) { expensesTrashed.add(id, Time.now()); true; };
       case null { false };
     };
+  };
+
+  public shared ({ caller }) func restoreExpense(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (expensesTrashed.get(id)) {
+      case (?_) { expensesTrashed.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func permanentlyDeleteExpense(id : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can permanently delete"); };
+    expensesTrashed.remove(id);
+    switch (expenses.get(id)) {
+      case (?_) { expenses.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func listTrashedExpenses() : async [Types.Expense] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<Types.Expense>();
+    for ((id, _) in expensesTrashed.entries()) {
+      switch (expenses.get(id)) {
+        case (?e) { result.add(e); };
+        case null {};
+      };
+    };
+    result.toArray();
   };
 };

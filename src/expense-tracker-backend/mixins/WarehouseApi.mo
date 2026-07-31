@@ -11,6 +11,8 @@ mixin (
   warehouseItems : Map.Map<Nat, Types.WarehouseItem>,
   stockMovements : Map.Map<Nat, Types.StockMovement>,
   accessRoles : Map.Map<Principal, Types.Role>,
+  warehouseItemsTrashed : Map.Map<Nat, Int>,
+  stockMovementsTrashed : Map.Map<Nat, Int>,
 ) {
   public shared ({ caller }) func bulkImportWarehouseItems(
     items : [(Text, Text, Text, Bool, Bool, Float, Text)]
@@ -101,8 +103,8 @@ mixin (
   public query ({ caller }) func listWarehouseItems() : async [Types.WarehouseItem] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.WarehouseItem>();
-    for ((_, i) in warehouseItems.entries()) {
-      result.add(i);
+    for ((id, i) in warehouseItems.entries()) {
+      if (warehouseItemsTrashed.get(id) == null) { result.add(i); };
     };
     result.toArray();
   };
@@ -149,15 +151,41 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func deleteWarehouseItem(id : Nat) : async Bool {
+  public shared ({ caller }) func trashWarehouseItem(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (warehouseItems.get(id)) {
-      case (?_) {
-        warehouseItems.remove(id);
-        true;
-      };
+      case (?_) { warehouseItemsTrashed.add(id, Time.now()); true; };
       case null { false };
     };
+  };
+
+  public shared ({ caller }) func restoreWarehouseItem(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (warehouseItemsTrashed.get(id)) {
+      case (?_) { warehouseItemsTrashed.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func permanentlyDeleteWarehouseItem(id : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can permanently delete"); };
+    warehouseItemsTrashed.remove(id);
+    switch (warehouseItems.get(id)) {
+      case (?_) { warehouseItems.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func listTrashedWarehouseItems() : async [Types.WarehouseItem] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<Types.WarehouseItem>();
+    for ((id, _) in warehouseItemsTrashed.entries()) {
+      switch (warehouseItems.get(id)) {
+        case (?i) { result.add(i); };
+        case null {};
+      };
+    };
+    result.toArray();
   };
 
   public shared ({ caller }) func recordStockMovement(
@@ -216,8 +244,8 @@ mixin (
   public query ({ caller }) func listStockMovements() : async [Types.StockMovement] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.StockMovement>();
-    for ((_, m) in stockMovements.entries()) {
-      result.add(m);
+    for ((id, m) in stockMovements.entries()) {
+      if (stockMovementsTrashed.get(id) == null) { result.add(m); };
     };
     result.toArray();
   };
@@ -255,8 +283,25 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func deleteStockMovement(id : Nat) : async Bool {
+  public shared ({ caller }) func trashStockMovement(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (stockMovements.get(id)) {
+      case (?_) { stockMovementsTrashed.add(id, Time.now()); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func restoreStockMovement(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (stockMovementsTrashed.get(id)) {
+      case (?_) { stockMovementsTrashed.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func permanentlyDeleteStockMovement(id : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can permanently delete"); };
+    stockMovementsTrashed.remove(id);
     switch (stockMovements.get(id)) {
       case (?m) {
         switch (warehouseItems.get(m.itemId)) {
@@ -274,5 +319,17 @@ mixin (
       };
       case null { false };
     };
+  };
+
+  public query ({ caller }) func listTrashedStockMovements() : async [Types.StockMovement] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<Types.StockMovement>();
+    for ((id, _) in stockMovementsTrashed.entries()) {
+      switch (stockMovements.get(id)) {
+        case (?m) { result.add(m); };
+        case null {};
+      };
+    };
+    result.toArray();
   };
 };

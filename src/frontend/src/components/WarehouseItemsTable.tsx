@@ -26,9 +26,9 @@ export function WarehouseItemsTable({ items, categories, projects, movements, ac
 
   const bulkDelete = async () => {
     if (selected.size === 0) return;
-    if (!confirm("Usunąć zaznaczone " + selected.size + " pozycje?")) return;
+    if (!confirm("Przenieść zaznaczone " + selected.size + " pozycje do kosza?")) return;
     for (const id of selected) {
-      await actor.deleteWarehouseItem(BigInt(id));
+      await actor.trashWarehouseItem(BigInt(id));
     }
     setSelected(new Set());
     onChange();

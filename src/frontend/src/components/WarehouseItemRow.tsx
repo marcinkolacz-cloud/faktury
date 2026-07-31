@@ -86,8 +86,8 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
   };
 
   const remove = async () => {
-    if (!confirm("Usunąć tę pozycję?")) return;
-    await actor.deleteWarehouseItem(item.id);
+    if (!confirm("Przenieść tę pozycję do kosza?")) return;
+    await actor.trashWarehouseItem(item.id);
     onChange();
   };
 

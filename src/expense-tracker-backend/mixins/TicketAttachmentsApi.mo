@@ -15,6 +15,7 @@ mixin (
   recentAttachmentTimes : List.List<Int>,
   accessRoles : Map.Map<Principal, Types.Role>,
   ticketTokens : Map.Map<Text, Nat>,
+  ticketAttachmentsTrashed : Map.Map<Nat, Int>,
 ) {
   func callerAuthorizedForTicket(caller : Principal, ticketId : Nat, token : ?Text) : Bool {
     if (AccessLib.hasAnyRole(accessRoles, caller)) { return true; };
@@ -101,8 +102,8 @@ mixin (
   public query ({ caller }) func listTicketAttachments(ticketId : Nat, token : ?Text) : async [Types.TicketAttachmentMeta] {
     if (not callerAuthorizedForTicket(caller, ticketId, token)) { Runtime.trap("Not authorized for this ticket"); };
     var result = List.empty<Types.TicketAttachmentMeta>();
-    for ((_, a) in ticketAttachments.entries()) {
-      if (a.ticketId == ticketId) { result.add(a); };
+    for ((id, a) in ticketAttachments.entries()) {
+      if (a.ticketId == ticketId and ticketAttachmentsTrashed.get(id) == null) { result.add(a); };
     };
     result.toArray();
   };
@@ -118,8 +119,25 @@ mixin (
     ticketAttachmentChunks.get(key);
   };
 
-  public shared ({ caller }) func deleteTicketAttachment(attachmentId : Nat) : async Bool {
+  public shared ({ caller }) func trashTicketAttachment(attachmentId : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (ticketAttachments.get(attachmentId)) {
+      case (?_) { ticketAttachmentsTrashed.add(attachmentId, Time.now()); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func restoreTicketAttachment(attachmentId : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (ticketAttachmentsTrashed.get(attachmentId)) {
+      case (?_) { ticketAttachmentsTrashed.remove(attachmentId); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func permanentlyDeleteTicketAttachment(attachmentId : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can permanently delete"); };
+    ticketAttachmentsTrashed.remove(attachmentId);
     switch (ticketAttachments.get(attachmentId)) {
       case (?meta) {
         var i = 0;
@@ -133,5 +151,17 @@ mixin (
       };
       case null { false };
     };
+  };
+
+  public query ({ caller }) func listTrashedTicketAttachments() : async [Types.TicketAttachmentMeta] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<Types.TicketAttachmentMeta>();
+    for ((id, _) in ticketAttachmentsTrashed.entries()) {
+      switch (ticketAttachments.get(id)) {
+        case (?a) { result.add(a); };
+        case null {};
+      };
+    };
+    result.toArray();
   };
 };

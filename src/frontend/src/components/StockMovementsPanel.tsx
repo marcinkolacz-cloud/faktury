@@ -17,9 +17,9 @@ export function StockMovementsPanel({ items, movements, projects, actor, onChang
 
   const bulkDeleteMovements = async () => {
     if (selectedMovements.size === 0) return;
-    if (!confirm("Usunąć zaznaczone " + selectedMovements.size + " ruchy? Stan magazynowy zostanie odpowiednio skorygowany.")) return;
+    if (!confirm("Przenieść zaznaczone " + selectedMovements.size + " ruchy do kosza?")) return;
     for (const id of selectedMovements) {
-      await actor.deleteStockMovement(BigInt(id));
+      await actor.trashStockMovement(BigInt(id));
     }
     setSelectedMovements(new Set());
     onChange();

@@ -128,8 +128,8 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   };
 
   const deleteAttachment = async (id: bigint) => {
-    if (!confirm("Usunąć ten załącznik?")) return;
-    await actor.deleteTicketAttachment(id);
+    if (!confirm("Przenieść ten załącznik do kosza?")) return;
+    await actor.trashTicketAttachment(id);
     if (selected) loadAttachments(selected.id);
   };
 

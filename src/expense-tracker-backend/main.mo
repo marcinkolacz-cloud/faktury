@@ -26,6 +26,14 @@ persistent actor {
   let advancePayments = Map.empty<Nat, Types.AdvancePayment>();
   let expenses = Map.empty<Nat, Types.Expense>();
   let expenseKsefSent = Map.empty<Nat, Bool>();
+  let expensesTrashed = Map.empty<Nat, Int>();
+  let advancePaymentsTrashed = Map.empty<Nat, Int>();
+  let ticketAttachmentsTrashed = Map.empty<Nat, Int>();
+  let warehouseItemsTrashed = Map.empty<Nat, Int>();
+  let stockMovementsTrashed = Map.empty<Nat, Int>();
+  let calendarEventsTrashed = Map.empty<Nat, Int>();
+  let calendarNotesTrashed = Map.empty<Nat, Int>();
+  let projectsTrashed = Map.empty<Nat, Int>();
   let inviteCodes = Map.empty<Text, InvitesLib.InviteCode>();
   let warehouseItems = Map.empty<Nat, Types.WarehouseItem>();
   let stockMovements = Map.empty<Nat, Types.StockMovement>();
@@ -71,14 +79,14 @@ persistent actor {
   };
   let ic : IC = actor ("aaaaa-aa");
 
-  include ProjectsApi(projects, accessRoles);
-  include AdvancePaymentsApi(advancePayments, accessRoles);
-  include ExpensesApi(expenses, accessRoles, expenseKsefSent);
-  include WarehouseApi(warehouseItems, stockMovements, accessRoles);
+  include ProjectsApi(projects, accessRoles, projectsTrashed);
+  include AdvancePaymentsApi(advancePayments, accessRoles, advancePaymentsTrashed);
+  include ExpensesApi(expenses, accessRoles, expenseKsefSent, expensesTrashed);
+  include WarehouseApi(warehouseItems, stockMovements, accessRoles, warehouseItemsTrashed, stockMovementsTrashed);
   include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes);
-  include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens);
+  include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens, ticketAttachmentsTrashed);
   include FilesApi(files, fileChunks, folders, accessRoles);
-  include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles);
+  include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles, calendarEventsTrashed, calendarNotesTrashed);
 
   func isAdmin(caller : Principal) : Bool {
     let bootstrapMatch = switch (adminPrincipal) { case (?admin) { Principal.equal(admin, caller) }; case null { false } };

@@ -20,8 +20,8 @@ export function ExpenseRow({ rowNumber, expense, projectName, projects, actor, o
   const toggle = (method: string) => onToggle(expense.id, method);
 
   const deleteRow = async () => {
-    if (!confirm("Usunąć ten wpis?")) return;
-    await actor.deleteExpense(expense.id);
+    if (!confirm("Przenieść ten wpis do kosza?")) return;
+    await actor.trashExpense(expense.id);
     onChange();
   };
 

@@ -10,8 +10,10 @@ import AccessLib "../lib/access";
 mixin (
   advancePayments : Map.Map<Nat, Types.AdvancePayment>,
   accessRoles : Map.Map<Principal, Types.Role>,
+  advancePaymentsTrashed : Map.Map<Nat, Int>,
 ) {
-  public query func adminCountAllPayments() : async Nat {
+  public query ({ caller }) func adminCountAllPayments() : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Admin access required"); };
     advancePayments.size();
   };
 
@@ -53,8 +55,8 @@ mixin (
   public query ({ caller }) func listMyAdvancePayments() : async [Types.AdvancePayment] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.AdvancePayment>();
-    for ((_, p) in advancePayments.entries()) {
-      result.add(p);
+    for ((id, p) in advancePayments.entries()) {
+      if (advancePaymentsTrashed.get(id) == null) { result.add(p); };
     };
     result.toArray();
   };
@@ -76,14 +78,40 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func deleteAdvancePayment(id : Nat) : async Bool {
+  public shared ({ caller }) func trashAdvancePayment(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     switch (advancePayments.get(id)) {
-      case (?_) {
-        advancePayments.remove(id);
-        true;
-      };
+      case (?_) { advancePaymentsTrashed.add(id, Time.now()); true; };
       case null { false };
     };
+  };
+
+  public shared ({ caller }) func restoreAdvancePayment(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (advancePaymentsTrashed.get(id)) {
+      case (?_) { advancePaymentsTrashed.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func permanentlyDeleteAdvancePayment(id : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can permanently delete"); };
+    advancePaymentsTrashed.remove(id);
+    switch (advancePayments.get(id)) {
+      case (?_) { advancePayments.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func listTrashedAdvancePayments() : async [Types.AdvancePayment] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<Types.AdvancePayment>();
+    for ((id, _) in advancePaymentsTrashed.entries()) {
+      switch (advancePayments.get(id)) {
+        case (?p) { result.add(p); };
+        case null {};
+      };
+    };
+    result.toArray();
   };
 };

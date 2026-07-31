@@ -13,6 +13,8 @@ mixin (
   calendarAttachments : Map.Map<Nat, [(Text, Text)]>,
   calendarNotes : Map.Map<Nat, Types.CalendarNote>,
   accessRoles : Map.Map<Principal, Types.Role>,
+  calendarEventsTrashed : Map.Map<Nat, Int>,
+  calendarNotesTrashed : Map.Map<Nat, Int>,
 ) {
   public shared ({ caller }) func createCalendarNote(eventId : Nat, title : Text, content : Text) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
@@ -30,8 +32,20 @@ mixin (
   public query ({ caller }) func listCalendarNotes(eventId : Nat) : async [Types.CalendarNote] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.CalendarNote>();
-    for ((_, n) in calendarNotes.entries()) {
-      if (n.eventId == eventId) { result.add(n); };
+    for ((id, n) in calendarNotes.entries()) {
+      if (n.eventId == eventId and calendarNotesTrashed.get(id) == null) { result.add(n); };
+    };
+    result.toArray();
+  };
+
+  public query ({ caller }) func listTrashedCalendarNotes() : async [Types.CalendarNote] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<Types.CalendarNote>();
+    for ((id, _) in calendarNotesTrashed.entries()) {
+      switch (calendarNotes.get(id)) {
+        case (?n) { result.add(n); };
+        case null {};
+      };
     };
     result.toArray();
   };
@@ -44,8 +58,25 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func deleteCalendarNote(id : Nat) : async Bool {
+  public shared ({ caller }) func trashCalendarNote(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (calendarNotes.get(id)) {
+      case (?_) { calendarNotesTrashed.add(id, Time.now()); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func restoreCalendarNote(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (calendarNotesTrashed.get(id)) {
+      case (?_) { calendarNotesTrashed.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func permanentlyDeleteCalendarNote(id : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can permanently delete"); };
+    calendarNotesTrashed.remove(id);
     switch (calendarNotes.get(id)) {
       case (?_) { calendarNotes.remove(id); true; };
       case null { false };
@@ -103,8 +134,8 @@ mixin (
   public query ({ caller }) func listCalendarEvents() : async [Types.CalendarEvent] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.CalendarEvent>();
-    for ((_, e) in calendarEvents.entries()) {
-      result.add(e);
+    for ((id, e) in calendarEvents.entries()) {
+      if (calendarEventsTrashed.get(id) == null) { result.add(e); };
     };
     result.toArray();
   };
@@ -117,11 +148,40 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func deleteCalendarEvent(id : Nat) : async Bool {
+  public shared ({ caller }) func trashCalendarEvent(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (calendarEvents.get(id)) {
+      case (?_) { calendarEventsTrashed.add(id, Time.now()); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func restoreCalendarEvent(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    switch (calendarEventsTrashed.get(id)) {
+      case (?_) { calendarEventsTrashed.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func permanentlyDeleteCalendarEvent(id : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can permanently delete"); };
+    calendarEventsTrashed.remove(id);
     switch (calendarEvents.get(id)) {
       case (?_) { calendarEvents.remove(id); true; };
       case null { false };
     };
+  };
+
+  public query ({ caller }) func listTrashedCalendarEvents() : async [Types.CalendarEvent] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<Types.CalendarEvent>();
+    for ((id, _) in calendarEventsTrashed.entries()) {
+      switch (calendarEvents.get(id)) {
+        case (?e) { result.add(e); };
+        case null {};
+      };
+    };
+    result.toArray();
   };
 }

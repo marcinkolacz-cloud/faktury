@@ -32,8 +32,8 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
   };
 
   const deletePayment = async (id: bigint) => {
-    if (!confirm("Usunąć tę wpłatę?")) return;
-    await actor.deleteAdvancePayment(id);
+    if (!confirm("Przenieść tę wpłatę do kosza?")) return;
+    await actor.trashAdvancePayment(id);
     onChange();
   };
 

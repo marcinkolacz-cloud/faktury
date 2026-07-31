@@ -29,8 +29,8 @@ export function StockMovementRow({ rowNumber, movement, itemName, projects, acto
   };
 
   const remove = async () => {
-    if (!confirm("Usunąć ten ruch? Stan magazynowy zostanie odpowiednio skorygowany.")) return;
-    await actor.deleteStockMovement(movement.id);
+    if (!confirm("Przenieść ten ruch do kosza?")) return;
+    await actor.trashStockMovement(movement.id);
     onChange();
   };
 

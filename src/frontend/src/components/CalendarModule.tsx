@@ -124,8 +124,8 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
   };
 
   const removeNote = async (eventId: bigint, noteId: bigint) => {
-    if (!confirm("Usunąć tę notatkę?")) return;
-    await actor.deleteCalendarNote(noteId);
+    if (!confirm("Przenieść tę notatkę do kosza?")) return;
+    await actor.trashCalendarNote(noteId);
     loadNotes(eventId);
   };
 
@@ -209,8 +209,8 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
   };
 
   const removeEvent = async (id: bigint) => {
-    if (!confirm("Usunąć to wydarzenie/zadanie?")) return;
-    await actor.deleteCalendarEvent(id);
+    if (!confirm("Przenieść to wydarzenie/zadanie do kosza?")) return;
+    await actor.trashCalendarEvent(id);
     reload();
   };
 
