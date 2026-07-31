@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { useUpload } from "../providers/UploadContext";
 import JSZip from "jszip";
-import { odList, odCreateFolder, odDownloadUrl, odDelete, odSearch, odRename, odShare, odPermissions, odMove, odPreview } from "../lib/oneDriveConfig";
+import { odList, odCreateFolder, odDownloadUrl, odDelete, odSearch, odRename, odShare, odPermissions, odMove, odPreview, setDriveActor } from "../lib/oneDriveConfig";
 
 async function collectFilesRecursive(basePath: string, relPrefix: string): Promise<{ name: string; id: string }[]> {
   const listing = await odList(basePath);
@@ -62,11 +62,12 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
   };
 
   useEffect(() => {
-    reload();
     if (actor) {
+      setDriveActor(actor);
       actor.getCallerRole().then((r: any) => {
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
       });
+      reload();
     }
   }, [actor, currentPath]);
 

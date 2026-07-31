@@ -8,6 +8,8 @@ import Int "mo:core/Int";
 import Blob "mo:core/Blob";
 import ExperimentalCycles "mo:base/ExperimentalCycles";
 import Json "mo:json";
+import Random "mo:core/Random";
+import Char "mo:core/Char";
 import Types "types";
 import AccessLib "lib/access";
 import InvitesLib "lib/invites";
@@ -59,6 +61,7 @@ persistent actor {
   var oneDriveTokens : ?Types.OneDriveTokens = null;
   var pendingDeviceCode : ?Text = null;
   var pendingInterval : Nat = 5;
+  let driveTokens = Map.empty<Text, Int>();
 
   let oneDriveClientId = "427bbeee-c6bd-4dfc-9946-9b230aec7861";
 
@@ -94,6 +97,39 @@ persistent actor {
   };
 
   include InvitesApi(inviteCodes, accessRoles, moduleAccess, isAdmin);
+
+  let driveTokenChars = [
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+  ];
+
+  public shared ({ caller }) func requestDriveAccessToken() : async Text {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    let now = Time.now();
+    var expired = List.empty<Text>();
+    for ((t, exp) in driveTokens.entries()) {
+      if (exp < now) { expired.add(t); };
+    };
+    for (t in expired.values()) { driveTokens.remove(t); };
+    let rng = Random.crypto();
+    var token = "";
+    var i = 0;
+    while (i < 32) {
+      let idx = await* rng.natRange(0, 36);
+      token := token # driveTokenChars[idx].toText();
+      i += 1;
+    };
+    driveTokens.add(token, now + 300_000_000_000);
+    token;
+  };
+
+  public query func validateDriveToken(token : Text) : async Bool {
+    switch (driveTokens.get(token)) {
+      case (?exp) { Time.now() < exp };
+      case null { false };
+    };
+  };
 
   public shared ({ caller }) func setAdminPrincipal() : async () {
     switch (adminPrincipal) {

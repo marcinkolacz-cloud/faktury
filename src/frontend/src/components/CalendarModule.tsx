@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
-import { odUploadFile, odDownloadUrl, odDelete, odCreateFolder, odList } from "../lib/oneDriveConfig";
+import { odUploadFile, odDownloadUrl, odDelete, odCreateFolder, odList, setDriveActor } from "../lib/oneDriveConfig";
 
 const TYPE_LABELS: Record<string, string> = {
   meeting: "Spotkanie",
@@ -47,11 +47,12 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
   };
 
   useEffect(() => {
-    reload();
     if (actor) {
+      setDriveActor(actor);
       actor.getCallerRole().then((r: any) => {
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
       });
+      reload();
     }
   }, [actor]);
 

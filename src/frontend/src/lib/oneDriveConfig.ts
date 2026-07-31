@@ -1,19 +1,52 @@
 export const ONEDRIVE_WORKER_URL = "https://onedrive-proxy.marcinkolacz.workers.dev";
-export const ONEDRIVE_SHARED_SECRET_REDACTED = "REDACTED_SECRET";
 
-function authHeaders(extra: Record<string, string> = {}) {
-  return { Authorization: "Bearer " + ONEDRIVE_SHARED_SECRET_REDACTED, ...extra };
+let registeredActor: any = null;
+let cachedToken: string | null = null;
+let cachedTokenExpiry = 0;
+
+export function setDriveActor(actor: any) {
+  registeredActor = actor;
+}
+
+let pendingTokenPromise: Promise<string> | null = null;
+
+async function getDriveToken(): Promise<string> {
+  const now = Date.now();
+  if (cachedToken && now < cachedTokenExpiry) {
+    console.log("[drive-token] uzyto z cache");
+    return cachedToken;
+  }
+  if (pendingTokenPromise) {
+    console.log("[drive-token] czekam na juz trwajace zadanie");
+    return pendingTokenPromise;
+  }
+  if (!registeredActor) throw new Error("Drive actor not registered yet");
+  console.time("[drive-token] requestDriveAccessToken");
+  const promise: Promise<string> = registeredActor.requestDriveAccessToken().then((token: string) => {
+    console.timeEnd("[drive-token] requestDriveAccessToken");
+    cachedToken = token;
+    cachedTokenExpiry = Date.now() + 4 * 60 * 1000;
+    pendingTokenPromise = null;
+    return token;
+  });
+  pendingTokenPromise = promise;
+  return promise;
+}
+
+async function authHeaders(extra: Record<string, string> = {}) {
+  const token = await getDriveToken();
+  return { Authorization: "Bearer " + token, ...extra };
 }
 
 export async function odList(path: string) {
-  const resp = await fetch(ONEDRIVE_WORKER_URL + "/list?path=" + encodeURIComponent(path), { headers: authHeaders() });
+  const resp = await fetch(ONEDRIVE_WORKER_URL + "/list?path=" + encodeURIComponent(path), { headers: await authHeaders() });
   return resp.json();
 }
 
 export async function odCreateFolder(path: string, name: string) {
   const resp = await fetch(ONEDRIVE_WORKER_URL + "/createFolder", {
     method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ path, name }),
   });
   return resp.json();
@@ -22,26 +55,26 @@ export async function odCreateFolder(path: string, name: string) {
 export async function odUploadSession(path: string, name: string) {
   const resp = await fetch(ONEDRIVE_WORKER_URL + "/uploadSession", {
     method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ path, name }),
   });
   return resp.json();
 }
 
 export async function odPreview(itemId: string) {
-  const resp = await fetch(ONEDRIVE_WORKER_URL + "/preview?itemId=" + encodeURIComponent(itemId), { headers: authHeaders() });
+  const resp = await fetch(ONEDRIVE_WORKER_URL + "/preview?itemId=" + encodeURIComponent(itemId), { headers: await authHeaders() });
   return resp.json();
 }
 
 export async function odDownloadUrl(itemId: string) {
-  const resp = await fetch(ONEDRIVE_WORKER_URL + "/downloadUrl?itemId=" + encodeURIComponent(itemId), { headers: authHeaders() });
+  const resp = await fetch(ONEDRIVE_WORKER_URL + "/downloadUrl?itemId=" + encodeURIComponent(itemId), { headers: await authHeaders() });
   return resp.json();
 }
 
 export async function odRename(itemId: string, newName: string) {
   const resp = await fetch(ONEDRIVE_WORKER_URL + "/rename", {
     method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ itemId, newName }),
   });
   return resp.json();
@@ -50,26 +83,26 @@ export async function odRename(itemId: string, newName: string) {
 export async function odShare(itemId: string, linkType: "edit" | "view" = "edit") {
   const resp = await fetch(ONEDRIVE_WORKER_URL + "/share", {
     method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ itemId, linkType }),
   });
   return resp.json();
 }
 
 export async function odPermissions(itemId: string) {
-  const resp = await fetch(ONEDRIVE_WORKER_URL + "/permissions?itemId=" + encodeURIComponent(itemId), { headers: authHeaders() });
+  const resp = await fetch(ONEDRIVE_WORKER_URL + "/permissions?itemId=" + encodeURIComponent(itemId), { headers: await authHeaders() });
   return resp.json();
 }
 
 export async function odSearch(query: string) {
-  const resp = await fetch(ONEDRIVE_WORKER_URL + "/search?q=" + encodeURIComponent(query), { headers: authHeaders() });
+  const resp = await fetch(ONEDRIVE_WORKER_URL + "/search?q=" + encodeURIComponent(query), { headers: await authHeaders() });
   return resp.json();
 }
 
 export async function odMove(itemId: string, newParentId: string) {
   const resp = await fetch(ONEDRIVE_WORKER_URL + "/move", {
     method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ itemId, newParentId }),
   });
   return resp.json();
@@ -78,7 +111,7 @@ export async function odMove(itemId: string, newParentId: string) {
 export async function odDelete(itemId: string) {
   const resp = await fetch(ONEDRIVE_WORKER_URL + "/delete", {
     method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ itemId }),
   });
   return resp.json();
