@@ -83,12 +83,13 @@ export function PublicTicketForm() {
           totalChunks,
           name.trim(),
           "",
+          [token],
         );
         for (let i = 0; i < totalChunks; i++) {
           const start = i * CHUNK_SIZE;
           const end = Math.min(start + CHUNK_SIZE, file.size);
           const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
-          await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk);
+          await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk, [token]);
         }
       }
       setUploadProgress("");

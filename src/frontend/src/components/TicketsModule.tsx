@@ -106,7 +106,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
-      await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk);
+      await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk, []);
     }
     setUploadingAttachment(false);
     loadAttachments(selected.id);

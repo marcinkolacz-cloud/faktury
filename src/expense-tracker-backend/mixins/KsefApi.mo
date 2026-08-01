@@ -123,6 +123,10 @@ mixin (
     switch (invoiceSharedToTeam.get(ksefNumber)) { case (?v) { v }; case null { false } };
   };
 
+  public query func isInvoiceSharedAnon(ksefNumber : Text) : async Bool {
+    switch (invoiceSharedToTeam.get(ksefNumber)) { case (?v) { v }; case null { false } };
+  };
+
   public shared ({ caller }) func restoreRejectedInvoice(ksefNumber : Text) : async Bool {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can restore invoices"); };
     switch (pendingInvoices.get(ksefNumber)) {

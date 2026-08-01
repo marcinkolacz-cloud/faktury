@@ -78,9 +78,10 @@ mixin (
     newId;
   };
 
-  public shared func uploadTicketAttachmentChunk(attachmentId : Nat, chunkIndex : Nat, data : Blob) : async Bool {
+  public shared ({ caller }) func uploadTicketAttachmentChunk(attachmentId : Nat, chunkIndex : Nat, data : Blob, token : ?Text) : async Bool {
     switch (ticketAttachments.get(attachmentId)) {
-      case (?_) {
+      case (?meta) {
+        if (not callerAuthorizedForTicket(caller, meta.ticketId, token)) { Runtime.trap("Not authorized for this ticket"); };
         let key = Nat.toText(attachmentId) # "-" # Nat.toText(chunkIndex);
         ticketAttachmentChunks.add(key, data);
         true;

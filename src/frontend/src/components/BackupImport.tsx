@@ -63,7 +63,7 @@ async function uploadAttachmentContent(actor: any, attachmentId: bigint, base64:
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE;
     const end = Math.min(start + CHUNK_SIZE, bytes.length);
-    await actor.uploadTicketAttachmentChunk(attachmentId, BigInt(i), bytes.subarray(start, end));
+    await actor.uploadTicketAttachmentChunk(attachmentId, BigInt(i), bytes.subarray(start, end), []);
   }
 }
 

@@ -117,7 +117,7 @@ export function TicketStatusPage() {
         const start = i * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, file.size);
         const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
-        await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk);
+        await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk, [tokenInput.trim()]);
       }
       const attResult = await actor.listTicketAttachments(ticket.id, [tokenInput.trim()]);
       setAttachments(attResult as any[]);
