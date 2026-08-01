@@ -332,4 +332,32 @@ mixin (
     };
     result.toArray();
   };
+
+  public query ({ caller }) func listTrashedWarehouseItemEntries() : async [(Nat, Int)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can view this"); };
+    var result = List.empty<(Nat, Int)>();
+    for ((id, ts) in warehouseItemsTrashed.entries()) { result.add((id, ts)); };
+    result.toArray();
+  };
+
+  public query ({ caller }) func listTrashedStockMovementEntries() : async [(Nat, Int)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can view this"); };
+    var result = List.empty<(Nat, Int)>();
+    for ((id, ts) in stockMovementsTrashed.entries()) { result.add((id, ts)); };
+    result.toArray();
+  };
+
+  public shared ({ caller }) func importTrashedWarehouseItems(entries : [(Nat, Int)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, ts) in entries.vals()) { warehouseItemsTrashed.add(id, ts); count += 1; };
+    count;
+  };
+
+  public shared ({ caller }) func importTrashedStockMovements(entries : [(Nat, Int)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, ts) in entries.vals()) { stockMovementsTrashed.add(id, ts); count += 1; };
+    count;
+  };
 };

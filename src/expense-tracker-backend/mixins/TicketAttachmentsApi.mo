@@ -165,4 +165,18 @@ mixin (
     };
     result.toArray();
   };
+
+  public query ({ caller }) func listTrashedTicketAttachmentEntries() : async [(Nat, Int)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can view this"); };
+    var result = List.empty<(Nat, Int)>();
+    for ((id, ts) in ticketAttachmentsTrashed.entries()) { result.add((id, ts)); };
+    result.toArray();
+  };
+
+  public shared ({ caller }) func importTrashedTicketAttachments(entries : [(Nat, Int)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, ts) in entries.vals()) { ticketAttachmentsTrashed.add(id, ts); count += 1; };
+    count;
+  };
 };

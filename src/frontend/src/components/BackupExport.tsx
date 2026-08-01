@@ -34,9 +34,10 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
   const backup: any = { exportedAt: new Date().toISOString() };
 
   onProgress("Eksportuję dostęp administracyjny i kody zaproszeń...");
-  const [accessEntries, inviteCodes] = await Promise.all([
+  const [accessEntries, inviteCodes, displayNames] = await Promise.all([
     actor.listAccessEntries(),
     actor.listInviteCodes(),
+    actor.listPrincipalDisplayNames(),
   ]);
   const accessWithModules = await Promise.all(
     accessEntries.map(async (a: any) => ({
@@ -44,32 +45,47 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
       modules: await actor.getUserModules(a.principal),
     }))
   );
-  backup.admin = { accessEntries: accessWithModules, inviteCodes };
+  backup.admin = { accessEntries: accessWithModules, inviteCodes, displayNames };
 
-  onProgress("Eksportuję Rejestr Faktur i Projekty...");
-  const [expenses, advancePayments, projects, ksefSent] = await Promise.all([
+  onProgress("Eksportuję Rejestr Faktur i Projekty (w tym Kosz)...");
+  const [expenses, trashedExpenses, advancePayments, trashedPayments, projects, trashedProjects, ksefSent] = await Promise.all([
     actor.listMyExpenses(),
+    actor.listTrashedExpenses(),
     actor.listMyAdvancePayments(),
+    actor.listTrashedAdvancePayments(),
     actor.listMyProjects(),
+    actor.listTrashedProjects(),
     actor.listExpenseKsefSent(),
   ]);
-  backup.invoicesAndProjects = { expenses, advancePayments, projects, ksefSent };
+  backup.invoicesAndProjects = {
+    expenses: [...expenses, ...trashedExpenses],
+    advancePayments: [...advancePayments, ...trashedPayments],
+    projects: [...projects, ...trashedProjects],
+    ksefSent,
+  };
 
-  onProgress("Eksportuję Magazyn...");
-  const [warehouseItems, stockMovements, warehouseCategories] = await Promise.all([
+  onProgress("Eksportuję Magazyn (w tym Kosz)...");
+  const [warehouseItems, trashedWarehouseItems, stockMovements, trashedStockMovements, warehouseCategories] = await Promise.all([
     actor.listWarehouseItems(),
+    actor.listTrashedWarehouseItems(),
     actor.listStockMovements(),
+    actor.listTrashedStockMovements(),
     actor.listWarehouseCategories(),
   ]);
-  backup.warehouse = { items: warehouseItems, movements: stockMovements, categories: warehouseCategories };
+  backup.warehouse = {
+    items: [...warehouseItems, ...trashedWarehouseItems],
+    movements: [...stockMovements, ...trashedStockMovements],
+    categories: warehouseCategories,
+  };
 
   onProgress("Eksportuję Zgłoszenia...");
-  const [tickets, ticketExtras, archivedIds, seenCounts, ticketTokens] = await Promise.all([
+  const [tickets, ticketExtras, archivedIds, seenCounts, ticketTokens, trashedAttachmentMetas] = await Promise.all([
     actor.listTickets(),
     actor.listTicketExtras(),
     actor.listArchivedTicketIds(),
     actor.getTicketSeenCounts(),
     actor.listTicketTokens(),
+    actor.listTrashedTicketAttachments(),
   ]);
 
   const attachmentsOut: any[] = [];
@@ -77,17 +93,90 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
   for (const t of tickets) {
     done++;
     onProgress("Eksportuję załączniki zgłoszeń... (" + done + "/" + tickets.length + ")");
-    const atts = await actor.listTicketAttachments(t.id);
+    const atts = await actor.listTicketAttachments(t.id, []);
     for (const a of atts) {
       const parts: Uint8Array[] = [];
       for (let i = 0; i < Number(a.totalChunks); i++) {
-        const chunk = await actor.getTicketAttachmentChunk(a.id, i);
+        const chunk = await actor.getTicketAttachmentChunk(a.id, i, []);
         if (chunk && chunk.length > 0) parts.push(new Uint8Array(chunk[0]));
       }
       attachmentsOut.push({ meta: a, dataBase64: uint8ToBase64(concatUint8(parts)) });
     }
   }
+  for (const a of trashedAttachmentMetas) {
+    const parts: Uint8Array[] = [];
+    for (let i = 0; i < Number(a.totalChunks); i++) {
+      const chunk = await actor.getTicketAttachmentChunk(a.id, i, []);
+      if (chunk && chunk.length > 0) parts.push(new Uint8Array(chunk[0]));
+    }
+    attachmentsOut.push({ meta: a, dataBase64: uint8ToBase64(concatUint8(parts)) });
+  }
   backup.tickets = { tickets, extras: ticketExtras, archivedIds, seenCounts, tokens: ticketTokens, attachments: attachmentsOut };
+
+  onProgress("Eksportuję Kalendarz...");
+  const [calendarEventsActive, calendarEventsTrashedFull] = await Promise.all([
+    actor.listCalendarEvents(),
+    actor.listTrashedCalendarEvents(),
+  ]);
+  const allCalendarEvents = [...calendarEventsActive, ...calendarEventsTrashedFull];
+  let allCalendarNotes: any[] = [];
+  let calendarAttachmentsOut: any[] = [];
+  for (const ev of allCalendarEvents) {
+    const notes = await actor.listCalendarNotes(ev.id);
+    allCalendarNotes.push(...notes);
+    const atts = await actor.listCalendarAttachments(ev.id);
+    if (atts.length > 0) calendarAttachmentsOut.push([ev.id, atts]);
+  }
+  const trashedCalendarNotesFull = await actor.listTrashedCalendarNotes();
+  allCalendarNotes.push(...trashedCalendarNotesFull);
+  const [trashedCalEventEntries, trashedCalNoteEntries] = await Promise.all([
+    actor.listTrashedCalendarEventEntries(),
+    actor.listTrashedCalendarNoteEntries(),
+  ]);
+  backup.calendar = {
+    events: allCalendarEvents,
+    notes: allCalendarNotes,
+    attachments: calendarAttachmentsOut,
+    trashedEventEntries: trashedCalEventEntries,
+    trashedNoteEntries: trashedCalNoteEntries,
+  };
+
+  onProgress("Eksportuję faktury KSeF...");
+  const [pendingInvoices, sharedStatuses] = await Promise.all([
+    actor.listPendingInvoices(),
+    actor.listSharedStatuses(),
+  ]);
+  let ksefLineItemsData: any[] = [];
+  let ksefLinks: any[] = [];
+  for (const inv of pendingInvoices) {
+    const details = await actor.getInvoiceDetails(inv.ksefNumber);
+    const items = details[0]?.[0] || [];
+    const link = details[1]?.[0] || "";
+    if (items.length > 0) ksefLineItemsData.push([inv.ksefNumber, items]);
+    if (link) ksefLinks.push([inv.ksefNumber, link]);
+  }
+  backup.ksef = { invoices: pendingInvoices, sharedStatuses, lineItemsData: ksefLineItemsData, links: ksefLinks };
+
+  onProgress("Eksportuję wpisy Kosza (znaczniki czasu)...");
+  const [
+    trashedExpenseEntries, trashedPaymentEntries, trashedAttachmentEntries,
+    trashedWarehouseEntries, trashedMovementEntries, trashedProjectEntries,
+  ] = await Promise.all([
+    actor.listTrashedExpenseEntries(),
+    actor.listTrashedAdvancePaymentEntries(),
+    actor.listTrashedTicketAttachmentEntries(),
+    actor.listTrashedWarehouseItemEntries(),
+    actor.listTrashedStockMovementEntries(),
+    actor.listTrashedProjectEntries(),
+  ]);
+  backup.trash = {
+    expenseEntries: trashedExpenseEntries,
+    paymentEntries: trashedPaymentEntries,
+    attachmentEntries: trashedAttachmentEntries,
+    warehouseEntries: trashedWarehouseEntries,
+    movementEntries: trashedMovementEntries,
+    projectEntries: trashedProjectEntries,
+  };
 
   onProgress("Generuję plik JSON...");
   return backup;

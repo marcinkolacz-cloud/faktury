@@ -48,6 +48,16 @@ function convertTicketAttachment(a: any) {
   return convertFields(a, ["id", "ticketId", "size", "totalChunks", "createdAt"]);
 }
 
+function convertCalendarEvent(e: any) {
+  return convertFields(e, ["id", "createdAt"]);
+}
+function convertCalendarNote(n: any) {
+  return convertFields(n, ["id", "eventId", "createdAt"]);
+}
+function convertPendingInvoice(inv: any) {
+  return convertFields(inv, ["importedAt"]);
+}
+
 function convertInviteCode(c: any) {
   return {
     ...c,
@@ -76,6 +86,10 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
   }
   const codes = backup.admin.inviteCodes.map(convertInviteCode);
   if (codes.length) await actor.importInviteCodes(codes);
+  if (backup.admin.displayNames && backup.admin.displayNames.length) {
+    const names = backup.admin.displayNames.map(([p, n]: [string, string]) => [Principal.fromText(p), n]);
+    await actor.importPrincipalDisplayNames(names);
+  }
 
   onProgress("Importuję Projekty...");
   const projects = backup.invoicesAndProjects.projects.map(convertProject);
@@ -116,6 +130,48 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
     done++;
     onProgress("Importuję treść załączników... (" + done + "/" + backup.tickets.attachments.length + ")");
     if (a.dataBase64) await uploadAttachmentContent(actor, bn(a.meta.id), a.dataBase64);
+  }
+
+  if (backup.calendar) {
+    onProgress("Importuję Kalendarz...");
+    const events = backup.calendar.events.map(convertCalendarEvent);
+    if (events.length) await actor.importCalendarEvents(events);
+    const notes = backup.calendar.notes.map(convertCalendarNote);
+    if (notes.length) await actor.importCalendarNotes(notes);
+    const calAtts = (backup.calendar.attachments || []).map(([id, atts]: [any, any]) => [bn(id), atts]);
+    if (calAtts.length) await actor.importCalendarAttachments(calAtts);
+    const trashedEv = (backup.calendar.trashedEventEntries || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
+    if (trashedEv.length) await actor.importTrashedCalendarEvents(trashedEv);
+    const trashedNt = (backup.calendar.trashedNoteEntries || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
+    if (trashedNt.length) await actor.importTrashedCalendarNotes(trashedNt);
+  }
+
+  if (backup.ksef && backup.ksef.invoices && backup.ksef.invoices.length) {
+    onProgress("Importuję faktury KSeF...");
+    const invoices = backup.ksef.invoices.map(convertPendingInvoice);
+    await actor.importPendingInvoicesFull(
+      invoices,
+      backup.ksef.sharedStatuses || [],
+      backup.ksef.lineItemsData || [],
+      backup.ksef.links || []
+    );
+  }
+
+  if (backup.trash) {
+    onProgress("Importuję wpisy Kosza...");
+    const toEntries = (arr: any[]) => (arr || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
+    const te = toEntries(backup.trash.expenseEntries);
+    if (te.length) await actor.importTrashedExpenses(te);
+    const tp = toEntries(backup.trash.paymentEntries);
+    if (tp.length) await actor.importTrashedAdvancePayments(tp);
+    const ta = toEntries(backup.trash.attachmentEntries);
+    if (ta.length) await actor.importTrashedTicketAttachments(ta);
+    const tw = toEntries(backup.trash.warehouseEntries);
+    if (tw.length) await actor.importTrashedWarehouseItems(tw);
+    const tm = toEntries(backup.trash.movementEntries);
+    if (tm.length) await actor.importTrashedStockMovements(tm);
+    const tpr = toEntries(backup.trash.projectEntries);
+    if (tpr.length) await actor.importTrashedProjects(tpr);
   }
 
   onProgress("Import zakończony.");

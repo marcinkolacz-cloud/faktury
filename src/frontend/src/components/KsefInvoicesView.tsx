@@ -505,8 +505,6 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
         <p className="text-xs font-medium text-[var(--text-muted)] uppercase">Oczekujące na decyzję ({pendingOnly.length})</p>
         {loadingList ? (
           <p className="text-xs text-[var(--text-muted)]">Ładowanie...</p>
-        ) : pendingOnly.length === 0 ? (
-          <p className="text-xs text-[var(--text-muted)]">Brak faktur oczekujących.</p>
         ) : (
           <>
           {selected.size > 0 && (
@@ -545,6 +543,11 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
                 </tr>
               </thead>
               <tbody>
+                {pendingOnly.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="text-center text-sm text-[var(--text-muted)] py-4">Brak faktur oczekujących (lub brak wyników dla podanych filtrów).</td>
+                  </tr>
+                )}
                 {pendingOnly.map((inv) => (
                   <React.Fragment key={inv.ksefNumber}>
                   <tr className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-hover)]">

@@ -100,9 +100,6 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
 
         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4">
-          {filteredInvoices.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)] text-center py-4">Brak udostępnionych faktur.</p>
-          ) : (
             <div className="overflow-auto rounded border border-[var(--border-color)]">
               <table className="w-full text-xs">
                 <thead className="bg-[var(--bg-hover)] sticky top-0">
@@ -126,6 +123,11 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
                   </tr>
                 </thead>
                 <tbody>
+                  {filteredInvoices.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="text-center text-sm text-[var(--text-muted)] py-4">Brak udostępnionych faktur (lub brak wyników dla podanych filtrów).</td>
+                    </tr>
+                  )}
                   {filteredInvoices.map((inv, idx) => (
                     <React.Fragment key={inv.ksefNumber}>
                     <tr className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-hover)]">
@@ -180,7 +182,6 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
                 </tbody>
               </table>
             </div>
-          )}
         </div>
       </div>
       {readableHtml !== null && (

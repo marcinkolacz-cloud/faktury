@@ -204,6 +204,13 @@ persistent actor {
     true;
   };
 
+  public shared ({ caller }) func importPrincipalDisplayNames(entries : [(Principal, Text)]) : async Nat {
+    if (not isAdmin(caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((p, name) in entries.vals()) { principalDisplayNames.add(p, name); count += 1; };
+    count;
+  };
+
   public query ({ caller }) func listPrincipalDisplayNames() : async [(Principal, Text)] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<(Principal, Text)>();

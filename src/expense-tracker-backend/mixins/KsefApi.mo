@@ -167,6 +167,21 @@ mixin (
     (invoiceLineItems.get(ksefNumber), invoiceOneDriveLink.get(ksefNumber));
   };
 
+  public shared ({ caller }) func importPendingInvoicesFull(
+    invoices : [Types.PendingInvoice],
+    sharedStatuses : [(Text, Bool)],
+    lineItemsData : [(Text, [Types.InvoiceLineItem])],
+    links : [(Text, Text)],
+  ) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (inv in invoices.vals()) { pendingInvoices.add(inv.ksefNumber, inv); count += 1; };
+    for ((k, v) in sharedStatuses.vals()) { invoiceSharedToTeam.add(k, v); };
+    for ((k, v) in lineItemsData.vals()) { invoiceLineItems.add(k, v); };
+    for ((k, v) in links.vals()) { invoiceOneDriveLink.add(k, v); };
+    count;
+  };
+
   public query ({ caller }) func listSharedInvoices() : async [Types.PendingInvoice] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     var result = List.empty<Types.PendingInvoice>();
