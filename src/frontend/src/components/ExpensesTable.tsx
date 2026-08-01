@@ -94,6 +94,8 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
     );
   });
   const sorted = [...visible].sort((a, b) => (a.orderDate < b.orderDate ? 1 : -1));
+  const rankMap = new Map<string, number>();
+  [...visible].sort((a, b) => Number(a.id - b.id)).forEach((e, i) => rankMap.set(String(e.id), i + 1));
   const inputClass = "bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-1.5 rounded text-sm text-[var(--text-primary)] placeholder-gray-400";
 
   return (
@@ -184,7 +186,7 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
           </thead>
           <tbody>
             {sorted.map((e, idx) => (
-              <ExpenseRow key={String(e.id)} rowNumber={idx + 1} expense={e} projectName={projectNameById(e.projectId)} projects={projects} actor={actor} onChange={onChange} onToggle={onToggle} canWrite={canWrite} ksefSent={ksefSentMap[String(e.id)] || false} onToggleKsef={onToggleKsef} />
+              <ExpenseRow key={String(e.id)} rowNumber={rankMap.get(String(e.id)) || idx + 1} expense={e} projectName={projectNameById(e.projectId)} projects={projects} actor={actor} onChange={onChange} onToggle={onToggle} canWrite={canWrite} ksefSent={ksefSentMap[String(e.id)] || false} onToggleKsef={onToggleKsef} />
             ))}
           </tbody>
         </table>

@@ -63,6 +63,8 @@ export function WarehouseItemsTable({ items, categories, projects, movements, ac
     setSaving(false);
     onChange();
   };
+  const rankMap = new Map<string, number>();
+  [...items].sort((a, b) => Number(a.id - b.id)).forEach((i, idx) => rankMap.set(String(i.id), idx + 1));
 
   return (
     <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
@@ -159,8 +161,9 @@ export function WarehouseItemsTable({ items, categories, projects, movements, ac
                 i.serialNo.toLowerCase().includes(colFilters.serialNo.toLowerCase()) &&
                 i.location.toLowerCase().includes(colFilters.location.toLowerCase())
               )
+              .reverse()
               .map((i, idx) => (
-              <WarehouseItemRow key={String(i.id)} rowNumber={idx + 1} item={i} categories={categories} projects={projects} movements={movements} actor={actor} onChange={onChange} canWrite={canWrite} selected={selected.has(String(i.id))} onToggleSelect={() => toggleSelect(String(i.id))} />
+              <WarehouseItemRow key={String(i.id)} rowNumber={rankMap.get(String(i.id)) || idx + 1} item={i} categories={categories} projects={projects} movements={movements} actor={actor} onChange={onChange} canWrite={canWrite} selected={selected.has(String(i.id))} onToggleSelect={() => toggleSelect(String(i.id))} />
             ))}
           </tbody>
         </table>

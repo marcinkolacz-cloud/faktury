@@ -12,6 +12,8 @@ interface TrashCategory {
 export function TrashView({ actor }: { actor: any }) {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [selected, setSelected] = useState<Record<string, Set<string>>>({});
+  const [bulkProcessing, setBulkProcessing] = useState(false);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
@@ -61,6 +63,49 @@ export function TrashView({ actor }: { actor: any }) {
     reload();
   };
 
+  const toggleSelect = (catKey: string, id: string) => {
+    setSelected((prev) => {
+      const current = new Set(prev[catKey] || []);
+      if (current.has(id)) { current.delete(id); } else { current.add(id); }
+      return { ...prev, [catKey]: current };
+    });
+  };
+
+  const toggleSelectAll = (catKey: string, items: any[]) => {
+    setSelected((prev) => {
+      const current = prev[catKey] || new Set<string>();
+      if (current.size === items.length) {
+        return { ...prev, [catKey]: new Set() };
+      }
+      return { ...prev, [catKey]: new Set(items.map((i) => String(i.id))) };
+    });
+  };
+
+  const bulkRestore = async (cat: TrashCategory) => {
+    const ids = Array.from(selected[cat.key] || []);
+    if (ids.length === 0) return;
+    setBulkProcessing(true);
+    for (const id of ids) {
+      await actor[cat.restoreFn](BigInt(id));
+    }
+    setSelected((prev) => ({ ...prev, [cat.key]: new Set() }));
+    reload();
+    setBulkProcessing(false);
+  };
+
+  const bulkPermDelete = async (cat: TrashCategory) => {
+    const ids = Array.from(selected[cat.key] || []);
+    if (ids.length === 0) return;
+    if (!confirm("Usunąć trwale zaznaczone " + ids.length + " element(y/ów)? Tej operacji nie można cofnąć.")) return;
+    setBulkProcessing(true);
+    for (const id of ids) {
+      await actor[cat.permDeleteFn](BigInt(id));
+    }
+    setSelected((prev) => ({ ...prev, [cat.key]: new Set() }));
+    reload();
+    setBulkProcessing(false);
+  };
+
   const categories: TrashCategory[] = [
     { key: "expenses", label: "Wydatki", items: expenses, getName: (i) => i.productService + " (" + (i.pricePln?.[0] ?? "—") + " PLN)", restoreFn: "restoreExpense", permDeleteFn: "permanentlyDeleteExpense" },
     { key: "payments", label: "Zaliczki", items: payments, getName: (i) => i.date + " — " + i.amount + " " + i.currency, restoreFn: "restoreAdvancePayment", permDeleteFn: "permanentlyDeleteAdvancePayment" },
@@ -84,12 +129,33 @@ export function TrashView({ actor }: { actor: any }) {
       {totalCount === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">Kosz jest pusty.</p>
       ) : (
-        categories.filter((c) => c.items.length > 0).map((cat) => (
+        categories.filter((c) => c.items.length > 0).map((cat) => {
+          const catSelected = selected[cat.key] || new Set();
+          return (
           <div key={cat.key} className="space-y-1">
-            <p className="text-xs font-medium text-[var(--text-muted)] uppercase">{cat.label} ({cat.items.length})</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-medium text-[var(--text-muted)] uppercase">{cat.label} ({cat.items.length})</p>
+              <input type="checkbox" checked={catSelected.size === cat.items.length && cat.items.length > 0} onChange={() => toggleSelectAll(cat.key, cat.items)} />
+              <span className="text-[10px] text-[var(--text-muted)]">zaznacz wszystkie</span>
+              {catSelected.size > 0 && (
+                <>
+                  <button onClick={() => bulkRestore(cat)} disabled={bulkProcessing} className="text-[10px] px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50">
+                    Przywróć zaznaczone ({catSelected.size})
+                  </button>
+                  {isAdmin && (
+                    <button onClick={() => bulkPermDelete(cat)} disabled={bulkProcessing} className="text-[10px] px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded disabled:opacity-50">
+                      Usuń trwale zaznaczone ({catSelected.size})
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
             {cat.items.map((item, idx) => (
               <div key={idx} className="flex items-center justify-between gap-2 bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm">
-                <span className="truncate text-[var(--text-secondary)]">{cat.getName(item)}</span>
+                <div className="flex items-center gap-2 truncate">
+                  <input type="checkbox" checked={catSelected.has(String(item.id))} onChange={() => toggleSelect(cat.key, String(item.id))} />
+                  <span className="truncate text-[var(--text-secondary)]">{cat.getName(item)}</span>
+                </div>
                 <div className="flex gap-2 shrink-0">
                   <button onClick={() => restore(cat.restoreFn, item.id)} className="text-xs text-cyan-600 hover:underline">Przywróć</button>
                   {isAdmin && (
@@ -99,7 +165,8 @@ export function TrashView({ actor }: { actor: any }) {
               </div>
             ))}
           </div>
-        ))
+          );
+        })
       )}
     </div>
   );

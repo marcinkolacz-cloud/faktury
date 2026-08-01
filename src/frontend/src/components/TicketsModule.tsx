@@ -201,6 +201,8 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     }
     return true;
   });
+  const ticketRankMap = new Map<string, number>();
+  [...filteredTickets].sort((a, b) => Number(a.id - b.id)).forEach((t, i) => ticketRankMap.set(String(t.id), i + 1));
 
   const translate = async (text: string, targetLang: "pl" | "en"): Promise<string> => {
     const res = await fetch("https://bartolini-translate.marcinkolacz.workers.dev", {
@@ -390,7 +392,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-sm text-[var(--text-primary)] truncate flex items-center gap-1.5">
-                        <span className="shrink-0 text-[10px] text-gray-400 font-mono">{idx + 1}.</span>
+                        <span className="shrink-0 text-[10px] text-gray-400 font-mono">{ticketRankMap.get(String(t.id)) || idx + 1}.</span>
                         {unreadCount(t) > 0 && (
                           <span className="shrink-0 bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
                             {unreadCount(t)}

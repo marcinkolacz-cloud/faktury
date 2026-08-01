@@ -7,6 +7,7 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detailsCache, setDetailsCache] = useState<Record<string, { items: any[]; link: string }>>({});
+  const [colFilters, setColFilters] = useState({ date: "", seller: "", invoiceNumber: "" });
   const [readableHtml, setReadableHtml] = useState<string | null>(null);
   const [readableLoading, setReadableLoading] = useState(false);
 
@@ -50,6 +51,15 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
     return parts[2] + "." + parts[1] + "." + parts[0];
   };
 
+  const rankMap = new Map<string, number>();
+  [...invoices].sort((a, b) => Number(a.importedAt - b.importedAt)).forEach((inv, i) => rankMap.set(inv.ksefNumber, i + 1));
+
+  const filteredInvoices = invoices
+    .filter((i) => i.issueDate.toLowerCase().includes(colFilters.date.toLowerCase()))
+    .filter((i) => (i.sellerName + " " + i.sellerNip).toLowerCase().includes(colFilters.seller.toLowerCase()))
+    .filter((i) => i.invoiceNumber.toLowerCase().includes(colFilters.invoiceNumber.toLowerCase()))
+    .reverse();
+
   if (loading) {
     return <div className="min-h-screen bg-[var(--bg-page)] flex items-center justify-center text-[var(--text-muted)]">Ładowanie...</div>;
   }
@@ -64,13 +74,14 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
 
         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4">
-          {invoices.length === 0 ? (
+          {filteredInvoices.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)] text-center py-4">Brak udostępnionych faktur.</p>
           ) : (
             <div className="overflow-auto rounded border border-[var(--border-color)]">
               <table className="w-full text-xs">
                 <thead className="bg-[var(--bg-hover)] sticky top-0">
                   <tr className="text-left text-[var(--text-muted)]">
+                    <th className="p-2 w-8">Lp.</th>
                     <th className="p-2">Data</th>
                     <th className="p-2">Sprzedawca</th>
                     <th className="p-2">Nr faktury</th>
@@ -78,11 +89,21 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
                     <th className="p-2 text-right">Brutto</th>
                     <th className="p-2"></th>
                   </tr>
+                  <tr className="bg-[var(--bg-card)]">
+                    <th className="p-1"></th>
+                    <th className="p-1"><input value={colFilters.date} onChange={(e) => setColFilters((f) => ({ ...f, date: e.target.value }))} placeholder="szukaj..." className="w-full text-[10px] font-normal border border-[var(--border-color)] rounded px-1 py-0.5" /></th>
+                    <th className="p-1"><input value={colFilters.seller} onChange={(e) => setColFilters((f) => ({ ...f, seller: e.target.value }))} placeholder="szukaj..." className="w-full text-[10px] font-normal border border-[var(--border-color)] rounded px-1 py-0.5" /></th>
+                    <th className="p-1"><input value={colFilters.invoiceNumber} onChange={(e) => setColFilters((f) => ({ ...f, invoiceNumber: e.target.value }))} placeholder="szukaj..." className="w-full text-[10px] font-normal border border-[var(--border-color)] rounded px-1 py-0.5" /></th>
+                    <th className="p-1"></th>
+                    <th className="p-1"></th>
+                    <th className="p-1"></th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {invoices.map((inv) => (
+                  {filteredInvoices.map((inv, idx) => (
                     <React.Fragment key={inv.ksefNumber}>
                     <tr className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-hover)]">
+                      <td className="p-2 text-gray-400">{rankMap.get(inv.ksefNumber) || idx + 1}</td>
                       <td className="p-2">{formatDate(inv.issueDate)}</td>
                       <td className="p-2">{inv.sellerName} <span className="text-[var(--text-muted)]">({inv.sellerNip})</span></td>
                       <td className="p-2">{inv.invoiceNumber}</td>
@@ -97,7 +118,7 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
                     </tr>
                     {expandedId === inv.ksefNumber && (
                       <tr className="bg-[var(--bg-page)]">
-                        <td colSpan={6} className="p-2">
+                        <td colSpan={7} className="p-2">
                           {!detailsCache[inv.ksefNumber] ? (
                             <p className="text-[10px] text-[var(--text-muted)]">Ładowanie...</p>
                           ) : (
@@ -122,11 +143,7 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
                                   </tbody>
                                 </table>
                               )}
-                              {detailsCache[inv.ksefNumber].link && (
-                                <a href={detailsCache[inv.ksefNumber].link} target="_blank" rel="noreferrer" className="text-[10px] text-cyan-600 hover:underline">
-                                  📎 Zobacz fakturę na Dysku
-                                </a>
-                              )}
+
                             </>
                           )}
                         </td>

@@ -92,6 +92,8 @@ export function StockMovementsPanel({ items, movements, projects, actor, onChang
     movementProjectName(m).toLowerCase().includes(movementFilters.project.toLowerCase()) &&
     m.performedBy.toLowerCase().includes(movementFilters.who.toLowerCase())
   );
+  const rankMap = new Map<string, number>();
+  [...filteredMovements].sort((a, b) => Number(a.id - b.id)).forEach((m, i) => rankMap.set(String(m.id), i + 1));
 
   return (
     <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
@@ -186,7 +188,7 @@ export function StockMovementsPanel({ items, movements, projects, actor, onChang
             {[...filteredMovements].reverse().map((m, idx) => (
               <StockMovementRow
                 key={String(m.id)}
-                rowNumber={idx + 1}
+                rowNumber={rankMap.get(String(m.id)) || idx + 1}
                 movement={m}
                 itemName={itemName(m.itemId)}
                 projects={projects}

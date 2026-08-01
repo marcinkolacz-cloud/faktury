@@ -5,6 +5,7 @@ import Principal "mo:core/Principal";
 import Time "mo:core/Time";
 import Runtime "mo:core/Runtime";
 import Text "mo:core/Text";
+import Int "mo:core/Int";
 import AccessLib "../lib/access";
 
 mixin (
@@ -14,6 +15,35 @@ mixin (
   invoiceLineItems : Map.Map<Text, [Types.InvoiceLineItem]>,
   invoiceOneDriveLink : Map.Map<Text, Text>,
 ) {
+  public shared ({ caller }) func createManualInvoice(
+    invoiceNumber : Text,
+    issueDate : Text,
+    sellerNip : Text,
+    sellerName : Text,
+    netAmount : Float,
+    grossAmount : Float,
+    vatAmount : Float,
+    currency : Text,
+  ) : async Text {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can add manual invoices"); };
+    let ksefNumber = "MANUAL-" # Int.toText(Time.now());
+    let invoice : Types.PendingInvoice = {
+      ksefNumber;
+      invoiceNumber;
+      issueDate;
+      sellerNip;
+      sellerName;
+      netAmount;
+      grossAmount;
+      vatAmount;
+      currency;
+      status = #pending;
+      importedAt = Time.now();
+    };
+    pendingInvoices.add(ksefNumber, invoice);
+    ksefNumber;
+  };
+
   public shared ({ caller }) func importPendingInvoices(items : [Types.PendingInvoiceImportItem]) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import invoices"); };
     var count = 0;

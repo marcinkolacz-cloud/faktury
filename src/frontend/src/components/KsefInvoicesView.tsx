@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { setKsefActor, ksefSetToken, ksefStatus, ksefTestAuth, ksefListInvoices, ksefGetInvoiceXml } from "../lib/ksefConfig";
 import { renderReadableInvoiceHtml, printInvoiceHtml } from "../lib/ksefInvoicePreview";
-import { odCreateFolder, odList, odUploadFile, setDriveActor } from "../lib/oneDriveConfig";
+import { setDriveActor, odCreateFolder, odList, odUploadFile } from "../lib/oneDriveConfig";
 
 export function KsefInvoicesView({ actor }: { actor: any }) {
   const [configured, setConfigured] = useState(false);
@@ -100,6 +100,19 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
     setFetching(false);
   };
 
+  const [colFilters, setColFilters] = useState({ date: "", seller: "", invoiceNumber: "", amount: "" });
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualInvoiceNumber, setManualInvoiceNumber] = useState("");
+  const [manualIssueDate, setManualIssueDate] = useState("");
+  const [manualSellerName, setManualSellerName] = useState("");
+  const [manualSellerNip, setManualSellerNip] = useState("");
+  const [manualNet, setManualNet] = useState("");
+  const [manualGross, setManualGross] = useState("");
+  const [manualVat, setManualVat] = useState("");
+  const [manualCurrency, setManualCurrency] = useState("PLN");
+  const [manualFile, setManualFile] = useState<File | null>(null);
+  const [manualItems, setManualItems] = useState<{ name: string; quantity: string; unit: string }[]>([{ name: "", quantity: "", unit: "szt." }]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedDecided, setSelectedDecided] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
@@ -176,12 +189,6 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
     }
   };
 
-  const ensureKsefFolder = async () => {
-    const listing = await odList("");
-    const exists = (listing.items || []).some((i: any) => i.isFolder && i.name === "Faktury KSeF");
-    if (!exists) await odCreateFolder("", "Faktury KSeF");
-  };
-
   const addToWarehouse = async (ksefNumber: string) => {
     const invoice = pending.find((p) => p.ksefNumber === ksefNumber);
     if (!invoice) return;
@@ -195,23 +202,15 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
         return;
       }
 
-      await ensureKsefFolder();
-      const fileName = ksefNumber + ".xml";
-      const file = new File([xmlText], fileName, { type: "application/xml" });
-      await odUploadFile("Faktury KSeF", file);
-      const folderListing = await odList("Faktury KSeF");
-      const uploadedItem = (folderListing.items || []).find((i: any) => i.name === fileName);
-      const link = uploadedItem?.webUrl || "";
-
       const note = "Faktura " + invoice.invoiceNumber + " — " + invoice.sellerName;
       for (const line of lines) {
         const itemId = await actor.createWarehouseItem(
-          line.name, "", "", link, invoice.sellerName, ksefNumber, "Z faktur KSeF", false, false, false, "", note
+          line.name, "", "", "", invoice.sellerName, ksefNumber, "Z faktur KSeF", false, false, false, "", note
         );
         await actor.recordStockMovement(itemId, { in: null }, line.quantity, [], "System KSeF", invoice.issueDate, note);
       }
 
-      await actor.addInvoiceToWarehouse(ksefNumber, lines, link);
+      await actor.addInvoiceToWarehouse(ksefNumber, lines, "");
       reloadPending();
       alert("Dodano " + lines.length + " pozycji do magazynu.");
     } catch (e: any) {
@@ -273,6 +272,91 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
     setBulkProcessing(false);
   };
 
+  const addManualItemRow = () => {
+    setManualItems((prev) => [...prev, { name: "", quantity: "", unit: "szt." }]);
+  };
+
+  const removeManualItemRow = (idx: number) => {
+    setManualItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateManualItemRow = (idx: number, field: "name" | "quantity" | "unit", value: string) => {
+    setManualItems((prev) => prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
+  };
+
+  const ensureManualFolder = async () => {
+    const listing = await odList("");
+    const exists = (listing.items || []).some((i: any) => i.isFolder && i.name === "Faktury reczne");
+    if (!exists) await odCreateFolder("", "Faktury reczne");
+  };
+
+  const resetManualForm = () => {
+    setManualInvoiceNumber("");
+    setManualIssueDate("");
+    setManualSellerName("");
+    setManualSellerNip("");
+    setManualNet("");
+    setManualGross("");
+    setManualVat("");
+    setManualCurrency("PLN");
+    setManualFile(null);
+    setManualItems([{ name: "", quantity: "", unit: "szt." }]);
+  };
+
+  const saveManualInvoice = async () => {
+    if (!manualInvoiceNumber.trim() || !manualIssueDate || !manualSellerName.trim()) {
+      alert("Uzupełnij przynajmniej numer faktury, datę wystawienia i nazwę sprzedawcy.");
+      return;
+    }
+    setManualSaving(true);
+    try {
+      const ksefNumber = await actor.createManualInvoice(
+        manualInvoiceNumber.trim(),
+        manualIssueDate,
+        manualSellerNip.trim(),
+        manualSellerName.trim(),
+        parseFloat(manualNet) || 0,
+        parseFloat(manualGross) || 0,
+        parseFloat(manualVat) || 0,
+        manualCurrency.trim() || "PLN"
+      );
+
+      let link = "";
+      if (manualFile) {
+        await ensureManualFolder();
+        await odUploadFile("Faktury reczne", manualFile);
+        const listing = await odList("Faktury reczne");
+        const uploadedItem = (listing.items || []).find((i: any) => i.name === manualFile.name);
+        link = uploadedItem?.webUrl || "";
+      }
+
+      const validItems = manualItems
+        .filter((it) => it.name.trim())
+        .map((it) => ({ name: it.name.trim(), quantity: parseFloat(it.quantity) || 0, unit: it.unit.trim() }));
+
+      if (validItems.length > 0) {
+        const note = "Faktura " + manualInvoiceNumber.trim() + " — " + manualSellerName.trim();
+        for (const item of validItems) {
+          const itemId = await actor.createWarehouseItem(
+            item.name, "", "", "", manualSellerName.trim(), ksefNumber, "Z faktur KSeF", false, false, false, "", note
+          );
+          await actor.recordStockMovement(itemId, { in: null }, item.quantity, [], "System KSeF (ręcznie)", manualIssueDate, note);
+        }
+        await actor.addInvoiceToWarehouse(ksefNumber, validItems, link);
+      } else if (link) {
+        await actor.addInvoiceToWarehouse(ksefNumber, [], link);
+      }
+
+      resetManualForm();
+      setShowManualForm(false);
+      reloadPending();
+      alert("Faktura dodana ręcznie" + (validItems.length > 0 ? " wraz z pozycjami magazynowymi." : "."));
+    } catch (e: any) {
+      alert("Błąd: " + String(e?.message || e));
+    }
+    setManualSaving(false);
+  };
+
   const restoreRejected = async (ksefNumber: string) => {
     await actor.restoreRejectedInvoice(ksefNumber);
     reloadPending();
@@ -311,7 +395,12 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
     setBulkProcessing(false);
   };
 
-  const pendingOnly = pending.filter((p) => Object.keys(p.status)[0] !== "rejected");
+  const pendingOnly = pending
+    .filter((p) => Object.keys(p.status)[0] !== "rejected")
+    .filter((p) => p.issueDate.toLowerCase().includes(colFilters.date.toLowerCase()))
+    .filter((p) => (p.sellerName + " " + p.sellerNip).toLowerCase().includes(colFilters.seller.toLowerCase()))
+    .filter((p) => p.invoiceNumber.toLowerCase().includes(colFilters.invoiceNumber.toLowerCase()))
+    .filter((p) => String(p.grossAmount).includes(colFilters.amount));
   const decidedOnly = pending.filter((p) => Object.keys(p.status)[0] === "rejected");
 
   return (
@@ -343,8 +432,49 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
             <button onClick={fetchInvoices} disabled={fetching} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50">
               {fetching ? "Pobieram..." : "Pobierz nowe faktury"}
             </button>
+            <button onClick={() => setShowManualForm((v) => !v)} className="px-3 py-1.5 text-sm border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]">
+              {showManualForm ? "Anuluj" : "+ Dodaj fakturę ręcznie"}
+            </button>
           </div>
           {fetchMessage && <p className="text-xs text-[var(--text-muted)]">{fetchMessage}</p>}
+        </div>
+      )}
+
+      {showManualForm && (
+        <div className="bg-[var(--bg-page)] border border-[var(--border-color-light)] rounded p-3 space-y-2">
+          <p className="text-xs font-medium text-[var(--text-muted)] uppercase">Faktura wprowadzana ręcznie (np. zagraniczna)</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <input value={manualInvoiceNumber} onChange={(e) => setManualInvoiceNumber(e.target.value)} placeholder="Numer faktury" className="border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5 text-sm" />
+            <input type="date" value={manualIssueDate} onChange={(e) => setManualIssueDate(e.target.value)} className="border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5 text-sm" />
+            <input value={manualSellerName} onChange={(e) => setManualSellerName(e.target.value)} placeholder="Nazwa sprzedawcy" className="border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5 text-sm" />
+            <input value={manualSellerNip} onChange={(e) => setManualSellerNip(e.target.value)} placeholder="NIP / VAT ID (opcjonalnie)" className="border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5 text-sm" />
+            <input value={manualNet} onChange={(e) => setManualNet(e.target.value)} placeholder="Kwota netto" className="border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5 text-sm" />
+            <input value={manualVat} onChange={(e) => setManualVat(e.target.value)} placeholder="Kwota VAT" className="border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5 text-sm" />
+            <input value={manualGross} onChange={(e) => setManualGross(e.target.value)} placeholder="Kwota brutto" className="border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5 text-sm" />
+            <input value={manualCurrency} onChange={(e) => setManualCurrency(e.target.value)} placeholder="Waluta (np. PLN, EUR, USD)" className="border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5 text-sm" />
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-xs text-[var(--text-muted)]">Pozycje towarowe (opcjonalnie — jeśli chcesz dodać do magazynu)</p>
+            {manualItems.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input value={item.name} onChange={(e) => updateManualItemRow(idx, "name", e.target.value)} placeholder="Nazwa towaru" className="flex-1 border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1 text-sm" />
+                <input value={item.quantity} onChange={(e) => updateManualItemRow(idx, "quantity", e.target.value)} placeholder="Ilość" className="w-20 border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1 text-sm" />
+                <input value={item.unit} onChange={(e) => updateManualItemRow(idx, "unit", e.target.value)} placeholder="Jedn." className="w-16 border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1 text-sm" />
+                <button onClick={() => removeManualItemRow(idx)} className="text-red-500 hover:text-red-400 text-sm">✕</button>
+              </div>
+            ))}
+            <button onClick={addManualItemRow} className="text-xs text-cyan-600 hover:underline">+ Dodaj pozycję</button>
+          </div>
+
+          <div>
+            <p className="text-xs text-[var(--text-muted)] mb-1">Dokument faktury (PDF/zdjęcie) — zostanie zapisany na Dysku</p>
+            <input type="file" onChange={(e) => setManualFile(e.target.files?.[0] || null)} className="text-xs" />
+          </div>
+
+          <button onClick={saveManualInvoice} disabled={manualSaving} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50">
+            {manualSaving ? "Zapisuję..." : "Zapisz fakturę"}
+          </button>
         </div>
       )}
 
@@ -379,6 +509,16 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
                   <th className="p-2 text-center">Udostępnione</th>
                   <th className="p-2 text-center">W magazynie</th>
                   <th className="p-2"></th>
+                </tr>
+                <tr className="bg-[var(--bg-card)]">
+                  <th className="p-1"></th>
+                  <th className="p-1"><input value={colFilters.date} onChange={(e) => setColFilters((f) => ({ ...f, date: e.target.value }))} placeholder="szukaj..." className="w-full text-[10px] font-normal border border-[var(--border-color)] rounded px-1 py-0.5" /></th>
+                  <th className="p-1"><input value={colFilters.seller} onChange={(e) => setColFilters((f) => ({ ...f, seller: e.target.value }))} placeholder="szukaj..." className="w-full text-[10px] font-normal border border-[var(--border-color)] rounded px-1 py-0.5" /></th>
+                  <th className="p-1"><input value={colFilters.invoiceNumber} onChange={(e) => setColFilters((f) => ({ ...f, invoiceNumber: e.target.value }))} placeholder="szukaj..." className="w-full text-[10px] font-normal border border-[var(--border-color)] rounded px-1 py-0.5" /></th>
+                  <th className="p-1"><input value={colFilters.amount} onChange={(e) => setColFilters((f) => ({ ...f, amount: e.target.value }))} placeholder="szukaj..." className="w-full text-[10px] font-normal border border-[var(--border-color)] rounded px-1 py-0.5" /></th>
+                  <th className="p-1"></th>
+                  <th className="p-1"></th>
+                  <th className="p-1"></th>
                 </tr>
               </thead>
               <tbody>

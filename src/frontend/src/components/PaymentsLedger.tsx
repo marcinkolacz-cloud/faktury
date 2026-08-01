@@ -38,6 +38,8 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
   };
 
   const sorted = [...payments].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const rankMap = new Map<string, number>();
+  [...payments].sort((a, b) => Number(a.id - b.id)).forEach((p, i) => rankMap.set(String(p.id), i + 1));
 
   return (
     <div className="lg:col-span-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
@@ -72,7 +74,7 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
             {sorted.map((p, idx) =>
               editingId === p.id ? (
                 <tr key={String(p.id)} className="border-t border-[var(--border-color-light)] bg-amber-500/10">
-                  <td className="p-1 text-gray-400">{idx + 1}</td>
+                  <td className="p-1 text-gray-400">{rankMap.get(String(p.id)) || idx + 1}</td>
                   <td className="p-1"><input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full" /></td>
                   <td className="p-1"><input type="number" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full" /></td>
                   <td className="p-1"><input value={editNote} onChange={(e) => setEditNote(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-full" /></td>
@@ -83,7 +85,7 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
                 </tr>
               ) : (
                 <tr key={String(p.id)} className="border-t border-[var(--border-color-light)] hover:bg-[var(--bg-page)]">
-                  <td className="p-1 text-gray-400">{idx + 1}</td>
+                  <td className="p-1 text-gray-400">{rankMap.get(String(p.id)) || idx + 1}</td>
                   <td className="p-1 font-mono text-[var(--text-secondary)]">{p.date}</td>
                   <td className="p-1 text-right font-mono text-[var(--text-primary)]">{p.amount.toFixed(2)}</td>
                   <td className="p-1 text-gray-500">{p.note}</td>
