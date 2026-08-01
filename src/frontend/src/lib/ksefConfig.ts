@@ -68,3 +68,34 @@ export async function ksefGetInvoiceXml(ksefNumber: string): Promise<string> {
   }
   return text;
 }
+
+let cachedReadToken: string | null = null;
+let cachedReadTokenExpiry = 0;
+let pendingReadTokenPromise: Promise<string> | null = null;
+
+async function getKsefReadToken(): Promise<string> {
+  const now = Date.now();
+  if (cachedReadToken && now < cachedReadTokenExpiry) return cachedReadToken;
+  if (pendingReadTokenPromise) return pendingReadTokenPromise;
+  if (!registeredActor) throw new Error("Ksef actor not registered yet");
+  const promise: Promise<string> = registeredActor.requestKsefReadToken().then((token: string) => {
+    cachedReadToken = token;
+    cachedReadTokenExpiry = Date.now() + 4 * 60 * 1000;
+    pendingReadTokenPromise = null;
+    return token;
+  });
+  pendingReadTokenPromise = promise;
+  return promise;
+}
+
+export async function ksefGetInvoiceXmlAsTeamMember(ksefNumber: string): Promise<string> {
+  const token = await getKsefReadToken();
+  const resp = await fetch(KSEF_WORKER_URL + "/admin/invoiceXml?ksefNumber=" + encodeURIComponent(ksefNumber), {
+    headers: { Authorization: "Bearer " + token },
+  });
+  const text = await resp.text();
+  if (!resp.ok) {
+    throw new Error("Nie udało się pobrać faktury z KSeF (status " + resp.status + "): " + text.slice(0, 300));
+  }
+  return text;
+}

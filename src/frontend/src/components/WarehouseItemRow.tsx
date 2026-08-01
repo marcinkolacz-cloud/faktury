@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { DriveFilePicker } from "./DriveFilePicker";
 import { DriveThumbnail } from "./DriveThumbnail";
 import { renderReadableInvoiceHtml, printInvoiceHtml } from "../lib/ksefInvoicePreview";
+import { setKsefActor } from "../lib/ksefConfig";
+import { odDownloadFileBlob, setDriveActor } from "../lib/oneDriveConfig";
 
 export function WarehouseItemRow({ rowNumber, item, categories, projects, movements, actor, onChange, canWrite, selected, onToggleSelect }: {
   rowNumber: number; item: any; categories: string[]; projects: any[]; movements: any[]; actor: any; onChange: () => void; canWrite: boolean; selected: boolean; onToggleSelect: () => void;
@@ -11,6 +13,30 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
   const [readableLoading, setReadableLoading] = useState(false);
 
   const showReadableInvoice = async (ksefNumber: string) => {
+    setKsefActor(actor);
+    if (ksefNumber.startsWith("MANUAL-")) {
+      setDriveActor(actor);
+      const details = await actor.getInvoiceDetails(ksefNumber);
+      const itemId = details[1]?.[0] || "";
+      if (!itemId) {
+        alert("Ta faktura nie ma dołączonego dokumentu.");
+        return;
+      }
+      if (itemId.startsWith("http")) {
+        window.open(itemId, "_blank");
+        return;
+      }
+      const win = window.open("", "_blank");
+      try {
+        const blob = await odDownloadFileBlob(itemId);
+        const blobUrl = URL.createObjectURL(blob);
+        if (win) win.location.href = blobUrl;
+      } catch (e: any) {
+        if (win) win.close();
+        alert("Nie udało się pobrać dokumentu z Dysku: " + String(e?.message || e));
+      }
+      return;
+    }
     setReadableLoading(true);
     setReadableHtml("");
     try {

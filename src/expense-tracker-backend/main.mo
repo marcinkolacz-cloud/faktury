@@ -68,6 +68,8 @@ persistent actor {
   var pendingInterval : Nat = 5;
   let driveTokens = Map.empty<Text, Int>();
   let adminTokens = Map.empty<Text, Int>();
+  let ksefReadTokens = Map.empty<Text, Int>();
+  let principalDisplayNames = Map.empty<Principal, Text>();
 
   let oneDriveClientId = "427bbeee-c6bd-4dfc-9946-9b230aec7861";
 
@@ -163,6 +165,52 @@ persistent actor {
       case (?exp) { Time.now() < exp };
       case null { false };
     };
+  };
+
+  public shared ({ caller }) func requestKsefReadToken() : async Text {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    let now = Time.now();
+    var expired = List.empty<Text>();
+    for ((t, exp) in ksefReadTokens.entries()) {
+      if (exp < now) { expired.add(t); };
+    };
+    for (t in expired.values()) { ksefReadTokens.remove(t); };
+    let rng = Random.crypto();
+    var token = "";
+    var i = 0;
+    while (i < 32) {
+      let idx = await* rng.natRange(0, 36);
+      token := token # driveTokenChars[idx].toText();
+      i += 1;
+    };
+    ksefReadTokens.add(token, now + 300_000_000_000);
+    token;
+  };
+
+  public query func validateKsefReadToken(token : Text) : async Bool {
+    switch (ksefReadTokens.get(token)) {
+      case (?exp) { Time.now() < exp };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func setPrincipalDisplayName(target : Principal, name : Text) : async Bool {
+    if (not isAdmin(caller)) { Runtime.trap("Only admin can set display names"); };
+    if (Text.size(name) == 0) {
+      principalDisplayNames.remove(target);
+    } else {
+      principalDisplayNames.add(target, name);
+    };
+    true;
+  };
+
+  public query ({ caller }) func listPrincipalDisplayNames() : async [(Principal, Text)] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    var result = List.empty<(Principal, Text)>();
+    for ((p, name) in principalDisplayNames.entries()) {
+      result.add((p, name));
+    };
+    result.toArray();
   };
 
   public shared ({ caller }) func setAdminPrincipal() : async () {

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { TopBar } from "./TopBar";
 import { renderReadableInvoiceHtml, printInvoiceHtml } from "../lib/ksefInvoicePreview";
+import { setKsefActor } from "../lib/ksefConfig";
+import { odDownloadFileBlob, setDriveActor } from "../lib/oneDriveConfig";
 
 export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string; actor: any }) {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -12,6 +14,28 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
   const [readableLoading, setReadableLoading] = useState(false);
 
   const showReadableInvoice = async (ksefNumber: string) => {
+    if (ksefNumber.startsWith("MANUAL-")) {
+      const details = await actor.getInvoiceDetails(ksefNumber);
+      const itemId = details[1]?.[0] || "";
+      if (!itemId) {
+        alert("Ta faktura nie ma dołączonego dokumentu.");
+        return;
+      }
+      if (itemId.startsWith("http")) {
+        window.open(itemId, "_blank");
+        return;
+      }
+      const win = window.open("", "_blank");
+      try {
+        const blob = await odDownloadFileBlob(itemId);
+        const blobUrl = URL.createObjectURL(blob);
+        if (win) win.location.href = blobUrl;
+      } catch (e: any) {
+        if (win) win.close();
+        alert("Nie udało się pobrać dokumentu z Dysku: " + String(e?.message || e));
+      }
+      return;
+    }
     setReadableLoading(true);
     setReadableHtml("");
     try {
@@ -37,6 +61,8 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
 
   useEffect(() => {
     if (actor) {
+      setDriveActor(actor);
+      setKsefActor(actor);
       actor.listSharedInvoices().then((result: any) => {
         setInvoices(result);
         setLoading(false);

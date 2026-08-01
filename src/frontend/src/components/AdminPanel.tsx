@@ -20,6 +20,20 @@ export function AdminPanel({ actor }: { actor: any }) {
   const [access, setAccess] = useState<any[]>([]);
   const [newRole, setNewRole] = useState("write");
   const [lastCode, setLastCode] = useState("");
+  const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
+
+  const reloadDisplayNames = async () => {
+    if (!actor) return;
+    const result = await actor.listPrincipalDisplayNames();
+    const map: Record<string, string> = {};
+    result.forEach(([p, name]: [any, string]) => { map[p.toString()] = name; });
+    setDisplayNames(map);
+  };
+
+  const saveDisplayName = async (principal: any, name: string) => {
+    await actor.setPrincipalDisplayName(principal, name);
+    setDisplayNames((prev) => ({ ...prev, [principal.toString()]: name }));
+  };
 
   const reload = async () => {
     if (!actor) return;
@@ -33,6 +47,7 @@ export function AdminPanel({ actor }: { actor: any }) {
 
   useEffect(() => {
     reload();
+    reloadDisplayNames();
   }, [actor]);
 
   const generateCode = async () => {
@@ -112,7 +127,15 @@ export function AdminPanel({ actor }: { actor: any }) {
             <tbody>
               {access.map((a) => (
                 <tr key={a.principal.toString()} className="border-t border-[var(--border-color-light)]">
-                  <td className="p-1 font-mono text-[10px]">{a.principal.toString()}</td>
+                  <td className="p-1">
+                    <input
+                      defaultValue={displayNames[a.principal.toString()] || ""}
+                      placeholder="np. Iza, Bartek..."
+                      onBlur={(e) => saveDisplayName(a.principal, e.target.value.trim())}
+                      className="border border-[var(--border-color)] rounded px-1 py-0.5 text-xs w-24 mb-1"
+                    />
+                    <div className="font-mono text-[9px] text-[var(--text-secondary)] truncate max-w-[100px]" title={a.principal.toString()}>{a.principal.toString()}</div>
+                  </td>
                   <td className="p-1">
                     <select
                       value={roleFromVariant(a.role)}

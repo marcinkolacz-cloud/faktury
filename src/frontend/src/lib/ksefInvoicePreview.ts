@@ -1,4 +1,4 @@
-import { ksefGetInvoiceXml } from "./ksefConfig";
+import { ksefGetInvoiceXmlAsTeamMember } from "./ksefConfig";
 
 let cachedXsltDoc: Document | null = null;
 
@@ -22,7 +22,7 @@ export function printInvoiceHtml(html: string) {
 }
 
 export async function renderReadableInvoiceHtml(ksefNumber: string): Promise<string> {
-  const xmlText = await ksefGetInvoiceXml(ksefNumber);
+  const xmlText = await ksefGetInvoiceXmlAsTeamMember(ksefNumber);
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlText, "application/xml");
   const xsltDoc = await getXsltDoc();

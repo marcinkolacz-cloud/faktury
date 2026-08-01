@@ -66,6 +66,12 @@ export async function odPreview(itemId: string) {
   return resp.json();
 }
 
+export async function odDownloadFileBlob(itemId: string): Promise<Blob> {
+  const resp = await fetch(ONEDRIVE_WORKER_URL + "/downloadFile?itemId=" + encodeURIComponent(itemId), { headers: await authHeaders() });
+  if (!resp.ok) throw new Error("Nie udało się pobrać pliku (status " + resp.status + ")");
+  return resp.blob();
+}
+
 export async function odDownloadUrl(itemId: string) {
   const resp = await fetch(ONEDRIVE_WORKER_URL + "/downloadUrl?itemId=" + encodeURIComponent(itemId), { headers: await authHeaders() });
   return resp.json();

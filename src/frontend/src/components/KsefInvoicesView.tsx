@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { setKsefActor, ksefSetToken, ksefStatus, ksefTestAuth, ksefListInvoices, ksefGetInvoiceXml } from "../lib/ksefConfig";
 import { renderReadableInvoiceHtml, printInvoiceHtml } from "../lib/ksefInvoicePreview";
-import { setDriveActor, odCreateFolder, odList, odUploadFile } from "../lib/oneDriveConfig";
+import { setDriveActor, odCreateFolder, odList, odUploadFile, odDownloadFileBlob } from "../lib/oneDriveConfig";
 
 export function KsefInvoicesView({ actor }: { actor: any }) {
   const [configured, setConfigured] = useState(false);
@@ -124,6 +124,28 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
   const [readableLoading, setReadableLoading] = useState(false);
 
   const showReadableInvoice = async (ksefNumber: string) => {
+    if (ksefNumber.startsWith("MANUAL-")) {
+      const details = await actor.getInvoiceDetails(ksefNumber);
+      const itemId = details[1]?.[0] || "";
+      if (!itemId) {
+        alert("Ta faktura nie ma dołączonego dokumentu (nie wgrano pliku przy dodawaniu ręcznym).");
+        return;
+      }
+      if (itemId.startsWith("http")) {
+        window.open(itemId, "_blank");
+        return;
+      }
+      const win = window.open("", "_blank");
+      try {
+        const blob = await odDownloadFileBlob(itemId);
+        const blobUrl = URL.createObjectURL(blob);
+        if (win) win.location.href = blobUrl;
+      } catch (e: any) {
+        if (win) win.close();
+        alert("Nie udało się pobrać dokumentu z Dysku: " + String(e?.message || e));
+      }
+      return;
+    }
     setReadableLoading(true);
     setReadableHtml("");
     try {
@@ -327,7 +349,7 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
         await odUploadFile("Faktury reczne", manualFile);
         const listing = await odList("Faktury reczne");
         const uploadedItem = (listing.items || []).find((i: any) => i.name === manualFile.name);
-        link = uploadedItem?.webUrl || "";
+        link = uploadedItem?.id || "";
       }
 
       const validItems = manualItems
@@ -400,7 +422,8 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
     .filter((p) => p.issueDate.toLowerCase().includes(colFilters.date.toLowerCase()))
     .filter((p) => (p.sellerName + " " + p.sellerNip).toLowerCase().includes(colFilters.seller.toLowerCase()))
     .filter((p) => p.invoiceNumber.toLowerCase().includes(colFilters.invoiceNumber.toLowerCase()))
-    .filter((p) => String(p.grossAmount).includes(colFilters.amount));
+    .filter((p) => String(p.grossAmount).includes(colFilters.amount))
+    .sort((a, b) => (a.issueDate < b.issueDate ? 1 : a.issueDate > b.issueDate ? -1 : Number(b.importedAt - a.importedAt)));
   const decidedOnly = pending.filter((p) => Object.keys(p.status)[0] === "rejected");
 
   return (
