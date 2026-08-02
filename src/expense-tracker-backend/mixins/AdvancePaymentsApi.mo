@@ -46,8 +46,10 @@ mixin (
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (p in rows.vals()) {
-      advancePayments.add(p.id, p);
-      count += 1;
+      switch (advancePayments.get(p.id)) {
+        case (?_) {};
+        case null { advancePayments.add(p.id, p); count += 1; };
+      };
     };
     count;
   };
@@ -125,7 +127,12 @@ mixin (
   public shared ({ caller }) func importTrashedAdvancePayments(entries : [(Nat, Int)]) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
-    for ((id, ts) in entries.vals()) { advancePaymentsTrashed.add(id, ts); count += 1; };
+    for ((id, ts) in entries.vals()) {
+      switch (advancePaymentsTrashed.get(id)) {
+        case (?_) {};
+        case null { advancePaymentsTrashed.add(id, ts); count += 1; };
+      };
+    };
     count;
   };
 };

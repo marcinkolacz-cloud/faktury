@@ -121,8 +121,10 @@ mixin (
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (t in rows.vals()) {
-      tickets.add(t.id, t);
-      count += 1;
+      switch (tickets.get(t.id)) {
+        case (?_) {};
+        case null { tickets.add(t.id, t); count += 1; };
+      };
     };
     count;
   };
@@ -131,8 +133,10 @@ mixin (
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, extras) in rows.vals()) {
-      ticketExtras.add(id, extras);
-      count += 1;
+      switch (ticketExtras.get(id)) {
+        case (?_) {};
+        case null { ticketExtras.add(id, extras); count += 1; };
+      };
     };
     count;
   };
@@ -141,8 +145,10 @@ mixin (
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (id in rows.vals()) {
-      ticketArchived.add(id, true);
-      count += 1;
+      switch (ticketArchived.get(id)) {
+        case (?_) {};
+        case null { ticketArchived.add(id, true); count += 1; };
+      };
     };
     count;
   };
@@ -151,8 +157,10 @@ mixin (
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, seenCount) in rows.vals()) {
-      ticketSeenCounts.add(id, seenCount);
-      count += 1;
+      switch (ticketSeenCounts.get(id)) {
+        case (?_) {};
+        case null { ticketSeenCounts.add(id, seenCount); count += 1; };
+      };
     };
     count;
   };
@@ -161,8 +169,10 @@ mixin (
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((token, id) in rows.vals()) {
-      ticketTokens.add(token, id);
-      count += 1;
+      switch (ticketTokens.get(token)) {
+        case (?_) {};
+        case null { ticketTokens.add(token, id); count += 1; };
+      };
     };
     count;
   };

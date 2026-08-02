@@ -94,8 +94,10 @@ mixin (
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (i in rows.vals()) {
-      warehouseItems.add(i.id, i);
-      count += 1;
+      switch (warehouseItems.get(i.id)) {
+        case (?_) {};
+        case null { warehouseItems.add(i.id, i); count += 1; };
+      };
     };
     count;
   };
@@ -235,8 +237,10 @@ mixin (
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (m in rows.vals()) {
-      stockMovements.add(m.id, m);
-      count += 1;
+      switch (stockMovements.get(m.id)) {
+        case (?_) {};
+        case null { stockMovements.add(m.id, m); count += 1; };
+      };
     };
     count;
   };
@@ -350,14 +354,24 @@ mixin (
   public shared ({ caller }) func importTrashedWarehouseItems(entries : [(Nat, Int)]) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
-    for ((id, ts) in entries.vals()) { warehouseItemsTrashed.add(id, ts); count += 1; };
+    for ((id, ts) in entries.vals()) {
+      switch (warehouseItemsTrashed.get(id)) {
+        case (?_) {};
+        case null { warehouseItemsTrashed.add(id, ts); count += 1; };
+      };
+    };
     count;
   };
 
   public shared ({ caller }) func importTrashedStockMovements(entries : [(Nat, Int)]) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
-    for ((id, ts) in entries.vals()) { stockMovementsTrashed.add(id, ts); count += 1; };
+    for ((id, ts) in entries.vals()) {
+      switch (stockMovementsTrashed.get(id)) {
+        case (?_) {};
+        case null { stockMovementsTrashed.add(id, ts); count += 1; };
+      };
+    };
     count;
   };
 };

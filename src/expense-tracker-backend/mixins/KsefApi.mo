@@ -175,10 +175,30 @@ mixin (
   ) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
-    for (inv in invoices.vals()) { pendingInvoices.add(inv.ksefNumber, inv); count += 1; };
-    for ((k, v) in sharedStatuses.vals()) { invoiceSharedToTeam.add(k, v); };
-    for ((k, v) in lineItemsData.vals()) { invoiceLineItems.add(k, v); };
-    for ((k, v) in links.vals()) { invoiceOneDriveLink.add(k, v); };
+    for (inv in invoices.vals()) {
+      switch (pendingInvoices.get(inv.ksefNumber)) {
+        case (?_) {};
+        case null { pendingInvoices.add(inv.ksefNumber, inv); count += 1; };
+      };
+    };
+    for ((k, v) in sharedStatuses.vals()) {
+      switch (invoiceSharedToTeam.get(k)) {
+        case (?_) {};
+        case null { invoiceSharedToTeam.add(k, v); };
+      };
+    };
+    for ((k, v) in lineItemsData.vals()) {
+      switch (invoiceLineItems.get(k)) {
+        case (?_) {};
+        case null { invoiceLineItems.add(k, v); };
+      };
+    };
+    for ((k, v) in links.vals()) {
+      switch (invoiceOneDriveLink.get(k)) {
+        case (?_) {};
+        case null { invoiceOneDriveLink.add(k, v); };
+      };
+    };
     count;
   };
 

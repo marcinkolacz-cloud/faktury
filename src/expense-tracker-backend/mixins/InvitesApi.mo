@@ -36,8 +36,10 @@ mixin (
     if (not isAdmin(caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (c in rows.vals()) {
-      inviteCodes.add(c.code, c);
-      count += 1;
+      switch (inviteCodes.get(c.code)) {
+        case (?_) {};
+        case null { inviteCodes.add(c.code, c); count += 1; };
+      };
     };
     count;
   };

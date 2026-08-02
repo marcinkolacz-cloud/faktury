@@ -79,7 +79,10 @@ async function uploadAttachmentContent(actor: any, attachmentId: bigint, base64:
 
 async function importBackup(actor: any, backup: any, onProgress: (s: string) => void) {
   onProgress("Importuję dostęp administracyjny...");
+  const existingAccess: any[] = await actor.listAccessEntries();
+  const existingPrincipals = new Set(existingAccess.map((e: any) => e.principal.toText()));
   for (const a of backup.admin.accessEntries) {
+    if (existingPrincipals.has(a.principal)) continue;
     const principal = Principal.fromText(a.principal);
     await actor.changeAccessRole(principal, a.role);
     await actor.setUserModules(principal, a.modules);
@@ -189,7 +192,7 @@ export function BackupImport({ actor }: { actor: any }) {
     try {
       const text = await file.text();
       const backup = JSON.parse(text);
-      if (!confirm("Import wpisze dane bezpośrednio z zachowaniem oryginalnych ID. Używaj tylko na świeżym, pustym kanistrze. Kontynuować?")) {
+      if (!confirm("Import doda tylko rekordy, których jeszcze nie ma na tym kanistrze (istniejące ID zostaną pominięte, nic nie zostanie nadpisane). Kontynuować?")) {
         setRunning(false);
         setProgress("");
         return;
@@ -205,7 +208,7 @@ export function BackupImport({ actor }: { actor: any }) {
     <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
       <h2 className="font-semibold text-[var(--text-primary)]">Import kopii zapasowej</h2>
       <p className="text-xs text-[var(--text-muted)]">
-        ⚠️ Używaj TYLKO na świeżym, pustym kanistrze — zachowuje oryginalne ID rekordów. Import na kanister z istniejącymi danymi może je nadpisać.
+        ℹ️ Import dosypuje tylko brakujące rekordy — jeśli dane o danym ID już istnieją na tym kanistrze, zostaną pominięte (nic nie jest nadpisywane). Bezpieczne do wielokrotnego użycia.
       </p>
       <input
         type="file"

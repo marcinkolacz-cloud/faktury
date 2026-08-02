@@ -207,7 +207,12 @@ persistent actor {
   public shared ({ caller }) func importPrincipalDisplayNames(entries : [(Principal, Text)]) : async Nat {
     if (not isAdmin(caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
-    for ((p, name) in entries.vals()) { principalDisplayNames.add(p, name); count += 1; };
+    for ((p, name) in entries.vals()) {
+      switch (principalDisplayNames.get(p)) {
+        case (?_) {};
+        case null { principalDisplayNames.add(p, name); count += 1; };
+      };
+    };
     count;
   };
 

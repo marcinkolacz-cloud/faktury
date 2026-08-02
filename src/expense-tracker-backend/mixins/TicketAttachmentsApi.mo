@@ -94,8 +94,10 @@ mixin (
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (a in rows.vals()) {
-      ticketAttachments.add(a.id, a);
-      count += 1;
+      switch (ticketAttachments.get(a.id)) {
+        case (?_) {};
+        case null { ticketAttachments.add(a.id, a); count += 1; };
+      };
     };
     count;
   };
@@ -176,7 +178,12 @@ mixin (
   public shared ({ caller }) func importTrashedTicketAttachments(entries : [(Nat, Int)]) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
-    for ((id, ts) in entries.vals()) { ticketAttachmentsTrashed.add(id, ts); count += 1; };
+    for ((id, ts) in entries.vals()) {
+      switch (ticketAttachmentsTrashed.get(id)) {
+        case (?_) {};
+        case null { ticketAttachmentsTrashed.add(id, ts); count += 1; };
+      };
+    };
     count;
   };
 };
