@@ -75,6 +75,11 @@ persistent actor {
   let driveTokenOwner = Map.empty<Text, Principal>();
   let adminTokens = Map.empty<Text, Int>();
   let ksefReadTokens = Map.empty<Text, Int>();
+  // Guards the previously wide-open ticket-email-worker and
+  // bartolini-translate Workers, which had zero authentication and were
+  // callable by anyone on the internet (open mail relay / free OpenAI
+  // proxy risk). Any logged-in staff member (any role) can request one.
+  let staffActionTokens = Map.empty<Text, Int>();
   let principalDisplayNames = Map.empty<Principal, Text>();
 
   let oneDriveClientId = "427bbeee-c6bd-4dfc-9946-9b230aec7861";
@@ -215,6 +220,33 @@ persistent actor {
 
   public query func validateKsefReadToken(token : Text) : async Bool {
     switch (ksefReadTokens.get(token)) {
+      case (?exp) { Time.now() < exp };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func requestStaffActionToken() : async Text {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    let now = Time.now();
+    var expired = List.empty<Text>();
+    for ((t, exp) in staffActionTokens.entries()) {
+      if (exp < now) { expired.add(t); };
+    };
+    for (t in expired.values()) { staffActionTokens.remove(t); };
+    let rng = Random.crypto();
+    var token = "";
+    var i = 0;
+    while (i < 32) {
+      let idx = await* rng.natRange(0, 36);
+      token := token # driveTokenChars[idx].toText();
+      i += 1;
+    };
+    staffActionTokens.add(token, now + 300_000_000_000);
+    token;
+  };
+
+  public query func validateStaffActionToken(token : Text) : async Bool {
+    switch (staffActionTokens.get(token)) {
       case (?exp) { Time.now() < exp };
       case null { false };
     };

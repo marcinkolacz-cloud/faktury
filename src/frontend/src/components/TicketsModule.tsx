@@ -205,9 +205,17 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   [...filteredTickets].sort((a, b) => Number(a.id - b.id)).forEach((t, i) => ticketRankMap.set(String(t.id), i + 1));
 
   const translate = async (text: string, targetLang: "pl" | "en"): Promise<string> => {
+    // The translate Worker used to accept requests with zero
+    // authentication (anyone on the internet could burn our OpenAI
+    // quota). It now requires a short-lived token minted by the
+    // canister for the currently logged-in staff member.
+    const staffToken = await actor.requestStaffActionToken();
     const res = await fetch("https://bartolini-translate.marcinkolacz.workers.dev", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + staffToken,
+      },
       body: JSON.stringify({ text, targetLang }),
     });
     const data = await res.json();
@@ -288,9 +296,16 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
         token = "";
       }
       try {
+        // Same reasoning as translate(): this Worker used to be a fully
+        // open, unauthenticated email relay reachable by anyone on the
+        // internet, capable of sending mail "from" our business domain.
+        const staffToken = await actor.requestStaffActionToken();
         await fetch("https://bartolini-ticket-email.marcinkolacz.workers.dev", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + staffToken,
+          },
           body: JSON.stringify({
             to: selected.clientEmail,
             subject: "Odpowiedź na zgłoszenie: " + selected.subject,
