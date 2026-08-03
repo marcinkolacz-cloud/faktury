@@ -40,4 +40,16 @@ module {
       case null { ["invoices", "warehouse", "tickets", "ksef", "drive", "projects", "calendar"] };
     };
   };
+  public func hasModuleAccess(
+    moduleAccess : Map.Map<Principal, [Text]>,
+    caller : Principal,
+    moduleName : Text,
+  ) : Bool {
+    let allowed = getAllowedModules(moduleAccess, caller);
+    var found = false;
+    for (m in allowed.vals()) {
+      if (m == moduleName) { found := true; };
+    };
+    found;
+  };
 };

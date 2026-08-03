@@ -15,9 +15,12 @@ mixin (
   accessRoles : Map.Map<Principal, Types.Role>,
   calendarEventsTrashed : Map.Map<Nat, Int>,
   calendarNotesTrashed : Map.Map<Nat, Int>,
+  moduleAccess : Map.Map<Principal, [Text]>,
+  calendarEventCreator : Map.Map<Nat, Principal>,
 ) {
   public shared ({ caller }) func createCalendarNote(eventId : Nat, title : Text, content : Text) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     var maxId = 0;
     var any = false;
     for ((id, _) in calendarNotes.entries()) {
@@ -31,6 +34,7 @@ mixin (
 
   public query ({ caller }) func listCalendarNotes(eventId : Nat) : async [Types.CalendarNote] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     var result = List.empty<Types.CalendarNote>();
     for ((id, n) in calendarNotes.entries()) {
       if (n.eventId == eventId and calendarNotesTrashed.get(id) == null) { result.add(n); };
@@ -40,6 +44,7 @@ mixin (
 
   public query ({ caller }) func listTrashedCalendarNotes() : async [Types.CalendarNote] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     var result = List.empty<Types.CalendarNote>();
     for ((id, _) in calendarNotesTrashed.entries()) {
       switch (calendarNotes.get(id)) {
@@ -52,6 +57,7 @@ mixin (
 
   public shared ({ caller }) func updateCalendarNote(id : Nat, title : Text, content : Text) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     switch (calendarNotes.get(id)) {
       case (?n) { calendarNotes.add(id, { n with title; content }); true; };
       case null { false };
@@ -60,6 +66,7 @@ mixin (
 
   public shared ({ caller }) func trashCalendarNote(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     switch (calendarNotes.get(id)) {
       case (?_) { calendarNotesTrashed.add(id, Time.now()); true; };
       case null { false };
@@ -68,6 +75,7 @@ mixin (
 
   public shared ({ caller }) func restoreCalendarNote(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     switch (calendarNotesTrashed.get(id)) {
       case (?_) { calendarNotesTrashed.remove(id); true; };
       case null { false };
@@ -85,6 +93,7 @@ mixin (
 
   public shared ({ caller }) func addCalendarAttachment(eventId : Nat, oneDriveItemId : Text, name : Text) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     let current = switch (calendarAttachments.get(eventId)) { case (?a) { a }; case null { [] } };
     calendarAttachments.add(eventId, Array.concat(current, [(oneDriveItemId, name)]));
     true;
@@ -92,11 +101,13 @@ mixin (
 
   public query ({ caller }) func listCalendarAttachments(eventId : Nat) : async [(Text, Text)] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     switch (calendarAttachments.get(eventId)) { case (?a) { a }; case null { [] } };
   };
 
   public shared ({ caller }) func removeCalendarAttachment(eventId : Nat, oneDriveItemId : Text) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     let current = switch (calendarAttachments.get(eventId)) { case (?a) { a }; case null { [] } };
     calendarAttachments.add(eventId, Array.filter<(Text, Text)>(current, func((id, _)) { id != oneDriveItemId }));
     true;
@@ -110,6 +121,7 @@ mixin (
     createdBy : Text,
   ) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     var maxId = 0;
     var any = false;
     for ((id, _) in calendarEvents.entries()) {
@@ -128,11 +140,13 @@ mixin (
       done = false;
     };
     calendarEvents.add(newId, event);
+    calendarEventCreator.add(newId, caller);
     newId;
   };
 
   public query ({ caller }) func listCalendarEvents() : async [Types.CalendarEvent] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     var result = List.empty<Types.CalendarEvent>();
     for ((id, e) in calendarEvents.entries()) {
       if (calendarEventsTrashed.get(id) == null) { result.add(e); };
@@ -140,8 +154,16 @@ mixin (
     result.toArray();
   };
 
+  public query ({ caller }) func listCalendarEventCreators() : async [(Nat, Principal)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can view this"); };
+    var result = List.empty<(Nat, Principal)>();
+    for ((id, p) in calendarEventCreator.entries()) { result.add((id, p)); };
+    result.toArray();
+  };
+
   public shared ({ caller }) func toggleCalendarEventDone(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     switch (calendarEvents.get(id)) {
       case (?e) { calendarEvents.add(id, { e with done = not e.done }); true; };
       case null { false };
@@ -150,6 +172,7 @@ mixin (
 
   public shared ({ caller }) func trashCalendarEvent(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     switch (calendarEvents.get(id)) {
       case (?_) { calendarEventsTrashed.add(id, Time.now()); true; };
       case null { false };
@@ -158,6 +181,7 @@ mixin (
 
   public shared ({ caller }) func restoreCalendarEvent(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     switch (calendarEventsTrashed.get(id)) {
       case (?_) { calendarEventsTrashed.remove(id); true; };
       case null { false };
@@ -175,6 +199,7 @@ mixin (
 
   public query ({ caller }) func listTrashedCalendarEvents() : async [Types.CalendarEvent] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
     var result = List.empty<Types.CalendarEvent>();
     for ((id, _) in calendarEventsTrashed.entries()) {
       switch (calendarEvents.get(id)) {

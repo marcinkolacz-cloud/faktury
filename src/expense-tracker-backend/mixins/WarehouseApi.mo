@@ -13,11 +13,14 @@ mixin (
   accessRoles : Map.Map<Principal, Types.Role>,
   warehouseItemsTrashed : Map.Map<Nat, Int>,
   stockMovementsTrashed : Map.Map<Nat, Int>,
+  moduleAccess : Map.Map<Principal, [Text]>,
+  stockMovementPerformer : Map.Map<Nat, Principal>,
 ) {
   public shared ({ caller }) func bulkImportWarehouseItems(
     items : [(Text, Text, Text, Bool, Bool, Float, Text)]
   ) : async { added : Nat; skipped : Nat } {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     var added = 0;
     var skipped = 0;
     for ((name, partDescription, category, fnpt2, trainer, qty, note) in items.vals()) {
@@ -73,6 +76,7 @@ mixin (
     note : Text,
   ) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     var maxId1 = 0;
     var any1 = false;
     for ((id, _) in warehouseItems.entries()) {
@@ -104,6 +108,7 @@ mixin (
 
   public query ({ caller }) func listWarehouseItems() : async [Types.WarehouseItem] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     var result = List.empty<Types.WarehouseItem>();
     for ((id, i) in warehouseItems.entries()) {
       if (warehouseItemsTrashed.get(id) == null) { result.add(i); };
@@ -113,6 +118,7 @@ mixin (
 
   public query ({ caller }) func listWarehouseCategories() : async [Text] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     var seen = List.empty<Text>();
     for ((_, i) in warehouseItems.entries()) {
       var found = false;
@@ -140,6 +146,7 @@ mixin (
     note : Text,
   ) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     switch (warehouseItems.get(id)) {
       case (?existing) {
         warehouseItems.add(id, {
@@ -155,6 +162,7 @@ mixin (
 
   public shared ({ caller }) func trashWarehouseItem(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     switch (warehouseItems.get(id)) {
       case (?_) { warehouseItemsTrashed.add(id, Time.now()); true; };
       case null { false };
@@ -163,6 +171,7 @@ mixin (
 
   public shared ({ caller }) func restoreWarehouseItem(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     switch (warehouseItemsTrashed.get(id)) {
       case (?_) { warehouseItemsTrashed.remove(id); true; };
       case null { false };
@@ -180,6 +189,7 @@ mixin (
 
   public query ({ caller }) func listTrashedWarehouseItems() : async [Types.WarehouseItem] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     var result = List.empty<Types.WarehouseItem>();
     for ((id, _) in warehouseItemsTrashed.entries()) {
       switch (warehouseItems.get(id)) {
@@ -200,6 +210,7 @@ mixin (
     note : Text,
   ) : async ?Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     switch (warehouseItems.get(itemId)) {
       case (?item) {
         let delta = switch (movementType) {
@@ -227,6 +238,9 @@ mixin (
           createdAt = Time.now();
         };
         stockMovements.add(newId, movement);
+        // Real caller identity alongside the free-text performedBy field,
+        // so the audit trail can't be forged by typing someone else's name.
+        stockMovementPerformer.add(newId, caller);
         ?newId;
       };
       case null { null };
@@ -247,10 +261,18 @@ mixin (
 
   public query ({ caller }) func listStockMovements() : async [Types.StockMovement] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     var result = List.empty<Types.StockMovement>();
     for ((id, m) in stockMovements.entries()) {
       if (stockMovementsTrashed.get(id) == null) { result.add(m); };
     };
+    result.toArray();
+  };
+
+  public query ({ caller }) func listStockMovementPerformers() : async [(Nat, Principal)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can view this"); };
+    var result = List.empty<(Nat, Principal)>();
+    for ((id, p) in stockMovementPerformer.entries()) { result.add((id, p)); };
     result.toArray();
   };
 
@@ -263,6 +285,7 @@ mixin (
     note : Text,
   ) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     switch (stockMovements.get(id)) {
       case (?m) {
         switch (warehouseItems.get(m.itemId)) {
@@ -289,6 +312,7 @@ mixin (
 
   public shared ({ caller }) func trashStockMovement(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     switch (stockMovements.get(id)) {
       case (?_) { stockMovementsTrashed.add(id, Time.now()); true; };
       case null { false };
@@ -297,6 +321,7 @@ mixin (
 
   public shared ({ caller }) func restoreStockMovement(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     switch (stockMovementsTrashed.get(id)) {
       case (?_) { stockMovementsTrashed.remove(id); true; };
       case null { false };
@@ -327,6 +352,7 @@ mixin (
 
   public query ({ caller }) func listTrashedStockMovements() : async [Types.StockMovement] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "warehouse")) { Runtime.trap("Module access required: warehouse"); };
     var result = List.empty<Types.StockMovement>();
     for ((id, _) in stockMovementsTrashed.entries()) {
       switch (stockMovements.get(id)) {

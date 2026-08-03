@@ -14,6 +14,7 @@ mixin (
   invoiceSharedToTeam : Map.Map<Text, Bool>,
   invoiceLineItems : Map.Map<Text, [Types.InvoiceLineItem]>,
   invoiceOneDriveLink : Map.Map<Text, Text>,
+  moduleAccess : Map.Map<Principal, [Text]>,
 ) {
   public shared ({ caller }) func createManualInvoice(
     invoiceNumber : Text,
@@ -120,6 +121,7 @@ mixin (
 
   public query ({ caller }) func isInvoiceShared(ksefNumber : Text) : async Bool {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "ksef")) { Runtime.trap("Module access required: ksef"); };
     switch (invoiceSharedToTeam.get(ksefNumber)) { case (?v) { v }; case null { false } };
   };
 
@@ -161,6 +163,7 @@ mixin (
 
   public query ({ caller }) func getInvoiceDetails(ksefNumber : Text) : async (?[Types.InvoiceLineItem], ?Text) {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "ksef")) { Runtime.trap("Module access required: ksef"); };
     let isAdminCaller = AccessLib.isAdmin(accessRoles, caller);
     let isShared = switch (invoiceSharedToTeam.get(ksefNumber)) { case (?v) { v }; case null { false } };
     if (not isAdminCaller and not isShared) { Runtime.trap("Not authorized for this invoice"); };
@@ -204,6 +207,7 @@ mixin (
 
   public query ({ caller }) func listSharedInvoices() : async [Types.PendingInvoice] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "ksef")) { Runtime.trap("Module access required: ksef"); };
     var result = List.empty<Types.PendingInvoice>();
     for ((id, inv) in pendingInvoices.entries()) {
       let isShared = switch (invoiceSharedToTeam.get(id)) { case (?v) { v }; case null { false } };

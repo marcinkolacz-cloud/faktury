@@ -11,9 +11,11 @@ mixin (
   projects : Map.Map<Nat, Types.Project>,
   accessRoles : Map.Map<Principal, Types.Role>,
   projectsTrashed : Map.Map<Nat, Int>,
+  moduleAccess : Map.Map<Principal, [Text]>,
 ) {
   public shared ({ caller }) func createProject(name : Text) : async Nat {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "projects")) { Runtime.trap("Module access required: projects"); };
     var maxId = 0;
     var any = false;
     for ((id, _) in projects.entries()) {
@@ -43,6 +45,7 @@ mixin (
 
   public query ({ caller }) func listMyProjects() : async [Types.Project] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "projects")) { Runtime.trap("Module access required: projects"); };
     var result = List.empty<Types.Project>();
     for ((id, p) in projects.entries()) {
       if (projectsTrashed.get(id) == null) { result.add(p); };
@@ -52,6 +55,7 @@ mixin (
 
   public shared ({ caller }) func trashProject(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "projects")) { Runtime.trap("Module access required: projects"); };
     switch (projects.get(id)) {
       case (?_) { projectsTrashed.add(id, Time.now()); true; };
       case null { false };
@@ -60,6 +64,7 @@ mixin (
 
   public shared ({ caller }) func restoreProject(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "projects")) { Runtime.trap("Module access required: projects"); };
     switch (projectsTrashed.get(id)) {
       case (?_) { projectsTrashed.remove(id); true; };
       case null { false };
@@ -77,6 +82,7 @@ mixin (
 
   public query ({ caller }) func listTrashedProjects() : async [Types.Project] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "projects")) { Runtime.trap("Module access required: projects"); };
     var result = List.empty<Types.Project>();
     for ((id, _) in projectsTrashed.entries()) {
       switch (projects.get(id)) {

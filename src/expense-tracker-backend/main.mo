@@ -37,6 +37,11 @@ persistent actor {
   let calendarEventsTrashed = Map.empty<Nat, Int>();
   let calendarNotesTrashed = Map.empty<Nat, Int>();
   let projectsTrashed = Map.empty<Nat, Int>();
+  let filesTrashed = Map.empty<Nat, Int>();
+  let foldersTrashed = Map.empty<Nat, Int>();
+  let stockMovementPerformer = Map.empty<Nat, Principal>();
+  let calendarEventCreator = Map.empty<Nat, Principal>();
+  let ticketAttachmentUploader = Map.empty<Nat, Principal>();
   let pendingInvoices = Map.empty<Text, Types.PendingInvoice>();
   let invoiceSharedToTeam = Map.empty<Text, Bool>();
   let invoiceLineItems = Map.empty<Text, [Types.InvoiceLineItem]>();
@@ -67,6 +72,7 @@ persistent actor {
   var pendingDeviceCode : ?Text = null;
   var pendingInterval : Nat = 5;
   let driveTokens = Map.empty<Text, Int>();
+  let driveTokenOwner = Map.empty<Text, Principal>();
   let adminTokens = Map.empty<Text, Int>();
   let ksefReadTokens = Map.empty<Text, Int>();
   let principalDisplayNames = Map.empty<Principal, Text>();
@@ -90,15 +96,15 @@ persistent actor {
   };
   let ic : IC = actor ("aaaaa-aa");
 
-  include ProjectsApi(projects, accessRoles, projectsTrashed);
-  include AdvancePaymentsApi(advancePayments, accessRoles, advancePaymentsTrashed);
-  include ExpensesApi(expenses, accessRoles, expenseKsefSent, expensesTrashed);
-  include WarehouseApi(warehouseItems, stockMovements, accessRoles, warehouseItemsTrashed, stockMovementsTrashed);
-  include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes);
-  include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens, ticketAttachmentsTrashed);
-  include FilesApi(files, fileChunks, folders, accessRoles);
-  include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles, calendarEventsTrashed, calendarNotesTrashed);
-  include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink);
+  include ProjectsApi(projects, accessRoles, projectsTrashed, moduleAccess);
+  include AdvancePaymentsApi(advancePayments, accessRoles, advancePaymentsTrashed, moduleAccess);
+  include ExpensesApi(expenses, accessRoles, expenseKsefSent, expensesTrashed, moduleAccess);
+  include WarehouseApi(warehouseItems, stockMovements, accessRoles, warehouseItemsTrashed, stockMovementsTrashed, moduleAccess, stockMovementPerformer);
+  include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes, moduleAccess);
+  include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens, ticketAttachmentsTrashed, moduleAccess, ticketAttachmentUploader);
+  include FilesApi(files, fileChunks, folders, accessRoles, filesTrashed, foldersTrashed, moduleAccess);
+  include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles, calendarEventsTrashed, calendarNotesTrashed, moduleAccess, calendarEventCreator);
+  include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 
   func isAdmin(caller : Principal) : Bool {
     let bootstrapMatch = switch (adminPrincipal) { case (?admin) { Principal.equal(admin, caller) }; case null { false } };
@@ -120,7 +126,7 @@ persistent actor {
     for ((t, exp) in driveTokens.entries()) {
       if (exp < now) { expired.add(t); };
     };
-    for (t in expired.values()) { driveTokens.remove(t); };
+    for (t in expired.values()) { driveTokens.remove(t); driveTokenOwner.remove(t); };
     let rng = Random.crypto();
     var token = "";
     var i = 0;
@@ -130,6 +136,7 @@ persistent actor {
       i += 1;
     };
     driveTokens.add(token, now + 300_000_000_000);
+    driveTokenOwner.add(token, caller);
     token;
   };
 
@@ -137,6 +144,25 @@ persistent actor {
     switch (driveTokens.get(token)) {
       case (?exp) { Time.now() < exp };
       case null { false };
+    };
+  };
+
+  // Added for onedrive-proxy Worker: the Worker previously only had a
+  // Bool ("is this token valid at all"), so it could not tell a `read`
+  // user apart from `write`/`admin` and let everyone hit destructive
+  // endpoints (/delete, /share, /move, /rename, /uploadSession). This
+  // returns the actual role of the token's owner so the Worker can
+  // gate those endpoints properly.
+  public query func getDriveTokenRole(token : Text) : async ?Types.Role {
+    switch (driveTokens.get(token)) {
+      case (?exp) {
+        if (Time.now() >= exp) { return null };
+        switch (driveTokenOwner.get(token)) {
+          case (?owner) { accessRoles.get(owner) };
+          case null { null };
+        };
+      };
+      case null { null };
     };
   };
 

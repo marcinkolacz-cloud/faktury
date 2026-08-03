@@ -16,9 +16,13 @@ mixin (
   accessRoles : Map.Map<Principal, Types.Role>,
   ticketTokens : Map.Map<Text, Nat>,
   ticketAttachmentsTrashed : Map.Map<Nat, Int>,
+  moduleAccess : Map.Map<Principal, [Text]>,
+  ticketAttachmentUploader : Map.Map<Nat, Principal>,
 ) {
   func callerAuthorizedForTicket(caller : Principal, ticketId : Nat, token : ?Text) : Bool {
-    if (AccessLib.hasAnyRole(accessRoles, caller)) { return true; };
+    if (AccessLib.hasAnyRole(accessRoles, caller)) {
+      return AccessLib.hasModuleAccess(moduleAccess, caller, "tickets");
+    };
     switch (token) {
       case (?t) {
         switch (ticketTokens.get(t)) {
@@ -75,6 +79,7 @@ mixin (
       createdAt = now;
     };
     ticketAttachments.add(newId, meta);
+    ticketAttachmentUploader.add(newId, caller);
     newId;
   };
 
@@ -124,6 +129,7 @@ mixin (
 
   public shared ({ caller }) func trashTicketAttachment(attachmentId : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     switch (ticketAttachments.get(attachmentId)) {
       case (?_) { ticketAttachmentsTrashed.add(attachmentId, Time.now()); true; };
       case null { false };
@@ -132,10 +138,18 @@ mixin (
 
   public shared ({ caller }) func restoreTicketAttachment(attachmentId : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     switch (ticketAttachmentsTrashed.get(attachmentId)) {
       case (?_) { ticketAttachmentsTrashed.remove(attachmentId); true; };
       case null { false };
     };
+  };
+
+  public query ({ caller }) func listTicketAttachmentUploaders() : async [(Nat, Principal)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can view this"); };
+    var result = List.empty<(Nat, Principal)>();
+    for ((id, p) in ticketAttachmentUploader.entries()) { result.add((id, p)); };
+    result.toArray();
   };
 
   public shared ({ caller }) func permanentlyDeleteTicketAttachment(attachmentId : Nat) : async Bool {
@@ -158,6 +172,7 @@ mixin (
 
   public query ({ caller }) func listTrashedTicketAttachments() : async [Types.TicketAttachmentMeta] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     var result = List.empty<Types.TicketAttachmentMeta>();
     for ((id, _) in ticketAttachmentsTrashed.entries()) {
       switch (ticketAttachments.get(id)) {

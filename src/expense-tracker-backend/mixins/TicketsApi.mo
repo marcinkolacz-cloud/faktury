@@ -19,6 +19,7 @@ mixin (
   ticketArchived : Map.Map<Nat, Bool>,
   ticketSeenCounts : Map.Map<Nat, Nat>,
   recentClientReplyTimes : List.List<Int>,
+  moduleAccess : Map.Map<Principal, [Text]>,
 ) {
   public shared func submitTicket(
     clientName : Text,
@@ -64,6 +65,7 @@ mixin (
 
   public query ({ caller }) func listTicketExtras() : async [(Nat, Types.TicketExtras)] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     var result = List.empty<(Nat, Types.TicketExtras)>();
     for ((id, extras) in ticketExtras.entries()) {
       result.add((id, extras));
@@ -73,6 +75,7 @@ mixin (
 
   public query ({ caller }) func listTicketTokens() : async [(Text, Nat)] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     var result = List.empty<(Text, Nat)>();
     for ((token, id) in ticketTokens.entries()) {
       result.add((token, id));
@@ -82,6 +85,7 @@ mixin (
 
   public query ({ caller }) func getTicketTrackingToken(id : Nat) : async ?Text {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     var found : ?Text = null;
     for ((token, ticketId) in ticketTokens.entries()) {
       if (ticketId == id) { found := ?token; };
@@ -179,6 +183,7 @@ mixin (
 
   public query ({ caller }) func listTickets() : async [Types.Ticket] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     var result = List.empty<Types.Ticket>();
     for ((_, t) in tickets.entries()) {
       result.add(t);
@@ -188,6 +193,7 @@ mixin (
 
   public shared ({ caller }) func updateTicketStatus(id : Nat, status : Types.TicketStatus) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     switch (tickets.get(id)) {
       case (?t) {
         tickets.add(id, { t with status });
@@ -199,6 +205,7 @@ mixin (
 
   public shared ({ caller }) func addTicketReply(id : Nat, author : Text, message : Text, isInternal : Bool) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     switch (tickets.get(id)) {
       case (?t) {
         let newReply : Types.TicketReply = { author; message; isInternal; createdAt = Time.now() };
@@ -249,6 +256,7 @@ mixin (
 
   public shared ({ caller }) func archiveTicket(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     switch (tickets.get(id)) {
       case (?_) { ticketArchived.add(id, true); true };
       case null { false };
@@ -257,6 +265,7 @@ mixin (
 
   public shared ({ caller }) func unarchiveTicket(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     switch (tickets.get(id)) {
       case (?_) { ticketArchived.add(id, false); true };
       case null { false };
@@ -265,6 +274,7 @@ mixin (
 
   public query ({ caller }) func listArchivedTicketIds() : async [Nat] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     var result = List.empty<Nat>();
     for ((id, archived) in ticketArchived.entries()) {
       if (archived) { result.add(id); };
@@ -274,6 +284,7 @@ mixin (
 
   public shared ({ caller }) func markTicketSeen(id : Nat) : async Bool {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     switch (tickets.get(id)) {
       case (?t) { ticketSeenCounts.add(id, t.replies.size()); true };
       case null { false };
@@ -282,6 +293,7 @@ mixin (
 
   public query ({ caller }) func getTicketSeenCounts() : async [(Nat, Nat)] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     var result = List.empty<(Nat, Nat)>();
     for ((id, count) in ticketSeenCounts.entries()) {
       result.add((id, count));
