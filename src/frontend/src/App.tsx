@@ -12,6 +12,8 @@ import { PublicTicketForm } from "./components/PublicTicketForm";
 import { TicketStatusPage } from "./components/TicketStatusPage";
 import { TicketsModule } from "./components/TicketsModule";
 import { DriveModule } from "./components/DriveModule";
+import { OrdersModule } from "./components/OrdersModule";
+import { ContractsModule } from "./components/ContractsModule";
 import { KsefTeamView } from "./components/KsefTeamView";
 import { AdminPanel } from "./components/AdminPanel";
 import { TopBar } from "./components/TopBar";
@@ -165,6 +167,12 @@ function ModuleRouter() {
   }
   if (module === "drive") {
     return <DriveModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  }
+  if (module === "orders") {
+    return <OrdersModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  }
+  if (module === "contracts") {
+    return <ContractsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
   }
   if (module === "ksef") {
     return <KsefTeamView onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} actor={actor} />;

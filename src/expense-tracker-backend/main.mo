@@ -22,6 +22,9 @@ import TicketsApi "mixins/TicketsApi";
 import TicketAttachmentsApi "mixins/TicketAttachmentsApi";
 import FilesApi "mixins/FilesApi";
 import CalendarApi "mixins/CalendarApi";
+import TicketLinksApi "mixins/TicketLinksApi";
+import OrdersApi "mixins/OrdersApi";
+import ContractsApi "mixins/ContractsApi";
 import KsefApi "mixins/KsefApi";
 
 persistent actor {
@@ -63,6 +66,11 @@ persistent actor {
   let calendarEvents = Map.empty<Nat, Types.CalendarEvent>();
   let calendarAttachments = Map.empty<Nat, [(Text, Text)]>();
   let calendarNotes = Map.empty<Nat, Types.CalendarNote>();
+  let ticketLinks = Map.empty<Nat, Types.TicketLinks>();
+  let orders = Map.empty<Nat, Types.Order>();
+  let ordersTrashed = Map.empty<Nat, Int>();
+  let contracts = Map.empty<Nat, Types.Contract>();
+  let contractsTrashed = Map.empty<Nat, Int>();
   let recentSubmissionTimes = List.empty<Int>();
   let recentClientReplyTimes = List.empty<Int>();
   let accessRoles = Map.empty<Principal, Types.Role>();
@@ -109,6 +117,9 @@ persistent actor {
   include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens, ticketAttachmentsTrashed, moduleAccess, ticketAttachmentUploader);
   include FilesApi(files, fileChunks, folders, accessRoles, filesTrashed, foldersTrashed, moduleAccess);
   include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles, calendarEventsTrashed, calendarNotesTrashed, moduleAccess, calendarEventCreator);
+  include TicketLinksApi(tickets, ticketLinks, calendarEvents, calendarEventCreator, folders, accessRoles, moduleAccess);
+  include OrdersApi(orders, ordersTrashed, folders, accessRoles, moduleAccess);
+  include ContractsApi(contracts, contractsTrashed, folders, accessRoles, moduleAccess);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 
   func isAdmin(caller : Principal) : Bool {

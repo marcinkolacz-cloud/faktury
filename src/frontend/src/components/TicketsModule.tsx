@@ -53,6 +53,88 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   const [showArchived, setShowArchived] = useState(false);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [seenCounts, setSeenCounts] = useState<Record<string, number>>({});
+  const [ticketLinks, setTicketLinks] = useState<Record<string, { calendarEventId: bigint | null; driveFolderId: bigint | null }>>({});
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+  const [driveFolders, setDriveFolders] = useState<any[]>([]);
+  const [linkingEvent, setLinkingEvent] = useState(false);
+  const [linkingFolder, setLinkingFolder] = useState(false);
+  const [selectedEventToLink, setSelectedEventToLink] = useState("");
+  const [selectedFolderToLink, setSelectedFolderToLink] = useState("");
+
+  const loadTicketLinks = async () => {
+    try {
+      const result = await actor.listTicketLinks();
+      const map: Record<string, { calendarEventId: bigint | null; driveFolderId: bigint | null }> = {};
+      for (const [id, l] of result as any[]) {
+        map[String(id)] = {
+          calendarEventId: l.calendarEventId.length ? l.calendarEventId[0] : null,
+          driveFolderId: l.driveFolderId.length ? l.driveFolderId[0] : null,
+        };
+      }
+      setTicketLinks(map);
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadCalendarEvents = async () => {
+    try { setCalendarEvents(await actor.listCalendarEvents()); } catch { setCalendarEvents([]); }
+  };
+
+  const loadDriveFolders = async () => {
+    try { setDriveFolders(await actor.listAllFolders()); } catch { setDriveFolders([]); }
+  };
+
+  const createEventForTicket = async () => {
+    if (!selected) return;
+    setLinkingEvent(true);
+    const today = new Date().toISOString().slice(0, 10);
+    await actor.createCalendarEventForTicket(
+      selected.id,
+      "Zgłoszenie #" + String(selected.id) + ": " + selected.subject,
+      selected.description,
+      today,
+      today,
+      { task: null },
+      authorName.trim() || "Zespół",
+    );
+    await Promise.all([loadTicketLinks(), loadCalendarEvents()]);
+    setLinkingEvent(false);
+  };
+
+  const createFolderForTicket = async () => {
+    if (!selected) return;
+    setLinkingFolder(true);
+    await actor.createDriveFolderForTicket(selected.id, "Zgłoszenie #" + String(selected.id) + " - " + selected.subject, []);
+    await Promise.all([loadTicketLinks(), loadDriveFolders()]);
+    setLinkingFolder(false);
+  };
+
+  const linkExistingEvent = async (eventId: string) => {
+    if (!selected || !eventId) return;
+    await actor.linkTicketCalendarEvent(selected.id, BigInt(eventId));
+    setSelectedEventToLink("");
+    loadTicketLinks();
+  };
+
+  const linkExistingFolder = async (folderId: string) => {
+    if (!selected || !folderId) return;
+    await actor.linkTicketDriveFolder(selected.id, BigInt(folderId));
+    setSelectedFolderToLink("");
+    loadTicketLinks();
+  };
+
+  const unlinkEvent = async () => {
+    if (!selected) return;
+    await actor.unlinkTicketCalendarEvent(selected.id);
+    loadTicketLinks();
+  };
+
+  const unlinkFolder = async () => {
+    if (!selected) return;
+    await actor.unlinkTicketDriveFolder(selected.id);
+    loadTicketLinks();
+  };
 
   const loadSeenCounts = async () => {
     try {
@@ -254,6 +336,9 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     loadTicketExtras();
     loadArchivedIds();
     loadSeenCounts();
+    loadTicketLinks();
+    loadCalendarEvents();
+    loadDriveFolders();
     if (actor) {
       actor.getCallerRole().then((r: any) => {
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
@@ -482,6 +567,70 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                       ))}
                     </select>
                   )}
+                </div>
+                <div className="bg-[var(--bg-page)] border border-[var(--border-color-light)] rounded p-2 space-y-2">
+                  <p className="text-[10px] font-medium text-[var(--text-muted)]">Kalendarz i dysk</p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-[var(--text-muted)]">📅</span>
+                    {ticketLinks[String(selected.id)]?.calendarEventId != null ? (
+                      <>
+                        <span className="text-[var(--text-secondary)]">
+                          {calendarEvents.find((e: any) => e.id === ticketLinks[String(selected.id)].calendarEventId)?.title || ("Wydarzenie #" + String(ticketLinks[String(selected.id)].calendarEventId))}
+                        </span>
+                        {canWrite && <button onClick={unlinkEvent} className="text-[10px] text-red-500 hover:underline">Odłącz</button>}
+                      </>
+                    ) : canWrite ? (
+                      <>
+                        <label className="flex items-center gap-1.5">
+                          <input type="checkbox" disabled={linkingEvent} onChange={(e) => { if (e.target.checked) createEventForTicket(); }} />
+                          Utwórz wydarzenie w kalendarzu dla tego zgłoszenia
+                        </label>
+                        {calendarEvents.length > 0 && (
+                          <>
+                            <select onChange={(e) => setSelectedEventToLink(e.target.value)} value={selectedEventToLink} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-[10px]">
+                              <option value="">lub połącz z istniejącym...</option>
+                              {calendarEvents.map((e: any) => (
+                                <option key={String(e.id)} value={String(e.id)}>{e.title}</option>
+                              ))}
+                            </select>
+                            <button onClick={() => linkExistingEvent(selectedEventToLink)} disabled={!selectedEventToLink} className="text-[10px] text-cyan-600 hover:underline disabled:opacity-40">Połącz</button>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-[var(--text-muted)] italic">brak</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-[var(--text-muted)]">📁</span>
+                    {ticketLinks[String(selected.id)]?.driveFolderId != null ? (
+                      <>
+                        <span className="text-[var(--text-secondary)]">
+                          {driveFolders.find((f: any) => f.id === ticketLinks[String(selected.id)].driveFolderId)?.name || ("Folder #" + String(ticketLinks[String(selected.id)].driveFolderId))}
+                        </span>
+                        {canWrite && <button onClick={unlinkFolder} className="text-[10px] text-red-500 hover:underline">Odłącz</button>}
+                      </>
+                    ) : canWrite ? (
+                      <>
+                        <button onClick={createFolderForTicket} disabled={linkingFolder} className="text-cyan-600 hover:underline disabled:opacity-50">
+                          {linkingFolder ? "Tworzenie..." : "Utwórz folder na zdjęcia"}
+                        </button>
+                        {driveFolders.length > 0 && (
+                          <>
+                            <select onChange={(e) => setSelectedFolderToLink(e.target.value)} value={selectedFolderToLink} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-[10px]">
+                              <option value="">lub połącz z istniejącym...</option>
+                              {driveFolders.map((f: any) => (
+                                <option key={String(f.id)} value={String(f.id)}>{f.name}</option>
+                              ))}
+                            </select>
+                            <button onClick={() => linkExistingFolder(selectedFolderToLink)} disabled={!selectedFolderToLink} className="text-[10px] text-cyan-600 hover:underline disabled:opacity-40">Połącz</button>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-[var(--text-muted)] italic">brak</span>
+                    )}
+                  </div>
                 </div>
                 {canWrite && (
                   <div className="flex justify-end mt-2">

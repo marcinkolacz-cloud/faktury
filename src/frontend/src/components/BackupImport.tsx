@@ -47,6 +47,15 @@ function convertTicket(t: any) {
 function convertTicketAttachment(a: any) {
   return convertFields(a, ["id", "ticketId", "size", "totalChunks", "createdAt"]);
 }
+function convertTicketLinks(l: any) {
+  return convertFields(l, [], ["calendarEventId", "driveFolderId"]);
+}
+function convertOrder(o: any) {
+  return convertFields(o, ["id", "createdAt"], ["driveFolderId"]);
+}
+function convertContract(c: any) {
+  return convertFields(c, ["id", "createdAt"], ["driveFolderId"]);
+}
 
 function convertCalendarEvent(e: any) {
   return convertFields(e, ["id", "createdAt"]);
@@ -128,6 +137,10 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
 
   const attMetas = backup.tickets.attachments.map((a: any) => convertTicketAttachment(a.meta));
   if (attMetas.length) await actor.importTicketAttachments(attMetas);
+  if (backup.tickets.links?.length) {
+    const links = backup.tickets.links.map(([id, l]: [any, any]) => [bn(id), convertTicketLinks(l)]);
+    await actor.importTicketLinks(links);
+  }
   let done = 0;
   for (const a of backup.tickets.attachments) {
     done++;
@@ -150,7 +163,17 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
   }
 
   if (backup.ksef && backup.ksef.invoices && backup.ksef.invoices.length) {
-    onProgress("Importuję faktury KSeF...");
+    onProgress("Importuję Zamówienia...");
+  if (backup.orders?.orders?.length) {
+    await actor.importOrders(backup.orders.orders.map(convertOrder));
+  }
+
+  onProgress("Importuję Umowy...");
+  if (backup.contracts?.contracts?.length) {
+    await actor.importContracts(backup.contracts.contracts.map(convertContract));
+  }
+
+  onProgress("Importuję faktury KSeF...");
     const invoices = backup.ksef.invoices.map(convertPendingInvoice);
     await actor.importPendingInvoicesFull(
       invoices,

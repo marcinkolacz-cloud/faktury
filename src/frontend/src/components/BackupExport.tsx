@@ -111,7 +111,8 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
     }
     attachmentsOut.push({ meta: a, dataBase64: uint8ToBase64(concatUint8(parts)) });
   }
-  backup.tickets = { tickets, extras: ticketExtras, archivedIds, seenCounts, tokens: ticketTokens, attachments: attachmentsOut };
+  const ticketLinks = await actor.listTicketLinks();
+  backup.tickets = { tickets, extras: ticketExtras, archivedIds, seenCounts, tokens: ticketTokens, attachments: attachmentsOut, links: ticketLinks };
 
   onProgress("Eksportuję Kalendarz...");
   const [calendarEventsActive, calendarEventsTrashedFull] = await Promise.all([
@@ -140,6 +141,20 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
     trashedEventEntries: trashedCalEventEntries,
     trashedNoteEntries: trashedCalNoteEntries,
   };
+
+  onProgress("Eksportuję Zamówienia...");
+  const [ordersActive, ordersTrashedFull] = await Promise.all([
+    actor.listOrders(),
+    actor.listTrashedOrders(),
+  ]);
+  backup.orders = { orders: [...ordersActive, ...ordersTrashedFull] };
+
+  onProgress("Eksportuję Umowy...");
+  const [contractsActive, contractsTrashedFull] = await Promise.all([
+    actor.listContracts(),
+    actor.listTrashedContracts(),
+  ]);
+  backup.contracts = { contracts: [...contractsActive, ...contractsTrashedFull] };
 
   onProgress("Eksportuję faktury KSeF...");
   const [pendingInvoices, sharedStatuses] = await Promise.all([
@@ -215,7 +230,7 @@ export function BackupExport({ actor }: { actor: any }) {
     <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
       <h2 className="font-semibold text-[var(--text-primary)]">Kopia zapasowa</h2>
       <p className="text-xs text-[var(--text-muted)]">
-        Eksportuje Admin (dostęp + kody zaproszeń), Rejestr Faktur, Projekty, Magazyn i Zgłoszenia (z załącznikami) do jednego pliku JSON. Nie obejmuje Dysku.
+        Eksportuje Admin (dostęp + kody zaproszeń), Rejestr Faktur, Projekty, Magazyn, Zgłoszenia (z załącznikami), Zamówienia i Umowy do jednego pliku JSON. Nie obejmuje Dysku.
       </p>
       <button
         onClick={runExport}

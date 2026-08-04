@@ -16,6 +16,8 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
     { id: "calendar", title: "Kalendarz", desc: "Spotkania, wyjazdy, ważne daty, zadania" },
     { id: "warehouse", title: "Magazyn", desc: "Stany, przyjęcia, wydania do projektów" },
     { id: "tickets", title: "Zgłoszenia", desc: "System ticketów" },
+    { id: "orders", title: "Zamówienia", desc: "Oczekujące dostawy, zaliczki, umowy zakupu" },
+    { id: "contracts", title: "Umowy", desc: "Sprzedaż, lokal, internet i inne umowy" },
     { id: "ksef", title: "KSeF", desc: "Pobieranie faktur" },
     { id: "drive", title: "Bartolini Drive", desc: "Pliki, zdjęcia, dokumenty (OneDrive)" },
   ];

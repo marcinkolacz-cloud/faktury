@@ -8,6 +8,8 @@ const ALL_MODULES = [
   { id: "tickets", label: "Zgłoszenia" },
   { id: "ksef", label: "KSeF" },
   { id: "drive", label: "Bartolini Drive" },
+  { id: "orders", label: "Zamówienia" },
+  { id: "contracts", label: "Umowy" },
 ];
 
 export function ModuleCheckboxes({ principal, actor }: { principal: any; actor: any }) {

@@ -1,0 +1,296 @@
+import { useEffect, useState } from "react";
+import { useBackendActor } from "../lib/useBackend";
+import { TopBar } from "./TopBar";
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Oczekujące",
+  completed: "Zrealizowane",
+  cancelled: "Anulowane",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: "bg-amber-500",
+  completed: "bg-emerald-600",
+  cancelled: "bg-gray-400",
+};
+
+function statusFromVariant(v: any): string {
+  return Object.keys(v)[0];
+}
+
+function statusToVariant(s: string) {
+  return { [s]: null };
+}
+
+function formatDate(ns: bigint): string {
+  const ms = Number(ns) / 1_000_000;
+  return new Date(ms).toLocaleDateString("pl-PL", { year: "numeric", month: "short", day: "numeric" });
+}
+
+const emptyForm = { date: new Date().toISOString().slice(0, 10), name: "", quantity: "1", supplierName: "", totalAmount: "", advanceAmount: "", currency: "PLN", note: "" };
+
+export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
+  const actor = useBackendActor();
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<any | null>(null);
+  const [myRole, setMyRole] = useState<string>("read");
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [folders, setFolders] = useState<any[]>([]);
+  const [selectedFolderToLink, setSelectedFolderToLink] = useState("");
+  const [linkingFolder, setLinkingFolder] = useState(false);
+
+  const reload = async () => {
+    if (!actor) return;
+    const o = await actor.listOrders();
+    setOrders(o);
+    setLoading(false);
+    if (selected) {
+      const updated = o.find((x: any) => x.id === selected.id);
+      if (updated) setSelected(updated);
+    }
+  };
+
+  const loadFolders = async () => {
+    try { setFolders(await actor.listAllFolders()); } catch { setFolders([]); }
+  };
+
+  useEffect(() => {
+    reload();
+    loadFolders();
+    if (actor) {
+      actor.getCallerRole().then((r: any) => {
+        if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
+      });
+    }
+  }, [actor]);
+
+  const canWrite = myRole === "write" || myRole === "admin";
+
+  const filteredOrders = orders.filter((o: any) => statusFilter === "all" || statusFromVariant(o.status) === statusFilter);
+
+  const submitForm = async () => {
+    if (!form.name.trim() || !form.supplierName.trim()) return;
+    const quantity = parseFloat(form.quantity) || 0;
+    const totalAmount = parseFloat(form.totalAmount) || 0;
+    const advanceAmount = parseFloat(form.advanceAmount) || 0;
+    if ((selected as any)?._editing) {
+      await actor.updateOrder(selected.id, form.date, form.name.trim(), quantity, form.supplierName.trim(), totalAmount, advanceAmount, form.currency, form.note.trim());
+    } else {
+      await actor.createOrder(form.date, form.name.trim(), quantity, form.supplierName.trim(), totalAmount, advanceAmount, form.currency, form.note.trim(), "Zespół");
+    }
+    setForm(emptyForm);
+    setShowForm(false);
+    setSelected(null);
+    reload();
+  };
+
+  const startEdit = (o: any) => {
+    setForm({
+      date: o.date,
+      name: o.name,
+      quantity: String(o.quantity),
+      supplierName: o.supplierName,
+      totalAmount: String(o.totalAmount),
+      advanceAmount: String(o.advanceAmount),
+      currency: o.currency,
+      note: o.note,
+    });
+    setSelected({ ...o, _editing: true });
+    setShowForm(true);
+  };
+
+  const changeStatus = async (id: bigint, status: string) => {
+    await actor.updateOrderStatus(id, statusToVariant(status));
+    reload();
+  };
+
+  const createFolder = async () => {
+    if (!selected) return;
+    setLinkingFolder(true);
+    await actor.createDriveFolderForOrder(selected.id, "Zamówienie #" + String(selected.id) + " - " + selected.name, []);
+    await Promise.all([reload(), loadFolders()]);
+    setLinkingFolder(false);
+  };
+
+  const linkFolder = async () => {
+    if (!selected || !selectedFolderToLink) return;
+    await actor.linkOrderDriveFolder(selected.id, BigInt(selectedFolderToLink));
+    setSelectedFolderToLink("");
+    reload();
+  };
+
+  const unlinkFolder = async () => {
+    if (!selected) return;
+    await actor.unlinkOrderDriveFolder(selected.id);
+    reload();
+  };
+
+  const trashSelected = async () => {
+    if (!selected || !confirm("Przenieść to zamówienie do kosza?")) return;
+    await actor.trashOrder(selected.id);
+    setSelected(null);
+    reload();
+  };
+
+  if (loading) {
+    return <div className="min-h-screen bg-[var(--bg-page)] flex items-center justify-center text-gray-500">Ładowanie...</div>;
+  }
+
+  return (
+    <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)]">
+      <div className="max-w-[1600px] mx-auto p-6 space-y-6">
+        <div className="flex items-center gap-4 pb-2">
+          <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Zamówienia</h1>
+        </div>
+        <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-sm overflow-hidden">
+            <div className="p-2 space-y-1.5 border-b border-[var(--border-color-light)]">
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-xs">
+                <option value="all">Wszystkie statusy</option>
+                {Object.keys(STATUS_LABELS).map((s) => (
+                  <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                ))}
+              </select>
+              {canWrite && (
+                <button
+                  onClick={() => { setForm(emptyForm); setSelected(null); setShowForm(true); }}
+                  className="w-full text-xs bg-cyan-600 hover:bg-cyan-500 text-white rounded px-2 py-1.5"
+                >
+                  + Nowe zamówienie
+                </button>
+              )}
+            </div>
+            <div className="overflow-auto max-h-[600px]">
+              {filteredOrders.length === 0 ? (
+                <p className="p-4 text-sm text-gray-500">Brak zamówień.</p>
+              ) : (
+                [...filteredOrders].reverse().map((o) => (
+                  <button
+                    key={String(o.id)}
+                    onClick={() => { setSelected(o); setShowForm(false); }}
+                    className={"w-full text-left p-3 border-b border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (selected?.id === o.id && !showForm ? "bg-cyan-500/10" : "")}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-sm text-[var(--text-primary)] truncate">{o.name}</p>
+                      <span className={"shrink-0 text-[10px] px-1.5 py-0.5 rounded text-white " + STATUS_COLORS[statusFromVariant(o.status)]}>
+                        {STATUS_LABELS[statusFromVariant(o.status)]}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">{o.supplierName} · {o.date}</p>
+                    <p className="text-[10px] text-[var(--text-muted)]">{o.totalAmount} {o.currency} (zaliczka: {o.advanceAmount} {o.currency})</p>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="lg:col-span-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-sm p-4">
+            {showForm ? (
+              <div className="space-y-2 max-w-md">
+                <h2 className="font-semibold">{(selected as any)?._editing ? "Edytuj zamówienie" : "Nowe zamówienie"}</h2>
+                <label className="text-xs text-[var(--text-muted)]">Data zamówienia</label>
+                <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <label className="text-xs text-[var(--text-muted)]">Nazwa</label>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <label className="text-xs text-[var(--text-muted)]">Ilość</label>
+                <input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <label className="text-xs text-[var(--text-muted)]">Dostawca</label>
+                <input value={form.supplierName} onChange={(e) => setForm({ ...form, supplierName: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-[var(--text-muted)]">Kwota całości</label>
+                    <input type="number" value={form.totalAmount} onChange={(e) => setForm({ ...form, totalAmount: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-[var(--text-muted)]">Kwota zaliczki</label>
+                    <input type="number" value={form.advanceAmount} onChange={(e) => setForm({ ...form, advanceAmount: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                  </div>
+                  <div className="w-20">
+                    <label className="text-xs text-[var(--text-muted)]">Waluta</label>
+                    <input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                  </div>
+                </div>
+                <label className="text-xs text-[var(--text-muted)]">Notatka</label>
+                <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} rows={3} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <div className="flex gap-2 pt-2">
+                  <button onClick={submitForm} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm">Zapisz</button>
+                  <button onClick={() => { setShowForm(false); setSelected(null); }} className="px-3 py-1.5 border border-[var(--border-color)] rounded text-sm">Anuluj</button>
+                </div>
+              </div>
+            ) : !selected ? (
+              <p className="text-sm text-gray-500">Wybierz zamówienie z listy lub dodaj nowe.</p>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="font-semibold text-[var(--text-primary)]">{selected.name}</h2>
+                    <p className="text-xs text-gray-500">Dostawca: {selected.supplierName} · Data: {selected.date}</p>
+                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Zamówienie #{String(selected.id)} · Utworzone: {formatDate(selected.createdAt)}</p>
+                  </div>
+                  {canWrite && (
+                    <select value={statusFromVariant(selected.status)} onChange={(e) => changeStatus(selected.id, e.target.value)} className="border border-[var(--border-color)] rounded px-2 py-1 text-sm">
+                      {Object.keys(STATUS_LABELS).map((s) => (
+                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <div className="bg-[var(--bg-page)] rounded p-3 grid grid-cols-2 gap-2 text-sm">
+                  <p>Ilość: <span className="font-medium">{String(selected.quantity)}</span></p>
+                  <p>Kwota całości: <span className="font-medium">{String(selected.totalAmount)} {selected.currency}</span></p>
+                  <p>Kwota zaliczki: <span className="font-medium">{String(selected.advanceAmount)} {selected.currency}</span></p>
+                  <p>Do zapłaty przy dostawie: <span className="font-medium">{(Number(selected.totalAmount) - Number(selected.advanceAmount)).toFixed(2)} {selected.currency}</span></p>
+                </div>
+                {selected.note && <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap">{selected.note}</p>}
+                <div className="bg-[var(--bg-page)] border border-[var(--border-color-light)] rounded p-2 space-y-2">
+                  <p className="text-[10px] font-medium text-[var(--text-muted)]">Umowa / dokumenty (Bartolini Drive)</p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-[var(--text-muted)]">📁</span>
+                    {selected.driveFolderId.length ? (
+                      <>
+                        <span className="text-[var(--text-secondary)]">{folders.find((f: any) => f.id === selected.driveFolderId[0])?.name || ("Folder #" + String(selected.driveFolderId[0]))}</span>
+                        {canWrite && <button onClick={unlinkFolder} className="text-[10px] text-red-500 hover:underline">Odłącz</button>}
+                      </>
+                    ) : canWrite ? (
+                      <>
+                        <button onClick={createFolder} disabled={linkingFolder} className="text-cyan-600 hover:underline disabled:opacity-50">
+                          {linkingFolder ? "Tworzenie..." : "Utwórz folder na dokumenty"}
+                        </button>
+                        {folders.length > 0 && (
+                          <>
+                            <select value={selectedFolderToLink} onChange={(e) => setSelectedFolderToLink(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-[10px]">
+                              <option value="">lub połącz z istniejącym...</option>
+                              {folders.map((f: any) => (
+                                <option key={String(f.id)} value={String(f.id)}>{f.name}</option>
+                              ))}
+                            </select>
+                            <button onClick={linkFolder} disabled={!selectedFolderToLink} className="text-[10px] text-cyan-600 hover:underline disabled:opacity-40">Połącz</button>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-[var(--text-muted)] italic">brak</span>
+                    )}
+                  </div>
+                </div>
+                {canWrite && (
+                  <div className="flex justify-between items-center pt-2">
+                    <button onClick={() => onNavigate("warehouse")} className="text-xs text-cyan-600 hover:underline">→ Przejdź do Magazynu, aby dodać dostawę</button>
+                    <div className="flex gap-3">
+                      <button onClick={() => startEdit(selected)} className="text-xs text-cyan-600 hover:underline">Edytuj</button>
+                      <button onClick={trashSelected} className="text-xs text-red-500 hover:underline">Usuń</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

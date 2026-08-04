@@ -94,6 +94,11 @@ module {
     done : Bool;
   };
 
+  public type TicketLinks = {
+    calendarEventId : ?Nat;
+    driveFolderId : ?Nat;
+  };
+
   public type CalendarNote = {
     id : Nat;
     eventId : Nat;
@@ -202,6 +207,36 @@ module {
     performedBy : Text;
     date : Text;
     note : Text;
+    createdAt : Int;
+  };
+
+  public type OrderStatus = { #pending; #completed; #cancelled };
+
+  public type Order = {
+    id : Nat;
+    date : Text;
+    name : Text;
+    quantity : Float;
+    supplierName : Text;
+    totalAmount : Float;
+    advanceAmount : Float;
+    currency : Text;
+    note : Text;
+    status : OrderStatus;
+    driveFolderId : ?Nat;
+    createdBy : Text;
+    createdAt : Int;
+  };
+
+  public type Contract = {
+    id : Nat;
+    title : Text;
+    category : Text;
+    counterparty : Text;
+    description : Text;
+    endDate : Text;
+    driveFolderId : ?Nat;
+    createdBy : Text;
     createdAt : Int;
   };
 
