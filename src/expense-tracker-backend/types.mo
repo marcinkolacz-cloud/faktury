@@ -94,6 +94,15 @@ module {
     done : Bool;
   };
 
+  public type TicketDriveAttachment = {
+    id : Nat;
+    ticketId : Nat;
+    name : Text;
+    oneDriveItemId : Text;
+    uploadedBy : Text;
+    createdAt : Int;
+  };
+
   public type TicketLinks = {
     calendarEventId : ?Nat;
     driveFolderId : ?Nat;

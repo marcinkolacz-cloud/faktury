@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
+import { DriveFolderPanel } from "./DriveFolderPanel";
+import { setDriveActor } from "../lib/oneDriveConfig";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Oczekujące",
@@ -38,10 +40,7 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [folders, setFolders] = useState<any[]>([]);
-  const [selectedFolderToLink, setSelectedFolderToLink] = useState("");
-  const [linkingFolder, setLinkingFolder] = useState(false);
-
+  const [folderPath, setFolderPath] = useState<string | null>(null);
   const reload = async () => {
     if (!actor) return;
     const o = await actor.listOrders();
@@ -53,19 +52,21 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
     }
   };
 
-  const loadFolders = async () => {
-    try { setFolders(await actor.listAllFolders()); } catch { setFolders([]); }
-  };
-
   useEffect(() => {
     reload();
-    loadFolders();
     if (actor) {
+      setDriveActor(actor);
       actor.getCallerRole().then((r: any) => {
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
       });
     }
   }, [actor]);
+
+  useEffect(() => {
+    if (!actor || selected?.id === undefined) { setFolderPath(null); return; }
+    actor.getOrderDriveFolder(selected.id).then((r: any) => setFolderPath(r.length ? r[0] : null)).catch(() => setFolderPath(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
 
   const canWrite = myRole === "write" || myRole === "admin";
 
@@ -107,25 +108,16 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
     reload();
   };
 
-  const createFolder = async () => {
+  const linkOrderFolder = async (path: string) => {
     if (!selected) return;
-    setLinkingFolder(true);
-    await actor.createDriveFolderForOrder(selected.id, "Zamówienie #" + String(selected.id) + " - " + selected.name, []);
-    await Promise.all([reload(), loadFolders()]);
-    setLinkingFolder(false);
+    await actor.linkOrderDriveFolder(selected.id, path);
+    setFolderPath(path);
   };
 
-  const linkFolder = async () => {
-    if (!selected || !selectedFolderToLink) return;
-    await actor.linkOrderDriveFolder(selected.id, BigInt(selectedFolderToLink));
-    setSelectedFolderToLink("");
-    reload();
-  };
-
-  const unlinkFolder = async () => {
+  const unlinkOrderFolder = async () => {
     if (!selected) return;
     await actor.unlinkOrderDriveFolder(selected.id);
-    reload();
+    setFolderPath(null);
   };
 
   const trashSelected = async () => {
@@ -246,37 +238,14 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
                   <p>Do zapłaty przy dostawie: <span className="font-medium">{(Number(selected.totalAmount) - Number(selected.advanceAmount)).toFixed(2)} {selected.currency}</span></p>
                 </div>
                 {selected.note && <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap">{selected.note}</p>}
-                <div className="bg-[var(--bg-page)] border border-[var(--border-color-light)] rounded p-2 space-y-2">
-                  <p className="text-[10px] font-medium text-[var(--text-muted)]">Umowa / dokumenty (Bartolini Drive)</p>
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-[var(--text-muted)]">📁</span>
-                    {selected.driveFolderId.length ? (
-                      <>
-                        <span className="text-[var(--text-secondary)]">{folders.find((f: any) => f.id === selected.driveFolderId[0])?.name || ("Folder #" + String(selected.driveFolderId[0]))}</span>
-                        {canWrite && <button onClick={unlinkFolder} className="text-[10px] text-red-500 hover:underline">Odłącz</button>}
-                      </>
-                    ) : canWrite ? (
-                      <>
-                        <button onClick={createFolder} disabled={linkingFolder} className="text-cyan-600 hover:underline disabled:opacity-50">
-                          {linkingFolder ? "Tworzenie..." : "Utwórz folder na dokumenty"}
-                        </button>
-                        {folders.length > 0 && (
-                          <>
-                            <select value={selectedFolderToLink} onChange={(e) => setSelectedFolderToLink(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-[10px]">
-                              <option value="">lub połącz z istniejącym...</option>
-                              {folders.map((f: any) => (
-                                <option key={String(f.id)} value={String(f.id)}>{f.name}</option>
-                              ))}
-                            </select>
-                            <button onClick={linkFolder} disabled={!selectedFolderToLink} className="text-[10px] text-cyan-600 hover:underline disabled:opacity-40">Połącz</button>
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-[var(--text-muted)] italic">brak</span>
-                    )}
-                  </div>
-                </div>
+                <DriveFolderPanel
+                  path={folderPath}
+                  basePath="Zamowienia"
+                  defaultName={"Zamowienie #" + String(selected.id) + " - " + selected.name}
+                  canWrite={canWrite}
+                  onLink={linkOrderFolder}
+                  onUnlink={unlinkOrderFolder}
+                />
                 {canWrite && (
                   <div className="flex justify-between items-center pt-2">
                     <button onClick={() => onNavigate("warehouse")} className="text-xs text-cyan-600 hover:underline">→ Przejdź do Magazynu, aby dodać dostawę</button>

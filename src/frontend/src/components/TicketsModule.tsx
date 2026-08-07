@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
+import { setDriveActor, odCreateFolder, odUploadFile, odList, odDownloadUrl } from "../lib/oneDriveConfig";
+import { DriveFolderPanel } from "./DriveFolderPanel";
 
 const STATUS_LABELS: Record<string, string> = {
   open: "Otwarte",
@@ -53,22 +55,19 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   const [showArchived, setShowArchived] = useState(false);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [seenCounts, setSeenCounts] = useState<Record<string, number>>({});
-  const [ticketLinks, setTicketLinks] = useState<Record<string, { calendarEventId: bigint | null; driveFolderId: bigint | null }>>({});
+  const [ticketLinks, setTicketLinks] = useState<Record<string, { calendarEventId: bigint | null }>>({});
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
-  const [driveFolders, setDriveFolders] = useState<any[]>([]);
   const [linkingEvent, setLinkingEvent] = useState(false);
-  const [linkingFolder, setLinkingFolder] = useState(false);
   const [selectedEventToLink, setSelectedEventToLink] = useState("");
-  const [selectedFolderToLink, setSelectedFolderToLink] = useState("");
+  const [ticketFolderPath, setTicketFolderPath] = useState<string | null>(null);
 
   const loadTicketLinks = async () => {
     try {
       const result = await actor.listTicketLinks();
-      const map: Record<string, { calendarEventId: bigint | null; driveFolderId: bigint | null }> = {};
+      const map: Record<string, { calendarEventId: bigint | null }> = {};
       for (const [id, l] of result as any[]) {
         map[String(id)] = {
           calendarEventId: l.calendarEventId.length ? l.calendarEventId[0] : null,
-          driveFolderId: l.driveFolderId.length ? l.driveFolderId[0] : null,
         };
       }
       setTicketLinks(map);
@@ -77,12 +76,17 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     }
   };
 
-  const loadCalendarEvents = async () => {
-    try { setCalendarEvents(await actor.listCalendarEvents()); } catch { setCalendarEvents([]); }
+  const loadTicketFolder = async (ticketId: bigint) => {
+    try {
+      const result = await actor.getTicketDriveFolder(ticketId);
+      setTicketFolderPath(result.length ? result[0] : null);
+    } catch {
+      setTicketFolderPath(null);
+    }
   };
 
-  const loadDriveFolders = async () => {
-    try { setDriveFolders(await actor.listAllFolders()); } catch { setDriveFolders([]); }
+  const loadCalendarEvents = async () => {
+    try { setCalendarEvents(await actor.listCalendarEvents()); } catch { setCalendarEvents([]); }
   };
 
   const createEventForTicket = async () => {
@@ -102,25 +106,10 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     setLinkingEvent(false);
   };
 
-  const createFolderForTicket = async () => {
-    if (!selected) return;
-    setLinkingFolder(true);
-    await actor.createDriveFolderForTicket(selected.id, "Zgłoszenie #" + String(selected.id) + " - " + selected.subject, []);
-    await Promise.all([loadTicketLinks(), loadDriveFolders()]);
-    setLinkingFolder(false);
-  };
-
   const linkExistingEvent = async (eventId: string) => {
     if (!selected || !eventId) return;
     await actor.linkTicketCalendarEvent(selected.id, BigInt(eventId));
     setSelectedEventToLink("");
-    loadTicketLinks();
-  };
-
-  const linkExistingFolder = async (folderId: string) => {
-    if (!selected || !folderId) return;
-    await actor.linkTicketDriveFolder(selected.id, BigInt(folderId));
-    setSelectedFolderToLink("");
     loadTicketLinks();
   };
 
@@ -130,10 +119,16 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     loadTicketLinks();
   };
 
-  const unlinkFolder = async () => {
+  const linkTicketFolder = async (path: string) => {
+    if (!selected) return;
+    await actor.linkTicketDriveFolder(selected.id, path);
+    await loadTicketFolder(selected.id);
+  };
+
+  const unlinkTicketFolder = async () => {
     if (!selected) return;
     await actor.unlinkTicketDriveFolder(selected.id);
-    loadTicketLinks();
+    await loadTicketFolder(selected.id);
   };
 
   const loadSeenCounts = async () => {
@@ -154,47 +149,58 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     return Math.max(0, t.replies.length - seen);
   };
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
-  const CHUNK_SIZE = 1_500_000;
-  const MAX_FILE_SIZE = 5_000_000;
+  const MAX_FILE_SIZE = 50_000_000;
 
   const loadAttachments = async (ticketId: bigint) => {
     try {
-      const result = await actor.listTicketAttachments(ticketId, []);
-      setAttachments(result as any[]);
+      const [legacy, driveOnes] = await Promise.all([
+        actor.listTicketAttachments(ticketId, []).catch(() => []),
+        actor.listTicketDriveAttachments(ticketId, []).catch(() => []),
+      ]);
+      const legacyTagged = (legacy as any[]).map((a) => ({ ...a, kind: "legacy" }));
+      const driveTagged = (driveOnes as any[]).map((a) => ({ ...a, kind: "drive" }));
+      setAttachments([...driveTagged, ...legacyTagged]);
     } catch {
       setAttachments([]);
     }
   };
 
+  const ensureTicketDriveFolder = async (ticketId: bigint) => {
+    const rootListing = await odList("");
+    const rootHasFolder = (rootListing.items || []).some((i: any) => i.isFolder && i.name === "Zgloszenia");
+    if (!rootHasFolder) await odCreateFolder("", "Zgloszenia");
+    const listing = await odList("Zgloszenia");
+    const exists = (listing.items || []).some((i: any) => i.isFolder && i.name === String(ticketId));
+    if (!exists) await odCreateFolder("Zgloszenia", String(ticketId));
+  };
+
   const uploadTeamAttachment = async (file: File) => {
     if (!selected) return;
     if (file.size > MAX_FILE_SIZE) {
-      alert("Plik zbyt duży (max 5MB): " + file.name);
+      alert("Plik zbyt duży (max 50MB): " + file.name);
       return;
     }
     setUploadingAttachment(true);
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    const attachmentId = await actor.createTicketAttachment(
-      selected.id,
-      file.name,
-      file.type || "application/octet-stream",
-      file.size,
-      totalChunks,
-      authorName.trim() || "Zespół",
-      "",
-      [],
-    );
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
-      await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk, []);
+    try {
+      await ensureTicketDriveFolder(selected.id);
+      await odUploadFile("Zgloszenia/" + String(selected.id), file);
+      const listing = await odList("Zgloszenia/" + String(selected.id));
+      const uploaded = (listing.items || []).find((i: any) => i.name === file.name);
+      if (uploaded?.id) {
+        await actor.recordTicketDriveAttachment(selected.id, file.name, uploaded.id, authorName.trim() || "Zespół", []);
+      }
+    } finally {
+      setUploadingAttachment(false);
+      loadAttachments(selected.id);
     }
-    setUploadingAttachment(false);
-    loadAttachments(selected.id);
   };
 
   const downloadAttachment = async (a: any) => {
+    if (a.kind === "drive") {
+      const result = await odDownloadUrl(a.oneDriveItemId);
+      if (result?.url) window.open(result.url, "_blank");
+      return;
+    }
     const parts: Uint8Array[] = [];
     for (let i = 0; i < Number(a.totalChunks); i++) {
       const chunk = await actor.getTicketAttachmentChunk(a.id, i, []);
@@ -209,9 +215,15 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     URL.revokeObjectURL(url);
   };
 
-  const deleteAttachment = async (id: bigint) => {
+  const deleteAttachment = async (a: any) => {
+    if (a.kind === "drive") {
+      // Drive-backed attachments live in OneDrive — delete/manage the file
+      // there directly (Bartolini Drive) rather than through this ticket.
+      alert("Ten załącznik jest w Bartolini Drive (folder Zgloszenia/" + String(a.ticketId) + "). Usuń go stamtąd, jeśli trzeba.");
+      return;
+    }
     if (!confirm("Przenieść ten załącznik do kosza?")) return;
-    await actor.trashTicketAttachment(id);
+    await actor.trashTicketAttachment(a.id);
     if (selected) loadAttachments(selected.id);
   };
 
@@ -338,8 +350,8 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     loadSeenCounts();
     loadTicketLinks();
     loadCalendarEvents();
-    loadDriveFolders();
     if (actor) {
+      setDriveActor(actor);
       actor.getCallerRole().then((r: any) => {
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
       });
@@ -353,6 +365,12 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     }, 3000);
     return () => clearInterval(interval);
   }, [actor]);
+
+  useEffect(() => {
+    if (selected?.id !== undefined) loadTicketFolder(selected.id);
+    else setTicketFolderPath(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
 
   const canWrite = myRole === "write" || myRole === "admin";
 
@@ -601,36 +619,14 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                       <span className="text-[var(--text-muted)] italic">brak</span>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-[var(--text-muted)]">📁</span>
-                    {ticketLinks[String(selected.id)]?.driveFolderId != null ? (
-                      <>
-                        <span className="text-[var(--text-secondary)]">
-                          {driveFolders.find((f: any) => f.id === ticketLinks[String(selected.id)].driveFolderId)?.name || ("Folder #" + String(ticketLinks[String(selected.id)].driveFolderId))}
-                        </span>
-                        {canWrite && <button onClick={unlinkFolder} className="text-[10px] text-red-500 hover:underline">Odłącz</button>}
-                      </>
-                    ) : canWrite ? (
-                      <>
-                        <button onClick={createFolderForTicket} disabled={linkingFolder} className="text-cyan-600 hover:underline disabled:opacity-50">
-                          {linkingFolder ? "Tworzenie..." : "Utwórz folder na zdjęcia"}
-                        </button>
-                        {driveFolders.length > 0 && (
-                          <>
-                            <select onChange={(e) => setSelectedFolderToLink(e.target.value)} value={selectedFolderToLink} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-[10px]">
-                              <option value="">lub połącz z istniejącym...</option>
-                              {driveFolders.map((f: any) => (
-                                <option key={String(f.id)} value={String(f.id)}>{f.name}</option>
-                              ))}
-                            </select>
-                            <button onClick={() => linkExistingFolder(selectedFolderToLink)} disabled={!selectedFolderToLink} className="text-[10px] text-cyan-600 hover:underline disabled:opacity-40">Połącz</button>
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-[var(--text-muted)] italic">brak</span>
-                    )}
-                  </div>
+                  <DriveFolderPanel
+                    path={ticketFolderPath}
+                    basePath="Zgloszenia"
+                    defaultName={"Zgloszenie #" + String(selected.id) + " - " + selected.subject}
+                    canWrite={canWrite}
+                    onLink={linkTicketFolder}
+                    onUnlink={unlinkTicketFolder}
+                  />
                 </div>
                 {canWrite && (
                   <div className="flex justify-end mt-2">
@@ -657,13 +653,13 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                     <div className="space-y-1 pt-2 border-t border-[var(--border-color-light)]">
                       <p className="text-[10px] font-medium text-[var(--text-muted)]">Załączniki:</p>
                       {attachments.map((a) => (
-                        <div key={String(a.id)} className="flex items-center gap-2 text-xs">
+                        <div key={(a.kind === "drive" ? "d" : "l") + String(a.id)} className="flex items-center gap-2 text-xs">
                           <button onClick={() => downloadAttachment(a)} className="text-cyan-600 hover:underline">
-                            📎 {a.name} ({(Number(a.size) / 1024).toFixed(0)} KB)
+                            📎 {a.name}{a.kind === "legacy" ? " (" + (Number(a.size) / 1024).toFixed(0) + " KB)" : ""}
                           </button>
                           <span className="text-[10px] text-[var(--text-muted)]">— {a.uploadedBy}</span>
                           {canWrite && (
-                            <button onClick={() => deleteAttachment(a.id)} className="text-red-500 hover:text-red-400 ml-auto">✕</button>
+                            <button onClick={() => deleteAttachment(a)} className="text-red-500 hover:text-red-400 ml-auto">✕</button>
                           )}
                         </div>
                       ))}

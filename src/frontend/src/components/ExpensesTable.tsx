@@ -147,7 +147,7 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
           </div>
         </div>
       )}
-      <div className="overflow-auto rounded border border-[var(--border-color)]">
+      <div className="mobile-scroll-table overflow-auto rounded border border-[var(--border-color)]">
         <table className="w-full text-xs">
           <thead className="bg-[var(--bg-page)] sticky top-0">
             <tr className="text-left text-gray-500">

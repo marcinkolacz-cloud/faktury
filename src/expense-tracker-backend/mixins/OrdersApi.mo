@@ -10,7 +10,7 @@ import AccessLib "../lib/access";
 mixin (
   orders : Map.Map<Nat, Types.Order>,
   ordersTrashed : Map.Map<Nat, Int>,
-  folders : Map.Map<Nat, Types.Folder>,
+  orderDriveFolders : Map.Map<Nat, Text>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
 ) {
@@ -92,39 +92,27 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func createDriveFolderForOrder(id : Nat, folderName : Text, parentId : ?Nat) : async ?Nat {
+  // Points at a real folder in OneDrive (Bartolini Drive), e.g. "Zamowienia/Zamowienie #5".
+  // Stored in a separate map (orderDriveFolders) — see main.mo comment about not
+  // retyping existing stable fields in place.
+  public shared ({ caller }) func linkOrderDriveFolder(id : Nat, path : Text) : async Bool {
     requireOrdersAccess(caller);
     switch (orders.get(id)) {
-      case null { null };
-      case (?o) {
-        var maxId = 0;
-        var any = false;
-        for ((fid, _) in folders.entries()) {
-          if (not any or fid >= maxId) { maxId := fid; any := true; };
-        };
-        let newId = if (any) { maxId + 1 } else { 0 };
-        folders.add(newId, { id = newId; name = folderName; parentId; createdBy = caller.toText(); createdAt = Time.now() });
-        orders.add(id, { o with driveFolderId = ?newId });
-        ?newId;
-      };
+      case (?_) { orderDriveFolders.add(id, path); true; };
+      case null { false };
     };
   };
 
-  public shared ({ caller }) func linkOrderDriveFolder(id : Nat, folderId : Nat) : async Bool {
-    requireOrdersAccess(caller);
-    if (folders.get(folderId) == null) { return false; };
-    switch (orders.get(id)) {
-      case (?o) { orders.add(id, { o with driveFolderId = ?folderId }); true; };
-      case null { false };
-    };
+  public query ({ caller }) func getOrderDriveFolder(id : Nat) : async ?Text {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "orders")) { Runtime.trap("Module access required: orders"); };
+    orderDriveFolders.get(id);
   };
 
   public shared ({ caller }) func unlinkOrderDriveFolder(id : Nat) : async Bool {
     requireOrdersAccess(caller);
-    switch (orders.get(id)) {
-      case (?o) { orders.add(id, { o with driveFolderId = null }); true; };
-      case null { false };
-    };
+    orderDriveFolders.remove(id);
+    true;
   };
 
   public shared ({ caller }) func trashOrder(id : Nat) : async Bool {

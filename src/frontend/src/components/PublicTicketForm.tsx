@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { createPublicActor } from "../lib/publicActor";
 import { useTheme } from "../providers/ThemeProvider";
+import { odCreateFolderPublic, odUploadFilePublic, odListPublic } from "../lib/oneDriveConfig";
 
 type Lang = "pl" | "en";
 
@@ -72,24 +73,40 @@ export function PublicTicketForm() {
       const actor = await createPublicActor();
       const submitResult = await actor.submitTicket(name.trim(), email.trim(), subject.trim(), description.trim(), honeypot, company.trim(), deviceNumber.trim()) as [bigint, string];
       const [ticketId, token] = submitResult;
-      for (const file of files) {
-        setUploadProgress("Wysyłam załącznik: " + file.name);
-        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-        const attachmentId = await actor.createTicketAttachment(
-          ticketId,
-          file.name,
-          file.type || "application/octet-stream",
-          file.size,
-          totalChunks,
-          name.trim(),
-          "",
-          [token],
-        );
-        for (let i = 0; i < totalChunks; i++) {
-          const start = i * CHUNK_SIZE;
-          const end = Math.min(start + CHUNK_SIZE, file.size);
-          const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
-          await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk, [token]);
+      if (files.length > 0) {
+        const driveTokenResult = await actor.requestTicketUploadDriveToken(token) as [] | [string];
+        const driveToken = driveTokenResult.length ? driveTokenResult[0] : null;
+        const folderPath = "Zgloszenia/" + String(ticketId);
+        if (driveToken) {
+          try {
+            const rootListing = await odListPublic("", driveToken);
+            const rootHasFolder = (rootListing.items || []).some((i: any) => i.isFolder && i.name === "Zgloszenia");
+            if (!rootHasFolder) await odCreateFolderPublic("", "Zgloszenia", driveToken);
+            await odCreateFolderPublic("Zgloszenia", String(ticketId), driveToken);
+          } catch { /* folder may already exist */ }
+        }
+        for (const file of files) {
+          setUploadProgress("Wysyłam załącznik: " + file.name);
+          if (driveToken) {
+            const oneDriveItemId = await odUploadFilePublic(folderPath, file, driveToken);
+            if (oneDriveItemId) {
+              await actor.recordTicketDriveAttachment(ticketId, file.name, oneDriveItemId, name.trim(), [token]);
+            }
+          } else {
+            // Fallback: Drive token unavailable (e.g. admin not yet bootstrapped)
+            // — store the file on-chain in small chunks so the report still
+            // goes through with its attachment rather than silently dropping it.
+            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+            const attachmentId = await actor.createTicketAttachment(
+              ticketId, file.name, file.type || "application/octet-stream", file.size, totalChunks, name.trim(), "", [token],
+            );
+            for (let i = 0; i < totalChunks; i++) {
+              const start = i * CHUNK_SIZE;
+              const end = Math.min(start + CHUNK_SIZE, file.size);
+              const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
+              await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk, [token]);
+            }
+          }
         }
       }
       setUploadProgress("");

@@ -90,7 +90,7 @@ export function AdminPanel({ actor }: { actor: any }) {
             </span>
           )}
         </div>
-        <div className="overflow-auto max-h-48">
+        <div className="mobile-scroll-table overflow-auto max-h-48">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-color)]">
@@ -114,7 +114,7 @@ export function AdminPanel({ actor }: { actor: any }) {
 
       <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
         <h2 className="font-semibold text-[var(--text-primary)]">Lista dostępu</h2>
-        <div className="overflow-auto max-h-64">
+        <div className="mobile-scroll-table overflow-auto max-h-64">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-color)]">

@@ -45,6 +45,7 @@ persistent actor {
   let stockMovementPerformer = Map.empty<Nat, Principal>();
   let calendarEventCreator = Map.empty<Nat, Principal>();
   let ticketAttachmentUploader = Map.empty<Nat, Principal>();
+  let ticketDriveAttachments = Map.empty<Nat, Types.TicketDriveAttachment>();
   let pendingInvoices = Map.empty<Text, Types.PendingInvoice>();
   let invoiceSharedToTeam = Map.empty<Text, Bool>();
   let invoiceLineItems = Map.empty<Text, [Types.InvoiceLineItem]>();
@@ -71,6 +72,15 @@ persistent actor {
   let ordersTrashed = Map.empty<Nat, Int>();
   let contracts = Map.empty<Nat, Types.Contract>();
   let contractsTrashed = Map.empty<Nat, Int>();
+  // Separate maps for OneDrive folder paths, added alongside the existing
+  // (now unused/deprecated) driveFolderId : ?Nat fields on Ticket links /
+  // Order / Contract. Never retype an existing stable field in place —
+  // Motoko's upgrade check does not treat that as compatible and it traps
+  // with "Memory-incompatible program upgrade". A brand new Map is always
+  // upgrade-safe.
+  let ticketDriveFolders = Map.empty<Nat, Text>();
+  let orderDriveFolders = Map.empty<Nat, Text>();
+  let contractDriveFolders = Map.empty<Nat, Text>();
   let recentSubmissionTimes = List.empty<Int>();
   let recentClientReplyTimes = List.empty<Int>();
   let accessRoles = Map.empty<Principal, Types.Role>();
@@ -114,12 +124,12 @@ persistent actor {
   include ExpensesApi(expenses, accessRoles, expenseKsefSent, expensesTrashed, moduleAccess);
   include WarehouseApi(warehouseItems, stockMovements, accessRoles, warehouseItemsTrashed, stockMovementsTrashed, moduleAccess, stockMovementPerformer);
   include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes, moduleAccess);
-  include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens, ticketAttachmentsTrashed, moduleAccess, ticketAttachmentUploader);
+  include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens, ticketAttachmentsTrashed, moduleAccess, ticketAttachmentUploader, ticketDriveAttachments);
   include FilesApi(files, fileChunks, folders, accessRoles, filesTrashed, foldersTrashed, moduleAccess);
   include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles, calendarEventsTrashed, calendarNotesTrashed, moduleAccess, calendarEventCreator);
-  include TicketLinksApi(tickets, ticketLinks, calendarEvents, calendarEventCreator, folders, accessRoles, moduleAccess);
-  include OrdersApi(orders, ordersTrashed, folders, accessRoles, moduleAccess);
-  include ContractsApi(contracts, contractsTrashed, folders, accessRoles, moduleAccess);
+  include TicketLinksApi(tickets, ticketLinks, ticketDriveFolders, calendarEvents, calendarEventCreator, accessRoles, moduleAccess);
+  include OrdersApi(orders, ordersTrashed, orderDriveFolders, accessRoles, moduleAccess);
+  include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 
   func isAdmin(caller : Principal) : Bool {
@@ -135,8 +145,7 @@ persistent actor {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
   ];
 
-  public shared ({ caller }) func requestDriveAccessToken() : async Text {
-    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+  func mintDriveToken(owner : Principal) : async* Text {
     let now = Time.now();
     var expired = List.empty<Text>();
     for ((t, exp) in driveTokens.entries()) {
@@ -152,8 +161,31 @@ persistent actor {
       i += 1;
     };
     driveTokens.add(token, now + 300_000_000_000);
-    driveTokenOwner.add(token, caller);
+    driveTokenOwner.add(token, owner);
     token;
+  };
+
+  public shared ({ caller }) func requestDriveAccessToken() : async Text {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    await* mintDriveToken(caller);
+  };
+
+  // Lets an anonymous client who just submitted a support ticket upload
+  // attachment photos straight to OneDrive (via the onedrive-proxy Worker),
+  // without ever writing the file bytes into canister memory. Scoped
+  // narrowly: only usable with the ticket's own tracking token, and the
+  // resulting Drive token is the same short-lived (5 min), write-only
+  // token staff get — just minted under the admin's role so the Worker's
+  // role check passes for an otherwise role-less anonymous caller.
+  public shared func requestTicketUploadDriveToken(ticketToken : Text) : async ?Text {
+    switch (ticketTokens.get(ticketToken)) {
+      case null { return null };
+      case (?_) {};
+    };
+    switch (adminPrincipal) {
+      case null { null };
+      case (?admin) { ?(await* mintDriveToken(admin)) };
+    };
   };
 
   public query func validateDriveToken(token : Text) : async Bool {

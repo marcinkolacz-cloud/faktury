@@ -10,7 +10,7 @@ import AccessLib "../lib/access";
 mixin (
   contracts : Map.Map<Nat, Types.Contract>,
   contractsTrashed : Map.Map<Nat, Int>,
-  folders : Map.Map<Nat, Types.Folder>,
+  contractDriveFolders : Map.Map<Nat, Text>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
 ) {
@@ -74,39 +74,27 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func createDriveFolderForContract(id : Nat, folderName : Text, parentId : ?Nat) : async ?Nat {
+  // Points at a real folder in OneDrive (Bartolini Drive), e.g. "Umowy/Umowa #3".
+  // Stored in a separate map (contractDriveFolders) — see main.mo comment about not
+  // retyping existing stable fields in place.
+  public shared ({ caller }) func linkContractDriveFolder(id : Nat, path : Text) : async Bool {
     requireContractsAccess(caller);
     switch (contracts.get(id)) {
-      case null { null };
-      case (?c) {
-        var maxId = 0;
-        var any = false;
-        for ((fid, _) in folders.entries()) {
-          if (not any or fid >= maxId) { maxId := fid; any := true; };
-        };
-        let newId = if (any) { maxId + 1 } else { 0 };
-        folders.add(newId, { id = newId; name = folderName; parentId; createdBy = caller.toText(); createdAt = Time.now() });
-        contracts.add(id, { c with driveFolderId = ?newId });
-        ?newId;
-      };
+      case (?_) { contractDriveFolders.add(id, path); true; };
+      case null { false };
     };
   };
 
-  public shared ({ caller }) func linkContractDriveFolder(id : Nat, folderId : Nat) : async Bool {
-    requireContractsAccess(caller);
-    if (folders.get(folderId) == null) { return false; };
-    switch (contracts.get(id)) {
-      case (?c) { contracts.add(id, { c with driveFolderId = ?folderId }); true; };
-      case null { false };
-    };
+  public query ({ caller }) func getContractDriveFolder(id : Nat) : async ?Text {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "contracts")) { Runtime.trap("Module access required: contracts"); };
+    contractDriveFolders.get(id);
   };
 
   public shared ({ caller }) func unlinkContractDriveFolder(id : Nat) : async Bool {
     requireContractsAccess(caller);
-    switch (contracts.get(id)) {
-      case (?c) { contracts.add(id, { c with driveFolderId = null }); true; };
-      case null { false };
-    };
+    contractDriveFolders.remove(id);
+    true;
   };
 
   public shared ({ caller }) func trashContract(id : Nat) : async Bool {

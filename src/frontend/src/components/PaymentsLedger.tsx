@@ -59,7 +59,7 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
           <button onClick={submit} className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm">Dodaj</button>
         </div>
       )}
-      <div className="overflow-auto max-h-48">
+      <div className="mobile-scroll-table overflow-auto max-h-48 hidden sm:block">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-left text-gray-500 border-b border-[var(--border-color)]">
@@ -102,6 +102,40 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
             )}
           </tbody>
         </table>
+      </div>
+      {/* Mobile card view */}
+      <div className="sm:hidden space-y-2 max-h-64 overflow-auto">
+        {sorted.length === 0 ? (
+          <p className="text-xs text-gray-500 p-2">Brak wpłat.</p>
+        ) : (
+          sorted.map((p) =>
+            editingId === p.id ? (
+              <div key={String(p.id)} className="bg-amber-500/10 border border-[var(--border-color)] rounded p-2 space-y-1.5">
+                <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-xs" />
+                <input type="number" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} placeholder="Kwota" className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-xs" />
+                <input value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="Notatka" className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-xs" />
+                <div className="flex gap-3 pt-1">
+                  <button onClick={() => saveEdit(p.id)} className="text-emerald-600 text-xs font-medium">Zapisz</button>
+                  <button onClick={() => setEditingId(null)} className="text-gray-500 text-xs">Anuluj</button>
+                </div>
+              </div>
+            ) : (
+              <div key={String(p.id)} className="border border-[var(--border-color-light)] rounded p-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs text-[var(--text-secondary)]">{p.date}</span>
+                  <span className="font-mono text-sm font-medium text-[var(--text-primary)]">{p.amount.toFixed(2)} PLN</span>
+                </div>
+                {p.note && <p className="text-xs text-gray-500 mt-1">{p.note}</p>}
+                {canWrite && (
+                  <div className="flex gap-3 mt-1.5">
+                    <button onClick={() => startEdit(p)} className="text-cyan-600 text-xs">Edytuj</button>
+                    <button onClick={() => deletePayment(p.id)} className="text-red-500 text-xs">Usuń</button>
+                  </div>
+                )}
+              </div>
+            )
+          )
+        )}
       </div>
     </div>
   );

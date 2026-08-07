@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
+import { DriveFolderPanel } from "./DriveFolderPanel";
+import { setDriveActor } from "../lib/oneDriveConfig";
 
 function formatDate(ns: bigint): string {
   const ms = Number(ns) / 1_000_000;
@@ -30,10 +32,7 @@ export function ContractsModule({ onHome, onNavigate, currentModule }: { onHome:
   const [myRole, setMyRole] = useState<string>("read");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
-  const [folders, setFolders] = useState<any[]>([]);
-  const [selectedFolderToLink, setSelectedFolderToLink] = useState("");
-  const [linkingFolder, setLinkingFolder] = useState(false);
-
+  const [folderPath, setFolderPath] = useState<string | null>(null);
   const reload = async () => {
     if (!actor) return;
     const c = await actor.listContracts();
@@ -45,19 +44,21 @@ export function ContractsModule({ onHome, onNavigate, currentModule }: { onHome:
     }
   };
 
-  const loadFolders = async () => {
-    try { setFolders(await actor.listAllFolders()); } catch { setFolders([]); }
-  };
-
   useEffect(() => {
     reload();
-    loadFolders();
     if (actor) {
+      setDriveActor(actor);
       actor.getCallerRole().then((r: any) => {
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
       });
     }
   }, [actor]);
+
+  useEffect(() => {
+    if (!actor || selected?.id === undefined) { setFolderPath(null); return; }
+    actor.getContractDriveFolder(selected.id).then((r: any) => setFolderPath(r.length ? r[0] : null)).catch(() => setFolderPath(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
 
   const canWrite = myRole === "write" || myRole === "admin";
 
@@ -80,25 +81,16 @@ export function ContractsModule({ onHome, onNavigate, currentModule }: { onHome:
     setShowForm(true);
   };
 
-  const createFolder = async () => {
+  const linkContractFolder = async (path: string) => {
     if (!selected) return;
-    setLinkingFolder(true);
-    await actor.createDriveFolderForContract(selected.id, "Umowa #" + String(selected.id) + " - " + selected.title, []);
-    await Promise.all([reload(), loadFolders()]);
-    setLinkingFolder(false);
+    await actor.linkContractDriveFolder(selected.id, path);
+    setFolderPath(path);
   };
 
-  const linkFolder = async () => {
-    if (!selected || !selectedFolderToLink) return;
-    await actor.linkContractDriveFolder(selected.id, BigInt(selectedFolderToLink));
-    setSelectedFolderToLink("");
-    reload();
-  };
-
-  const unlinkFolder = async () => {
+  const unlinkContractFolder = async () => {
     if (!selected) return;
     await actor.unlinkContractDriveFolder(selected.id);
-    reload();
+    setFolderPath(null);
   };
 
   const trashSelected = async () => {
@@ -197,37 +189,14 @@ export function ContractsModule({ onHome, onNavigate, currentModule }: { onHome:
                     <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap">{selected.description}</p>
                   </div>
                 )}
-                <div className="bg-[var(--bg-page)] border border-[var(--border-color-light)] rounded p-2 space-y-2">
-                  <p className="text-[10px] font-medium text-[var(--text-muted)]">Dokumenty umowy (Bartolini Drive)</p>
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-[var(--text-muted)]">📁</span>
-                    {selected.driveFolderId.length ? (
-                      <>
-                        <span className="text-[var(--text-secondary)]">{folders.find((f: any) => f.id === selected.driveFolderId[0])?.name || ("Folder #" + String(selected.driveFolderId[0]))}</span>
-                        {canWrite && <button onClick={unlinkFolder} className="text-[10px] text-red-500 hover:underline">Odłącz</button>}
-                      </>
-                    ) : canWrite ? (
-                      <>
-                        <button onClick={createFolder} disabled={linkingFolder} className="text-cyan-600 hover:underline disabled:opacity-50">
-                          {linkingFolder ? "Tworzenie..." : "Utwórz folder na dokumenty"}
-                        </button>
-                        {folders.length > 0 && (
-                          <>
-                            <select value={selectedFolderToLink} onChange={(e) => setSelectedFolderToLink(e.target.value)} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-[10px]">
-                              <option value="">lub połącz z istniejącym...</option>
-                              {folders.map((f: any) => (
-                                <option key={String(f.id)} value={String(f.id)}>{f.name}</option>
-                              ))}
-                            </select>
-                            <button onClick={linkFolder} disabled={!selectedFolderToLink} className="text-[10px] text-cyan-600 hover:underline disabled:opacity-40">Połącz</button>
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-[var(--text-muted)] italic">brak</span>
-                    )}
-                  </div>
-                </div>
+                <DriveFolderPanel
+                  path={folderPath}
+                  basePath="Umowy"
+                  defaultName={"Umowa #" + String(selected.id) + " - " + selected.title}
+                  canWrite={canWrite}
+                  onLink={linkContractFolder}
+                  onUnlink={unlinkContractFolder}
+                />
                 {canWrite && (
                   <div className="flex justify-end gap-3 pt-2">
                     <button onClick={() => startEdit(selected)} className="text-xs text-cyan-600 hover:underline">Edytuj</button>

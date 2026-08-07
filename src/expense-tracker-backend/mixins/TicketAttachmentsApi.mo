@@ -18,6 +18,7 @@ mixin (
   ticketAttachmentsTrashed : Map.Map<Nat, Int>,
   moduleAccess : Map.Map<Principal, [Text]>,
   ticketAttachmentUploader : Map.Map<Nat, Principal>,
+  ticketDriveAttachments : Map.Map<Nat, Types.TicketDriveAttachment>,
 ) {
   func callerAuthorizedForTicket(caller : Principal, ticketId : Nat, token : ?Text) : Bool {
     if (AccessLib.hasAnyRole(accessRoles, caller)) {
@@ -200,5 +201,38 @@ mixin (
       };
     };
     count;
+  };
+
+  public shared ({ caller }) func recordTicketDriveAttachment(
+    ticketId : Nat,
+    name : Text,
+    oneDriveItemId : Text,
+    uploadedBy : Text,
+    token : ?Text,
+  ) : async ?Nat {
+    if (not callerAuthorizedForTicket(caller, ticketId, token)) { return null };
+    switch (tickets.get(ticketId)) {
+      case null { return null };
+      case (?_) {};
+    };
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in ticketDriveAttachments.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
+    ticketDriveAttachments.add(newId, {
+      id = newId; ticketId; name; oneDriveItemId; uploadedBy; createdAt = Time.now();
+    });
+    ?newId;
+  };
+
+  public query ({ caller }) func listTicketDriveAttachments(ticketId : Nat, token : ?Text) : async [Types.TicketDriveAttachment] {
+    if (not callerAuthorizedForTicket(caller, ticketId, token)) { Runtime.trap("Not authorized for this ticket"); };
+    var result = List.empty<Types.TicketDriveAttachment>();
+    for ((_, a) in ticketDriveAttachments.entries()) {
+      if (a.ticketId == ticketId) { result.add(a); };
+    };
+    result.toArray();
   };
 };

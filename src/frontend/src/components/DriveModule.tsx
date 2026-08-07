@@ -401,7 +401,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
             </div>
           )}
           {searchResults !== null ? (
-            <div className="overflow-auto rounded border border-[var(--border-color)] max-h-[600px]">
+            <div className="mobile-scroll-table overflow-auto rounded border border-[var(--border-color)] max-h-[600px]">
               <table className="w-full text-xs">
                 <thead className="bg-[var(--bg-hover)] sticky top-0">
                   <tr className="text-left text-[var(--text-muted)]">
@@ -471,7 +471,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
               </div>
             )
           ) : (
-            <div className="overflow-auto rounded border border-[var(--border-color)] max-h-[600px]">
+            <div className="mobile-scroll-table overflow-auto rounded border border-[var(--border-color)] max-h-[600px]">
               <table className="w-full text-xs">
                 <thead className="bg-[var(--bg-hover)] sticky top-0">
                   <tr className="text-left text-[var(--text-muted)]">

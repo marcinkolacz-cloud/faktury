@@ -48,9 +48,34 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
     setLoadingList(false);
   };
 
+  const ensureKsefDriveFolder = async () => {
+    const listing = await odList("");
+    const exists = (listing.items || []).some((i: any) => i.isFolder && i.name === "Faktury KSeF");
+    if (!exists) await odCreateFolder("", "Faktury KSeF");
+  };
+
+  const saveSharedInvoiceToDrive = async (ksefNumber: string) => {
+    // Manually-added invoices already have their own attached document
+    // (uploaded into "Faktury reczne" when created) — nothing to render
+    // from KSeF XML for those, so there's nothing extra to save here.
+    if (ksefNumber.startsWith("MANUAL-")) return;
+    const inv = pending.find((p) => p.ksefNumber === ksefNumber);
+    const bodyHtml = await renderReadableInvoiceHtml(ksefNumber);
+    const fullHtml = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Faktura</title></head><body>" + bodyHtml + "</body></html>";
+    const blob = new Blob([fullHtml], { type: "text/html" });
+    const safeName = (inv?.invoiceNumber || ksefNumber).replace(/[/\\:*?"<>|]/g, "_");
+    const file = new File([blob], safeName + ".html", { type: "text/html" });
+    await ensureKsefDriveFolder();
+    await odUploadFile("Faktury KSeF", file);
+  };
+
   const toggleShare = async (ksefNumber: string) => {
+    const turningOn = !sharedMap[ksefNumber];
     await actor.toggleShareInvoiceToTeam(ksefNumber);
     setSharedMap((prev) => ({ ...prev, [ksefNumber]: !prev[ksefNumber] }));
+    if (turningOn) {
+      saveSharedInvoiceToDrive(ksefNumber).catch((e) => console.error("Nie udało się zapisać faktury na Dysku:", e));
+    }
   };
 
   const saveToken = async () => {
@@ -266,7 +291,14 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
   const bulkShare = async () => {
     setBulkProcessing(true);
     for (const ksefNumber of selected) {
-      if (!sharedMap[ksefNumber]) await actor.toggleShareInvoiceToTeam(ksefNumber);
+      if (!sharedMap[ksefNumber]) {
+        await actor.toggleShareInvoiceToTeam(ksefNumber);
+        try {
+          await saveSharedInvoiceToDrive(ksefNumber);
+        } catch (e) {
+          console.error("Nie udało się zapisać faktury na Dysku:", ksefNumber, e);
+        }
+      }
     }
     setSelected(new Set());
     reloadPending();
@@ -423,7 +455,17 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
     .filter((p) => (p.sellerName + " " + p.sellerNip).toLowerCase().includes(colFilters.seller.toLowerCase()))
     .filter((p) => p.invoiceNumber.toLowerCase().includes(colFilters.invoiceNumber.toLowerCase()))
     .filter((p) => String(p.grossAmount).includes(colFilters.amount))
-    .sort((a, b) => (a.issueDate < b.issueDate ? 1 : a.issueDate > b.issueDate ? -1 : Number(b.importedAt - a.importedAt)));
+    .sort((a, b) => {
+      const parseDate = (s: string) => {
+        const parts = (s || "").split(".");
+        if (parts.length !== 3) return s || "";
+        const [d, m, y] = parts;
+        return (y || "0000") + (m || "00").padStart(2, "0") + (d || "00").padStart(2, "0");
+      };
+      const da = parseDate(a.issueDate);
+      const db = parseDate(b.issueDate);
+      return da < db ? 1 : da > db ? -1 : Number(b.importedAt - a.importedAt);
+    });
   const decidedOnly = pending.filter((p) => Object.keys(p.status)[0] === "rejected");
 
   return (
@@ -518,7 +560,7 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
               <button onClick={() => setSelected(new Set())} className="px-2 py-1 border border-[var(--border-color)] rounded">Anuluj</button>
             </div>
           )}
-          <div className="overflow-auto max-h-[400px] border border-[var(--border-color-light)] rounded">
+          <div className="mobile-scroll-table overflow-auto max-h-[400px] border border-[var(--border-color-light)] rounded">
             <table className="w-full text-xs">
               <thead className="bg-[var(--bg-hover)] sticky top-0">
                 <tr className="text-left text-[var(--text-muted)]">

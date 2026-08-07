@@ -84,7 +84,7 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
     .filter((i) => i.issueDate.toLowerCase().includes(colFilters.date.toLowerCase()))
     .filter((i) => (i.sellerName + " " + i.sellerNip).toLowerCase().includes(colFilters.seller.toLowerCase()))
     .filter((i) => i.invoiceNumber.toLowerCase().includes(colFilters.invoiceNumber.toLowerCase()))
-    .reverse();
+    .sort((a, b) => (a.issueDate < b.issueDate ? 1 : a.issueDate > b.issueDate ? -1 : Number(b.importedAt - a.importedAt)));
 
   if (loading) {
     return <div className="min-h-screen bg-[var(--bg-page)] flex items-center justify-center text-[var(--text-muted)]">Ładowanie...</div>;
@@ -100,7 +100,7 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
 
         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4">
-            <div className="overflow-auto rounded border border-[var(--border-color)]">
+            <div className="mobile-scroll-table overflow-auto rounded border border-[var(--border-color)]">
               <table className="w-full text-xs">
                 <thead className="bg-[var(--bg-hover)] sticky top-0">
                   <tr className="text-left text-[var(--text-muted)]">

@@ -48,13 +48,14 @@ function convertTicketAttachment(a: any) {
   return convertFields(a, ["id", "ticketId", "size", "totalChunks", "createdAt"]);
 }
 function convertTicketLinks(l: any) {
-  return convertFields(l, [], ["calendarEventId", "driveFolderId"]);
+  // driveFolderPath is opt Text (a OneDrive path string) — passes through as-is.
+  return convertFields(l, [], ["calendarEventId"]);
 }
 function convertOrder(o: any) {
-  return convertFields(o, ["id", "createdAt"], ["driveFolderId"]);
+  return convertFields(o, ["id", "createdAt"]);
 }
 function convertContract(c: any) {
-  return convertFields(c, ["id", "createdAt"], ["driveFolderId"]);
+  return convertFields(c, ["id", "createdAt"]);
 }
 
 function convertCalendarEvent(e: any) {
