@@ -156,6 +156,23 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
   ]);
   backup.contracts = { contracts: [...contractsActive, ...contractsTrashedFull] };
 
+  onProgress("Eksportuję Powiadomienia email...");
+  const subscribers = await actor.listSubscribers();
+  backup.emailSubscribers = { subscribers };
+
+  onProgress("Eksportuję Rejestr urządzeń...");
+  const [devicesActive, devicesTrashedFull] = await Promise.all([
+    actor.listDevices(),
+    actor.listTrashedDevices(),
+  ]);
+  const allDevices = [...devicesActive, ...devicesTrashedFull];
+  let allServiceEntries: any[] = [];
+  for (const d of allDevices) {
+    const entries = await actor.listDeviceServiceEntries(d.id);
+    allServiceEntries.push(...entries);
+  }
+  backup.devices = { devices: allDevices, serviceEntries: allServiceEntries };
+
   onProgress("Eksportuję faktury KSeF...");
   const [pendingInvoices, sharedStatuses] = await Promise.all([
     actor.listPendingInvoices(),
@@ -230,7 +247,7 @@ export function BackupExport({ actor }: { actor: any }) {
     <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
       <h2 className="font-semibold text-[var(--text-primary)]">Kopia zapasowa</h2>
       <p className="text-xs text-[var(--text-muted)]">
-        Eksportuje Admin (dostęp + kody zaproszeń), Rejestr Faktur, Projekty, Magazyn, Zgłoszenia (z załącznikami), Zamówienia i Umowy do jednego pliku JSON. Nie obejmuje Dysku.
+        Eksportuje Admin (dostęp + kody zaproszeń), Rejestr Faktur, Projekty, Magazyn, Zgłoszenia (z załącznikami), Zamówienia, Umowy, Powiadomienia e-mail i Rejestr urządzeń do jednego pliku JSON. Nie obejmuje Dysku.
       </p>
       <button
         onClick={runExport}

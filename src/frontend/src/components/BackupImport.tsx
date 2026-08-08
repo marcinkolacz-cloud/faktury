@@ -57,6 +57,15 @@ function convertOrder(o: any) {
 function convertContract(c: any) {
   return convertFields(c, ["id", "createdAt"]);
 }
+function convertSubscriber(s: any) {
+  return convertFields(s, ["id", "createdAt"]);
+}
+function convertDevice(d: any) {
+  return convertFields(d, ["id", "flightHours", "flightMinutes", "createdAt"]);
+}
+function convertDeviceServiceEntry(e: any) {
+  return convertFields(e, ["id", "deviceId", "flightHours", "flightMinutes", "createdAt"]);
+}
 
 function convertCalendarEvent(e: any) {
   return convertFields(e, ["id", "createdAt"]);
@@ -172,6 +181,19 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
   onProgress("Importuję Umowy...");
   if (backup.contracts?.contracts?.length) {
     await actor.importContracts(backup.contracts.contracts.map(convertContract));
+  }
+
+  onProgress("Importuję Powiadomienia e-mail...");
+  if (backup.emailSubscribers?.subscribers?.length) {
+    await actor.importSubscribers(backup.emailSubscribers.subscribers.map(convertSubscriber));
+  }
+
+  onProgress("Importuję Rejestr urządzeń...");
+  if (backup.devices?.devices?.length) {
+    await actor.importDevices(backup.devices.devices.map(convertDevice));
+  }
+  if (backup.devices?.serviceEntries?.length) {
+    await actor.importDeviceServiceEntries(backup.devices.serviceEntries.map(convertDeviceServiceEntry));
   }
 
   onProgress("Importuję faktury KSeF...");

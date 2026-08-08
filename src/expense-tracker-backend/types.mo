@@ -249,6 +249,43 @@ module {
     createdAt : Int;
   };
 
+  public type Device = {
+    id : Nat;
+    symbol : Text;
+    name : Text;
+    client : Text;
+    location : Text;
+    notes : Text;
+    purchaseDate : Text;
+    warrantyDate : Text;
+    supportPackage : Text;
+    contactPerson : Text;
+    flightHours : Nat;
+    flightMinutes : Nat;
+    createdBy : Text;
+    createdAt : Int;
+  };
+
+  public type DeviceServiceEntry = {
+    id : Nat;
+    deviceId : Nat;
+    date : Text;
+    description : Text;
+    performedBy : Text;
+    createdAt : Int;
+  };
+
+  public type DeviceServiceEntryV2 = {
+    id : Nat;
+    deviceId : Nat;
+    date : Text;
+    description : Text;
+    performedBy : Text;
+    flightHours : Nat;
+    flightMinutes : Nat;
+    createdAt : Int;
+  };
+
   public type Subscriber = {
     id : Nat;
     email : Text;
