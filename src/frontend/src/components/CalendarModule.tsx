@@ -82,6 +82,11 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
   const [addingNoteFor, setAddingNoteFor] = useState<string | null>(null);
   const [viewMonth, setViewMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [editNoteTitle, setEditNoteTitle] = useState("");
+  const [editNoteContent, setEditNoteContent] = useState("");
+  const [notifyNoteFor, setNotifyNoteFor] = useState<Record<string, boolean>>({});
+  const [notifyNoteEmails, setNotifyNoteEmails] = useState<Record<string, string[]>>({});
+  const [noteNotifyResult, setNoteNotifyResult] = useState<Record<string, string>>({});
 
   const monthLabel = (y: number, m: number) => {
     const names = ["Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"];
@@ -99,8 +104,6 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
   };
 
   const dateInRange = (dayStr: string, start: string, end: string) => dayStr >= start && dayStr <= end;
-  const [editNoteTitle, setEditNoteTitle] = useState("");
-  const [editNoteContent, setEditNoteContent] = useState("");
 
   const loadNotes = async (eventId: bigint) => {
     const result = await actor.listCalendarNotes(eventId);
@@ -115,8 +118,66 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
     await actor.createCalendarNote(eventId, title, content);
     setNewNoteTitle((prev) => ({ ...prev, [key]: "" }));
     setNewNoteContent((prev) => ({ ...prev, [key]: "" }));
+    if (notifyNoteFor[key] && (notifyNoteEmails[key] || []).length > 0) {
+      try {
+        const ev = events.find((x) => String(x.id) === key);
+        const evTitle = ev ? ev.title : "wydarzenie";
+        const res = await sendEmailNotification(
+          actor,
+          notifyNoteEmails[key],
+          "Nowa informacja: " + evTitle + " — " + title,
+          content
+        );
+        setNoteNotifyResult((prev) => ({ ...prev, [key]: "Powiadomiono " + res.ok + "/" + res.total + " adresów." }));
+      } catch (err) {
+        setNoteNotifyResult((prev) => ({ ...prev, [key]: "Błąd powiadomienia: " + (err instanceof Error ? err.message : String(err)) }));
+      }
+      setNotifyNoteFor((prev) => ({ ...prev, [key]: false }));
+      setNotifyNoteEmails((prev) => ({ ...prev, [key]: [] }));
+    }
     loadNotes(eventId);
   };
+
+  const renderNoteNotifyPicker = (key: string) => (
+    <div className="space-y-1">
+      <label className="flex items-center gap-1.5 text-[10px] text-[var(--text-secondary)]">
+        <input
+          type="checkbox"
+          checked={!!notifyNoteFor[key]}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            setNotifyNoteFor((prev) => ({ ...prev, [key]: checked }));
+            if (!checked) setNotifyNoteEmails((prev) => ({ ...prev, [key]: [] }));
+          }}
+        />
+        Powiadom zespół mailem o tej informacji
+      </label>
+      {notifyNoteFor[key] && (
+        <div className="border border-[var(--border-color)] rounded p-1.5 space-y-1">
+          {subscribers.length === 0 ? (
+            <p className="text-[10px] text-[var(--text-muted)]">Brak adresów na liście (moduł "Powiadomienia e-mail").</p>
+          ) : (
+            subscribers.map((s) => (
+              <label key={s.id} className="flex items-center gap-1.5 text-[10px] text-[var(--text-secondary)]">
+                <input
+                  type="checkbox"
+                  checked={(notifyNoteEmails[key] || []).includes(s.email)}
+                  onChange={(e) =>
+                    setNotifyNoteEmails((prev) => {
+                      const cur = prev[key] || [];
+                      return { ...prev, [key]: e.target.checked ? [...cur, s.email] : cur.filter((em) => em !== s.email) };
+                    })
+                  }
+                />
+                {s.name ? s.name + " (" + s.email + ")" : s.email}
+              </label>
+            ))
+          )}
+        </div>
+      )}
+      {noteNotifyResult[key] && <p className="text-[10px] text-[var(--text-muted)]">{noteNotifyResult[key]}</p>}
+    </div>
+  );
 
   const startEditNote = (note: any) => {
     setEditingNoteId(String(note.id));
@@ -467,6 +528,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                             <button onClick={async () => { await addNote(e.id); setAddingNoteFor(null); }} className="text-xs px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded">Dodaj</button>
                             <button onClick={() => setAddingNoteFor(null)} className="text-xs text-[var(--text-muted)] hover:underline">Anuluj</button>
                           </div>
+                          {renderNoteNotifyPicker(String(e.id))}
                         </div>
                       )}
                       <p className="text-[10px] text-[var(--text-muted)] mt-1">
@@ -530,6 +592,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                                 className="w-full text-xs border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-1.5 py-1 whitespace-pre-wrap font-mono"
                               />
                               <button onClick={() => addNote(e.id)} className="text-xs px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded">+ Dodaj notatkę</button>
+                              {renderNoteNotifyPicker(String(e.id))}
                             </div>
                           )}
                         </div>

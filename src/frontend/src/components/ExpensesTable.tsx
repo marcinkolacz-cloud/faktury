@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExpenseRow } from "./ExpenseRow";
+import { sendEmailNotification } from "../lib/emailNotify";
 
 export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, filterProject, canWrite, ksefSentMap, onToggleKsef }: {
   expenses: any[]; projects: any[]; actor: any; onChange: () => void; onToggle: (id: bigint, method: string) => void; filterProject: string | null; canWrite: boolean;
@@ -23,7 +24,16 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
   });
   const setColFilter = (key: string, v: string) => setColFilters((prev) => ({ ...prev, [key]: v }));
   const [error, setError] = useState("");
+  const [subscribers, setSubscribers] = useState<any[]>([]);
+  const [notifyExpense, setNotifyExpense] = useState(false);
+  const [notifyExpenseEmails, setNotifyExpenseEmails] = useState<string[]>([]);
+  const [expenseNotifyResult, setExpenseNotifyResult] = useState<string | null>(null);
   const fieldRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  useEffect(() => {
+    if (!actor) return;
+    actor.listSubscribers().then(setSubscribers).catch(() => setSubscribers([]));
+  }, [actor]);
 
   const onGrossChange = (v: string) => {
     setPriceGross(v);
@@ -69,6 +79,29 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
       "",
       note.trim(),
     );
+    if (notifyExpense && notifyExpenseEmails.length > 0) {
+      try {
+        const body =
+          "Produkt/usługa: " + productService.trim() +
+          "\nDostawca: " + supplier.trim() +
+          "\nProjekt: " + projectName.trim() +
+          "\nKwota brutto: " + (priceGross || "-") +
+          "\nZapłacił: " + (paidBy.trim() || "-") +
+          "\nNumer faktury: " + (invoiceNumber.trim() || "-") +
+          (note.trim() ? "\nNotatka: " + note.trim() : "");
+        const res = await sendEmailNotification(
+          actor,
+          notifyExpenseEmails,
+          "Nowy wydatek do rozliczenia: " + productService.trim(),
+          body
+        );
+        setExpenseNotifyResult("Powiadomiono " + res.ok + "/" + res.total + " adresów.");
+      } catch (err) {
+        setExpenseNotifyResult("Błąd powiadomienia: " + (err instanceof Error ? err.message : String(err)));
+      }
+      setNotifyExpense(false);
+      setNotifyExpenseEmails([]);
+    }
     setProductService(""); setSupplier(""); setProjectName("");
     setPriceGross(""); setPriceNet(""); setOrderDate(""); setInvoiceNumber("");
     setPaidBy(""); setNote("");
@@ -141,6 +174,37 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
             <input ref={(el) => { fieldRefs.current[7] = el; }} onKeyDown={handleKeyDown(7)} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Notatka" className={inputClass + " col-span-2"} />
           </div>
           {error && <p className="text-red-600 text-sm">{error}</p>}
+          <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+            <input
+              type="checkbox"
+              checked={notifyExpense}
+              onChange={(e) => { setNotifyExpense(e.target.checked); if (!e.target.checked) setNotifyExpenseEmails([]); }}
+            />
+            Poinformuj o wydatku mailem (szybszy zwrot kosztów)
+          </label>
+          {notifyExpense && (
+            <div className="border border-[var(--border-color)] rounded p-2 space-y-1">
+              {subscribers.length === 0 ? (
+                <p className="text-[10px] text-[var(--text-muted)]">Brak adresów na liście (moduł "Powiadomienia e-mail").</p>
+              ) : (
+                subscribers.map((s) => (
+                  <label key={s.id} className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                    <input
+                      type="checkbox"
+                      checked={notifyExpenseEmails.includes(s.email)}
+                      onChange={(e) =>
+                        setNotifyExpenseEmails((prev) =>
+                          e.target.checked ? [...prev, s.email] : prev.filter((em) => em !== s.email)
+                        )
+                      }
+                    />
+                    {s.name ? s.name + " (" + s.email + ")" : s.email}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+          {expenseNotifyResult && <p className="text-[10px] text-[var(--text-muted)]">{expenseNotifyResult}</p>}
           <div className="flex gap-2">
             <button onClick={submit} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm">Dodaj</button>
             <button onClick={() => setOpen(false)} className="px-3 py-1.5 border border-[var(--border-color)] text-[var(--text-secondary)] rounded text-sm">Anuluj</button>
