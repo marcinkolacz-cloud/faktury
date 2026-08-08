@@ -16,6 +16,7 @@ import { OrdersModule } from "./components/OrdersModule";
 import { ContractsModule } from "./components/ContractsModule";
 import { EmailSubscribersModule } from "./components/EmailSubscribersModule";
 import { DevicesModule } from "./components/DevicesModule";
+import { ManualModule } from "./components/ManualModule";
 import { KsefTeamView } from "./components/KsefTeamView";
 import { AdminPanel } from "./components/AdminPanel";
 import { TopBar } from "./components/TopBar";
@@ -139,51 +140,56 @@ function ModuleRouter() {
   const [module, setModule] = useState<string | null>(null);
   const actor = useActor2();
 
-  if (module === null) {
+  const [baseModule, manualAnchor] = module ? module.split("#") : [null, undefined];
+
+  if (baseModule === null) {
     return <HomeScreen onSelectModule={setModule} />;
   }
-  if (module === "admin") {
+  if (baseModule === "admin") {
     return (
       <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)]">
         <div className="max-w-[1600px] mx-auto p-6 space-y-6">
-          <TopBar currentModule={module} onNavigate={setModule} onHome={() => setModule(null)} actor={actor} />
+          <TopBar currentModule={baseModule} onNavigate={setModule} onHome={() => setModule(null)} actor={actor} />
           <AdminPanel actor={actor} />
         </div>
       </div>
     );
   }
-  if (module === "invoices") {
-    return <Dashboard onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "invoices") {
+    return <Dashboard onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
-  if (module === "warehouse") {
-    return <WarehouseModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "warehouse") {
+    return <WarehouseModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
-  if (module === "projects") {
-    return <ProjectsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "projects") {
+    return <ProjectsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
-  if (module === "calendar") {
-    return <CalendarModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "calendar") {
+    return <CalendarModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
-  if (module === "tickets") {
-    return <TicketsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "tickets") {
+    return <TicketsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
-  if (module === "drive") {
-    return <DriveModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "drive") {
+    return <DriveModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
-  if (module === "orders") {
-    return <OrdersModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "orders") {
+    return <OrdersModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
-  if (module === "contracts") {
-    return <ContractsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "contracts") {
+    return <ContractsModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
-  if (module === "ksef") {
-    return <KsefTeamView onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} actor={actor} />;
+  if (baseModule === "ksef") {
+    return <KsefTeamView onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} actor={actor} />;
   }
-  if (module === "emailSubscribers") {
-    return <EmailSubscribersModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "emailSubscribers") {
+    return <EmailSubscribersModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
-  if (module === "devices") {
-    return <DevicesModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
+  if (baseModule === "devices") {
+    return <DevicesModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
+  }
+  if (baseModule === "manual") {
+    return <ManualModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} initialAnchor={manualAnchor} />;
   }
   return (
     <div className="min-h-screen bg-[#0a0e14] flex flex-col items-center justify-center gap-4">

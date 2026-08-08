@@ -25,6 +25,9 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
   ];
 
   const visibleTiles = allowedModules === null ? [] : tiles.filter((t) => allowedModules.includes(t.id));
+  const allTiles = allowedModules === null
+    ? []
+    : [...visibleTiles, { id: "manual", title: "📖 Instrukcja", desc: "Jak korzystać z poszczególnych modułów" }];
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] flex items-center justify-center p-6">
@@ -38,7 +41,7 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
           <p className="text-center text-gray-500">Brak dostępnych modułów. Skontaktuj się z administratorem.</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {visibleTiles.map((t) => (
+            {allTiles.map((t) => (
               <button
                 key={t.id}
                 onClick={() => onSelectModule(t.id)}

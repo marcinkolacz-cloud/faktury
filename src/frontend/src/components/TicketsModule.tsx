@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
+import { InfoTip } from "./InfoTip";
 import { setDriveActor, odCreateFolder, odUploadFile, odList, odDownloadUrl } from "../lib/oneDriveConfig";
 import { DriveFolderPanel } from "./DriveFolderPanel";
 import { sendEmailNotification } from "../lib/emailNotify";
@@ -476,6 +477,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
         <div className="flex items-center gap-4 pb-2">
           <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
           <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Zgłoszenia</h1>
+          <InfoTip text="System ticketów od klientów. Pole „Numer urządzenia” łączy zgłoszenie z kartą urządzenia w Rejestrze urządzeń. Odpowiadając masz do wyboru notatkę wewnętrzną, powiadomienie zespołu mailem i utworzenie wydarzenia w kalendarzu." />
         </div>
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -588,6 +590,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                         {ticketExtras[String(selected.id)]?.company && <>Firma: <span className="font-medium">{ticketExtras[String(selected.id)].company}</span></>}
                         {ticketExtras[String(selected.id)]?.company && ticketExtras[String(selected.id)]?.deviceNumber && " · "}
                         {ticketExtras[String(selected.id)]?.deviceNumber && <>Urządzenie: <span className="font-medium">{ticketExtras[String(selected.id)].deviceNumber}</span></>}
+                        {ticketExtras[String(selected.id)]?.deviceNumber && <InfoTip text="Symbol urządzenia (np. BAS001) automatycznie łączy to zgłoszenie z jego kartą w module Rejestr urządzeń — historia zgłoszeń tworzy się tam sama, bez dodatkowych kliknięć." />}
                       </p>
                     )}
                     <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
@@ -645,6 +648,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                             onChange={(e) => setShowEventDateForm(e.target.checked)}
                           />
                           Utwórz wydarzenie w kalendarzu dla tego zgłoszenia
+                          <InfoTip text="Otwiera osobny termin realizacji (od–do), niezależny od daty zgłoszenia. System sprawdza kolizje z innymi wydarzeniami w kalendarzu i ostrzega żółtym banerem, jeśli termin jest zajęty." />
                         </label>
                         {showEventDateForm && (
                           <div className="w-full border border-[var(--border-color)] rounded p-2 space-y-1.5 mt-1">
@@ -810,6 +814,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                         onChange={(e) => setIsInternalNote(e.target.checked)}
                       />
                       Notatka wewnętrzna (niewidoczna dla klienta)
+                      <InfoTip text="Odpowiedź NIE trafi do klienta — zostaje w systemie jako wewnętrzny komentarz zespołu. Przycisk niżej zmieni się na „Zapisz notatkę”." />
                     </label>
                     <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                       <input
@@ -818,6 +823,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                         onChange={(e) => { setNotifyTeam(e.target.checked); if (!e.target.checked) setNotifyTeamEmails([]); }}
                       />
                       Powiadom zespół mailem
+                      <InfoTip text="Dodatkowe powiadomienie do wybranych adresów z listy Powiadomień e-mail — niezależne od tego, czy odpowiedź idzie też do klienta." />
                     </label>
                     {notifyTeam && (
                       <div className="border border-[var(--border-color)] rounded p-2 space-y-1">

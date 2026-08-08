@@ -38,6 +38,7 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
     { id: "emailSubscribers", label: "Powiadomienia" },
     { id: "devices", label: "Urządzenia" },
   ].filter((t) => allowedModules.includes(t.id));
+  tabs.push({ id: "manual", label: "📖 Instrukcja" });
 
   return (
     <div className="flex items-center justify-between flex-wrap gap-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-2 sm:p-3">
@@ -74,6 +75,13 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
         {expenses && payments && projects && onDataChange && (
           <ImportExport expenses={expenses} payments={payments} projects={projects} actor={actor} onChange={onDataChange} />
         )}
+        <button
+          onClick={() => onNavigate(currentModule && currentModule !== "manual" ? "manual#" + currentModule : "manual")}
+          title="Pomoc — instrukcja dla tego modułu"
+          className="px-2.5 py-2 sm:px-3 sm:py-1.5 text-sm border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]"
+        >
+          ❓
+        </button>
         <button onClick={toggleTheme} className="px-2.5 py-2 sm:px-3 sm:py-1.5 text-sm border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]">
           {theme === "dark" ? "☀️" : "🌙"}
         </button>

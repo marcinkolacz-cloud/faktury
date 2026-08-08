@@ -19,6 +19,7 @@ async function collectFilesRecursive(basePath: string, relPrefix: string): Promi
   return out;
 }
 import { TopBar } from "./TopBar";
+import { InfoTip } from "./InfoTip";
 
 export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
   const actor = useBackendActor();
@@ -344,6 +345,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
         <div className="flex items-center gap-4 pb-2">
           <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
           <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Bartolini Drive</h1>
+          <InfoTip text="Pliki na OneDrive, zintegrowane z resztą systemu — Zgłoszenia, Zamówienia i Umowy mają automatycznie tworzone własne podfoldery. Zdjęcia z publicznego formularza zgłoszenia trafiają tu automatycznie." />
         </div>
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
         <div

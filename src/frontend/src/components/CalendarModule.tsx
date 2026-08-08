@@ -3,6 +3,7 @@ import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { odUploadFile, odDownloadUrl, odDelete, odCreateFolder, odList, setDriveActor } from "../lib/oneDriveConfig";
 import { sendEmailNotification } from "../lib/emailNotify";
+import { InfoTip } from "./InfoTip";
 
 const TYPE_LABELS: Record<string, string> = {
   meeting: "Spotkanie",
@@ -151,6 +152,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
           }}
         />
         Powiadom zespół mailem o tej informacji
+        <InfoTip text="Wysyła mail do wybranych adresów z treścią tej konkretnej notatki. Działa niezależnie od powiadomienia ustawionego przy tworzeniu samego wydarzenia." />
       </label>
       {notifyNoteFor[key] && (
         <div className="border border-[var(--border-color)] rounded p-1.5 space-y-1">
@@ -318,6 +320,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
         <div className="flex items-center gap-4 pb-2">
           <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
           <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Kalendarz zespołu</h1>
+          <InfoTip text="Spotkania, wyjazdy, ważne daty i zadania. Wydarzenia mogą też powstawać automatycznie ze zgłoszeń — patrz moduł Zgłoszenia. System ostrzega o kolizji terminów." />
         </div>
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
 
@@ -345,6 +348,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                 onChange={(e) => { setNotifyImportant(e.target.checked); if (!e.target.checked) setNotifyEventEmails([]); }}
               />
               Ważne — wyślij powiadomienie mailem
+              <InfoTip text="Mail z tytułem, datą i opisem wydarzenia trafi natychmiast po zapisaniu do wybranych adresów z listy Powiadomień e-mail." />
             </label>
             {notifyImportant && (
               <div className="border border-[var(--border-color)] rounded p-2 space-y-1">

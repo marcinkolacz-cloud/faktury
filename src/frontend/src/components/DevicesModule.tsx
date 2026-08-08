@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
+import { InfoTip } from "./InfoTip";
 
 const emptyForm = {
   symbol: "",
@@ -177,7 +178,10 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
 
       <div className="max-w-5xl mx-auto space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Rejestr urządzeń</h1>
+          <div className="flex items-center">
+            <h1 className="text-xl font-semibold text-[var(--text-primary)]">Rejestr urządzeń</h1>
+            <InfoTip text="Karty urządzeń klientów z gwarancją, pakietem support i nalotem. Historia zgłoszeń dopasowuje się automatycznie po symbolu urządzenia (np. BAS001) z pola „Numer urządzenia” zgłoszenia." />
+          </div>
           {canWrite && (
             <button
               onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(true); }}
@@ -288,12 +292,17 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
               <p><span className="text-[var(--text-muted)]">Pakiet support:</span> {selected.supportPackage || "-"}</p>
               <p><span className="text-[var(--text-muted)]">Data zakupu:</span> {selected.purchaseDate || "-"}</p>
               <p><span className="text-[var(--text-muted)]">Gwarancja do:</span> {selected.warrantyDate || "-"}</p>
-              <p><span className="text-[var(--text-muted)]">Total time flight:</span> {String(selected.flightHours)} h : {String(selected.flightMinutes)} min</p>
+              <p><span className="text-[var(--text-muted)]">Total time flight:</span> {String(selected.flightHours)} h : {String(selected.flightMinutes)} min
+                <InfoTip text="Ta wartość aktualizuje się automatycznie z ostatniego wpisu serwisowego niżej — nie edytuj jej tutaj ręcznie." />
+              </p>
             </div>
             {selected.notes && <p className="text-xs text-[var(--text-secondary)] border-t border-[var(--border-color)] pt-2">{selected.notes}</p>}
 
             <div className="border-t border-[var(--border-color)] pt-2">
-              <h3 className="text-sm font-medium text-[var(--text-primary)] mb-1.5">Historia zgłoszeń ({ticketsForSymbol(selected.symbol).length})</h3>
+              <h3 className="text-sm font-medium text-[var(--text-primary)] mb-1.5 flex items-center">
+                Historia zgłoszeń ({ticketsForSymbol(selected.symbol).length})
+                <InfoTip text="Dopasowana automatycznie po dokładnym symbolu w polu „Numer urządzenia” zgłoszenia (wielkość liter nieistotna). Kliknij zgłoszenie, żeby rozwinąć szczegóły." />
+              </h3>
               {ticketsForSymbol(selected.symbol).length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)]">Brak zgłoszeń dla tego symbolu urządzenia.</p>
               ) : (
@@ -323,7 +332,10 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
             </div>
 
             <div className="border-t border-[var(--border-color)] pt-2">
-              <h3 className="text-sm font-medium text-[var(--text-primary)] mb-1.5">Prace serwisowe (wprowadzane ręcznie)</h3>
+              <h3 className="text-sm font-medium text-[var(--text-primary)] mb-1.5 flex items-center">
+                Prace serwisowe (wprowadzane ręcznie)
+                <InfoTip text="Niezależne od systemu zgłoszeń — dla rutynowych przeglądów bez zgłoszenia od klienta. Każdy wpis może zaktualizować stan Total time flight powyżej." />
+              </h3>
               {serviceEntries.length === 0 ? (
                 <p className="text-xs text-[var(--text-muted)] mb-2">Brak wpisów.</p>
               ) : (

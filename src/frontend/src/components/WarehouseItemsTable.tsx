@@ -132,8 +132,7 @@ export function WarehouseItemsTable({ items, categories, projects, movements, ac
               <th className="p-2">Serial no.</th>
               <th className="p-2">Link</th>
               <th className="p-2">Lokalizacja</th>
-              <th className="p-2 text-center">FNPT2</th>
-              <th className="p-2 text-center">Trainer</th>
+              <th className="p-2 text-center" colSpan={2}>FNPT2 / Trainer</th>
               <th className="p-2 text-right">Ilość</th>
               <th className="p-2"></th>
             </tr>

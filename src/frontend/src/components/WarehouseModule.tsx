@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { WarehouseItemsTable } from "./WarehouseItemsTable";
 import { TopBar } from "./TopBar";
+import { InfoTip } from "./InfoTip";
 import { StockMovementsPanel } from "./StockMovementsPanel";
 
 export function WarehouseModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
@@ -57,6 +58,7 @@ export function WarehouseModule({ onHome, onNavigate, currentModule }: { onHome:
         <div className="flex items-center gap-4 pb-2">
           <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
           <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Magazyn</h1>
+          <InfoTip text="Stany magazynowe, przyjęcia i wydania do projektów. Kolumny FNPT2/Trainer pokazują, do jakiego typu symulatora pasuje dana część." />
         </div>
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
         <WarehouseItemsTable items={items} categories={categories} projects={projects} movements={movements} actor={actor} onChange={reload} canWrite={canWrite} />

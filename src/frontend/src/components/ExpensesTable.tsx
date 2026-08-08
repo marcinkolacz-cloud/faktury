@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ExpenseRow } from "./ExpenseRow";
+import { InfoTip } from "./InfoTip";
 import { sendEmailNotification } from "../lib/emailNotify";
 
 export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, filterProject, canWrite, ksefSentMap, onToggleKsef }: {
@@ -181,6 +182,7 @@ export function ExpensesTable({ expenses, projects, actor, onChange, onToggle, f
               onChange={(e) => { setNotifyExpense(e.target.checked); if (!e.target.checked) setNotifyExpenseEmails([]); }}
             />
             Poinformuj o wydatku mailem (szybszy zwrot kosztów)
+            <InfoTip text="Przydatne, gdy pracownik zapłacił z własnej kieszeni — mail z podsumowaniem (produkt, kwota, kto zapłacił, nr faktury) idzie od razu po dodaniu wydatku do wybranych adresów." />
           </label>
           {notifyExpense && (
             <div className="border border-[var(--border-color)] rounded p-2 space-y-1">

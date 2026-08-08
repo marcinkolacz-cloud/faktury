@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
+import { InfoTip } from "./InfoTip";
 
 const EMAIL_WORKER_URL = "https://bartolini-ticket-email.marcinkolacz.workers.dev";
 
@@ -118,7 +119,10 @@ export function EmailSubscribersModule({ onHome, onNavigate, currentModule }: { 
 
       <div className="max-w-3xl mx-auto space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Powiadomienia e-mail</h1>
+          <div className="flex items-center">
+            <h1 className="text-xl font-semibold text-[var(--text-primary)]">Powiadomienia e-mail</h1>
+            <InfoTip text="Lista adresatów wykorzystywana do wysyłki powiadomień z całego systemu — nie tylko stąd, ale też ze Zgłoszeń, Kalendarza i Rejestru Faktur. Checkbox „Pilne” decyduje tylko o odbiorcach przycisku „Wyślij pilne powiadomienie” poniżej." />
+          </div>
           {canWrite && (
             <div className="flex gap-2">
               <button
@@ -158,6 +162,7 @@ export function EmailSubscribersModule({ onHome, onNavigate, currentModule }: { 
                       disabled={!canWrite}
                     />
                     Pilne
+                    <InfoTip text="Adres z zaznaczonym „Pilne” trafi na listę odbiorców przycisku „Wyślij pilne powiadomienie” niżej. Adresy bez tego znacznika nadal są dostępne do wyboru w Zgłoszeniach, Kalendarzu i przy dodawaniu wydatku." />
                   </label>
                   {canWrite && (
                     <>
