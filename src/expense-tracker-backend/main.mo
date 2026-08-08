@@ -26,6 +26,7 @@ import TicketLinksApi "mixins/TicketLinksApi";
 import OrdersApi "mixins/OrdersApi";
 import ContractsApi "mixins/ContractsApi";
 import KsefApi "mixins/KsefApi";
+import EmailSubscribersApi "mixins/EmailSubscribersApi";
 
 persistent actor {
   let projects = Map.empty<Nat, Types.Project>();
@@ -72,6 +73,7 @@ persistent actor {
   let ordersTrashed = Map.empty<Nat, Int>();
   let contracts = Map.empty<Nat, Types.Contract>();
   let contractsTrashed = Map.empty<Nat, Int>();
+  let emailSubscribers = Map.empty<Nat, Types.Subscriber>();
   // Separate maps for OneDrive folder paths, added alongside the existing
   // (now unused/deprecated) driveFolderId : ?Nat fields on Ticket links /
   // Order / Contract. Never retype an existing stable field in place —
@@ -130,6 +132,7 @@ persistent actor {
   include TicketLinksApi(tickets, ticketLinks, ticketDriveFolders, calendarEvents, calendarEventCreator, accessRoles, moduleAccess);
   include OrdersApi(orders, ordersTrashed, orderDriveFolders, accessRoles, moduleAccess);
   include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
+  include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 
   func isAdmin(caller : Principal) : Bool {

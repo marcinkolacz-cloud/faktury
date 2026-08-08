@@ -14,6 +14,7 @@ import { TicketsModule } from "./components/TicketsModule";
 import { DriveModule } from "./components/DriveModule";
 import { OrdersModule } from "./components/OrdersModule";
 import { ContractsModule } from "./components/ContractsModule";
+import { EmailSubscribersModule } from "./components/EmailSubscribersModule";
 import { KsefTeamView } from "./components/KsefTeamView";
 import { AdminPanel } from "./components/AdminPanel";
 import { TopBar } from "./components/TopBar";
@@ -176,6 +177,9 @@ function ModuleRouter() {
   }
   if (module === "ksef") {
     return <KsefTeamView onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} actor={actor} />;
+  }
+  if (module === "emailSubscribers") {
+    return <EmailSubscribersModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={module} />;
   }
   return (
     <div className="min-h-screen bg-[#0a0e14] flex flex-col items-center justify-center gap-4">

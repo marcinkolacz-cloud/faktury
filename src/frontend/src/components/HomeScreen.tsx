@@ -20,6 +20,7 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
     { id: "contracts", title: "Umowy", desc: "Sprzedaż, lokal, internet i inne umowy" },
     { id: "ksef", title: "KSeF", desc: "Pobieranie faktur" },
     { id: "drive", title: "Bartolini Drive", desc: "Pliki, zdjęcia, dokumenty (OneDrive)" },
+    { id: "emailSubscribers", title: "Powiadomienia e-mail", desc: "Lista adresatów pilnych powiadomień" },
   ];
 
   const visibleTiles = allowedModules === null ? [] : tiles.filter((t) => allowedModules.includes(t.id));

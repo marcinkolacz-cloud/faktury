@@ -13,6 +13,7 @@ export function ModuleNav({ current, onNavigate, actor }: { current: string; onN
     { id: "warehouse", label: "Magazyn" },
     { id: "tickets", label: "Zgłoszenia" },
     { id: "ksef", label: "KSeF" },
+    { id: "emailSubscribers", label: "Powiadomienia" },
   ].filter((t) => allowedModules.includes(t.id));
 
   return (

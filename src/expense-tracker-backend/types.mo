@@ -249,6 +249,14 @@ module {
     createdAt : Int;
   };
 
+  public type Subscriber = {
+    id : Nat;
+    email : Text;
+    name : Text;
+    notifyUrgent : Bool;
+    createdAt : Int;
+  };
+
   public type Expense = {
     id : Nat;
     projectId : Nat;

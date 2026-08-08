@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { odUploadFile, odDownloadUrl, odDelete, odCreateFolder, odList, setDriveActor } from "../lib/oneDriveConfig";
+import { sendEmailNotification } from "../lib/emailNotify";
 
 const TYPE_LABELS: Record<string, string> = {
   meeting: "Spotkanie",
@@ -34,6 +35,10 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
   const [endDate, setEndDate] = useState("");
   const [eventType, setEventType] = useState("meeting");
   const [creatorName, setCreatorName] = useState("");
+  const [subscribers, setSubscribers] = useState<any[]>([]);
+  const [notifyImportant, setNotifyImportant] = useState(false);
+  const [notifyEventEmails, setNotifyEventEmails] = useState<string[]>([]);
+  const [eventNotifyResult, setEventNotifyResult] = useState<string | null>(null);
 
   const reload = async () => {
     if (!actor) return;
@@ -52,6 +57,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
       actor.getCallerRole().then((r: any) => {
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
       });
+      actor.listSubscribers().then(setSubscribers).catch(() => setSubscribers([]));
       reload();
     }
   }, [actor]);
@@ -197,6 +203,18 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
       variant,
       creatorName.trim() || "Zespół"
     );
+    if (notifyImportant && notifyEventEmails.length > 0) {
+      try {
+        const dateLine = startDate + (endDate && endDate !== startDate ? " – " + endDate : "");
+        const body = "Data: " + dateLine + (description.trim() ? "\n\n" + description.trim() : "");
+        const res = await sendEmailNotification(actor, notifyEventEmails, "Ważne wydarzenie: " + title.trim(), body);
+        setEventNotifyResult("Powiadomiono " + res.ok + "/" + res.total + " adresów.");
+      } catch (err) {
+        setEventNotifyResult("Błąd powiadomienia: " + (err instanceof Error ? err.message : String(err)));
+      }
+      setNotifyImportant(false);
+      setNotifyEventEmails([]);
+    }
     setTitle("");
     setDescription("");
     setStartDate("");
@@ -259,6 +277,37 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
               <input value={creatorName} onChange={(e) => setCreatorName(e.target.value)} placeholder="Twoje imię" className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm" />
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Opis (opcjonalnie) — możesz wkleić tekst z zachowanym formatowaniem" rows={15} className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm md:col-span-2 resize-y whitespace-pre-wrap font-mono" />
             </div>
+            <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                checked={notifyImportant}
+                onChange={(e) => { setNotifyImportant(e.target.checked); if (!e.target.checked) setNotifyEventEmails([]); }}
+              />
+              Ważne — wyślij powiadomienie mailem
+            </label>
+            {notifyImportant && (
+              <div className="border border-[var(--border-color)] rounded p-2 space-y-1">
+                {subscribers.length === 0 ? (
+                  <p className="text-[10px] text-[var(--text-muted)]">Brak adresów na liście (moduł "Powiadomienia e-mail").</p>
+                ) : (
+                  subscribers.map((s) => (
+                    <label key={s.id} className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                      <input
+                        type="checkbox"
+                        checked={notifyEventEmails.includes(s.email)}
+                        onChange={(e) =>
+                          setNotifyEventEmails((prev) =>
+                            e.target.checked ? [...prev, s.email] : prev.filter((em) => em !== s.email)
+                          )
+                        }
+                      />
+                      {s.name ? s.name + " (" + s.email + ")" : s.email}
+                    </label>
+                  ))
+                )}
+              </div>
+            )}
+            {eventNotifyResult && <p className="text-[10px] text-[var(--text-muted)]">{eventNotifyResult}</p>}
             <button onClick={addEvent} disabled={!title.trim() || !startDate} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50">
               Dodaj
             </button>

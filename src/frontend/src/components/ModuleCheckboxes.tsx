@@ -10,6 +10,7 @@ const ALL_MODULES = [
   { id: "drive", label: "Bartolini Drive" },
   { id: "orders", label: "Zamówienia" },
   { id: "contracts", label: "Umowy" },
+  { id: "emailSubscribers", label: "Powiadomienia e-mail" },
 ];
 
 export function ModuleCheckboxes({ principal, actor }: { principal: any; actor: any }) {

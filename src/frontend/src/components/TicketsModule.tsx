@@ -3,6 +3,7 @@ import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { setDriveActor, odCreateFolder, odUploadFile, odList, odDownloadUrl } from "../lib/oneDriveConfig";
 import { DriveFolderPanel } from "./DriveFolderPanel";
+import { sendEmailNotification } from "../lib/emailNotify";
 
 const STATUS_LABELS: Record<string, string> = {
   open: "Otwarte",
@@ -48,6 +49,10 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [isInternalNote, setIsInternalNote] = useState(false);
+  const [subscribers, setSubscribers] = useState<any[]>([]);
+  const [notifyTeam, setNotifyTeam] = useState(false);
+  const [notifyTeamEmails, setNotifyTeamEmails] = useState<string[]>([]);
+  const [teamNotifyResult, setTeamNotifyResult] = useState<string | null>(null);
   const [trackingToken, setTrackingToken] = useState<string | null>(null);
   const [loadingToken, setLoadingToken] = useState(false);
   const [ticketExtras, setTicketExtras] = useState<Record<string, { company: string; deviceNumber: string }>>({});
@@ -355,6 +360,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
       actor.getCallerRole().then((r: any) => {
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
       });
+      actor.listSubscribers().then(setSubscribers).catch(() => setSubscribers([]));
     }
   }, [actor]);
 
@@ -420,6 +426,22 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
       } catch {
         // Email sending failure should not block the reply itself
       }
+    }
+
+    if (notifyTeam && notifyTeamEmails.length > 0) {
+      try {
+        const res = await sendEmailNotification(
+          actor,
+          notifyTeamEmails,
+          "Zgłoszenie #" + String(selected.id) + ": " + selected.subject,
+          messageText
+        );
+        setTeamNotifyResult("Powiadomiono " + res.ok + "/" + res.total + " adresów.");
+      } catch (err) {
+        setTeamNotifyResult("Błąd powiadomienia zespołu: " + (err instanceof Error ? err.message : String(err)));
+      }
+      setNotifyTeam(false);
+      setNotifyTeamEmails([]);
     }
   };
 
@@ -726,6 +748,37 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                       />
                       Notatka wewnętrzna (niewidoczna dla klienta)
                     </label>
+                    <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+                      <input
+                        type="checkbox"
+                        checked={notifyTeam}
+                        onChange={(e) => { setNotifyTeam(e.target.checked); if (!e.target.checked) setNotifyTeamEmails([]); }}
+                      />
+                      Powiadom zespół mailem
+                    </label>
+                    {notifyTeam && (
+                      <div className="border border-[var(--border-color)] rounded p-2 space-y-1">
+                        {subscribers.length === 0 ? (
+                          <p className="text-[10px] text-[var(--text-muted)]">Brak adresów na liście (moduł "Powiadomienia e-mail").</p>
+                        ) : (
+                          subscribers.map((s) => (
+                            <label key={s.id} className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                              <input
+                                type="checkbox"
+                                checked={notifyTeamEmails.includes(s.email)}
+                                onChange={(e) =>
+                                  setNotifyTeamEmails((prev) =>
+                                    e.target.checked ? [...prev, s.email] : prev.filter((em) => em !== s.email)
+                                  )
+                                }
+                              />
+                              {s.name ? s.name + " (" + s.email + ")" : s.email}
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    )}
+                    {teamNotifyResult && <p className="text-[10px] text-[var(--text-muted)]">{teamNotifyResult}</p>}
                     <div className="flex items-center gap-2">
                       <button
                         onClick={sendReply}
