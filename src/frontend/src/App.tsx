@@ -20,8 +20,6 @@ import { AdminPanel } from "./components/AdminPanel";
 import { TopBar } from "./components/TopBar";
 import { useBackendActor as useActor2 } from "./lib/useBackend";
 
-const SECRET_PASSWORD = "kolacz1";
-
 function AccessGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, login, loginWithGoogle, logout } = useAuthContext();
   const actor = useBackendActor();
@@ -29,7 +27,6 @@ function AccessGate({ children }: { children: React.ReactNode }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [unlocked, setUnlocked] = useState(false);
-  const [, setTypedBuffer] = useState("");
   const [, setTapCount] = useState(0);
   const [lastTapTime, setLastTapTime] = useState(0);
 
@@ -52,21 +49,6 @@ function AccessGate({ children }: { children: React.ReactNode }) {
     });
     return () => { cancelled = true; };
   }, [actor, isAuthenticated]);
-
-  useEffect(() => {
-    if (isAuthenticated || unlocked) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key.length === 1) {
-        setTypedBuffer((prev) => {
-          const next = (prev + e.key).slice(-SECRET_PASSWORD.length);
-          if (next === SECRET_PASSWORD) { setUnlocked(true); }
-          return next;
-        });
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [isAuthenticated, unlocked]);
 
   if (!isAuthenticated) {
     return (
