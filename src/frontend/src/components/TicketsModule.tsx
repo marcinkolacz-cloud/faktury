@@ -48,6 +48,9 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [showEventDateForm, setShowEventDateForm] = useState(false);
+  const [eventStartDate, setEventStartDate] = useState("");
+  const [eventEndDate, setEventEndDate] = useState("");
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [notifyTeam, setNotifyTeam] = useState(false);
@@ -97,19 +100,32 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   const createEventForTicket = async () => {
     if (!selected) return;
     setLinkingEvent(true);
-    const today = new Date().toISOString().slice(0, 10);
+    const start = eventStartDate || new Date().toISOString().slice(0, 10);
+    const end = eventEndDate || start;
     await actor.createCalendarEventForTicket(
       selected.id,
       "Zgłoszenie #" + String(selected.id) + ": " + selected.subject,
       selected.description,
-      today,
-      today,
+      start,
+      end,
       { task: null },
       authorName.trim() || "Zespół",
     );
     await Promise.all([loadTicketLinks(), loadCalendarEvents()]);
     setLinkingEvent(false);
+    setShowEventDateForm(false);
+    setEventStartDate("");
+    setEventEndDate("");
   };
+
+  const dateRangesOverlap = (aStart: string, aEnd: string, bStart: string, bEnd: string) =>
+    aStart <= (bEnd || bStart) && bStart <= (aEnd || aStart);
+
+  const conflictingEvents = (() => {
+    if (!eventStartDate) return [];
+    const end = eventEndDate || eventStartDate;
+    return calendarEvents.filter((e: any) => dateRangesOverlap(eventStartDate, end, e.startDate, e.endDate));
+  })();
 
   const linkExistingEvent = async (eventId: string) => {
     if (!selected || !eventId) return;
@@ -622,9 +638,56 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                     ) : canWrite ? (
                       <>
                         <label className="flex items-center gap-1.5">
-                          <input type="checkbox" disabled={linkingEvent} onChange={(e) => { if (e.target.checked) createEventForTicket(); }} />
+                          <input
+                            type="checkbox"
+                            checked={showEventDateForm}
+                            disabled={linkingEvent}
+                            onChange={(e) => setShowEventDateForm(e.target.checked)}
+                          />
                           Utwórz wydarzenie w kalendarzu dla tego zgłoszenia
                         </label>
+                        {showEventDateForm && (
+                          <div className="w-full border border-[var(--border-color)] rounded p-2 space-y-1.5 mt-1">
+                            <p className="text-[10px] text-[var(--text-muted)]">Termin realizacji (może różnić się od daty zgłoszenia)</p>
+                            <div className="flex gap-2 items-center">
+                              <input
+                                type="date"
+                                value={eventStartDate}
+                                onChange={(e) => setEventStartDate(e.target.value)}
+                                className="border border-[var(--border-color)] rounded px-1.5 py-0.5 text-[11px]"
+                              />
+                              <span className="text-[10px] text-[var(--text-muted)]">do</span>
+                              <input
+                                type="date"
+                                value={eventEndDate}
+                                onChange={(e) => setEventEndDate(e.target.value)}
+                                className="border border-[var(--border-color)] rounded px-1.5 py-0.5 text-[11px]"
+                              />
+                            </div>
+                            {conflictingEvents.length > 0 && (
+                              <div className="bg-amber-50 border border-amber-300 rounded p-1.5 space-y-0.5">
+                                <p className="text-[10px] font-medium text-amber-700">⚠ Termin zajęty przez:</p>
+                                {conflictingEvents.map((e: any) => (
+                                  <p key={String(e.id)} className="text-[10px] text-amber-700">
+                                    {e.title} ({e.startDate}{e.endDate && e.endDate !== e.startDate ? " – " + e.endDate : ""})
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <button
+                                onClick={createEventForTicket}
+                                disabled={linkingEvent || !eventStartDate}
+                                className={"text-[11px] px-2 py-1 rounded text-white disabled:opacity-40 " + (conflictingEvents.length > 0 ? "bg-amber-600 hover:bg-amber-500" : "bg-cyan-600 hover:bg-cyan-500")}
+                              >
+                                {conflictingEvents.length > 0 ? "Utwórz mimo kolizji" : "Utwórz wydarzenie"}
+                              </button>
+                              <button onClick={() => { setShowEventDateForm(false); setEventStartDate(""); setEventEndDate(""); }} className="text-[11px] text-[var(--text-muted)] hover:underline">
+                                Anuluj
+                              </button>
+                            </div>
+                          </div>
+                        )}
                         {calendarEvents.length > 0 && (
                           <>
                             <select onChange={(e) => setSelectedEventToLink(e.target.value)} value={selectedEventToLink} className="border border-[var(--border-color)] rounded px-1 py-0.5 text-[10px]">
