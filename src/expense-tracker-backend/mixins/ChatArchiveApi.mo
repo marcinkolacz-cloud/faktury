@@ -12,12 +12,31 @@ import AccessLib "../lib/access";
 // samego dostępu co reszta agenta (rola + checkbox modułu "agent").
 mixin (
   chatArchives : Map.Map<Nat, Types.ChatArchiveEntry>,
+  currentConversations : Map.Map<Principal, Text>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
 ) {
   func requireChatArchiveAccess(caller : Principal) {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "agent")) { Runtime.trap("Module access required: agent"); };
+  };
+
+  // "Aktywna" rozmowa — osobny slot od archiwum, nadpisywany automatycznie
+  // po każdej wymianie wiadomości, żeby po powrocie na stronę user widział
+  // dokładnie tam gdzie skończył. Wyłącznie własna, nigdy cudza.
+  public shared ({ caller }) func saveCurrentConversation(messagesJson : Text) : async () {
+    requireChatArchiveAccess(caller);
+    currentConversations.add(caller, messagesJson);
+  };
+
+  public query ({ caller }) func getCurrentConversation() : async ?Text {
+    requireChatArchiveAccess(caller);
+    currentConversations.get(caller);
+  };
+
+  public shared ({ caller }) func clearCurrentConversation() : async () {
+    requireChatArchiveAccess(caller);
+    currentConversations.remove(caller);
   };
 
   public shared ({ caller }) func archiveConversation(title : Text, messagesJson : Text) : async Nat {

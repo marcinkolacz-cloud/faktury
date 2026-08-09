@@ -922,6 +922,14 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// Canister calls return Candid Nat/Int as native JS BigInt, which
+// JSON.stringify() cannot serialize on its own ("Do not know how to
+// serialize a BigInt"). Every place that stringifies tool results or
+// archived messages needs this instead of the plain built-in.
+function safeStringify(value: any): string {
+  return JSON.stringify(value, (_key, v) => (typeof v === "bigint" ? v.toString() : v));
+}
+
 export function FloatingAgentChat({ actor }: { actor: any }) {
   const [open, setOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -932,24 +940,43 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [pendingConfirm, setPendingConfirm] = useState<{ apiHistory: ApiMessage[]; assistantMsg: any; calls: any[] } | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<{ apiHistory: ApiMessage[]; assistantMsg: any; calls: any[]; round: number } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
+  const [lastExtractedLength, setLastExtractedLength] = useState(0);
   const [archiveList, setArchiveList] = useState<{ id: number; title: string; archivedAt: bigint }[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveError, setArchiveError] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const tokenRef = useRef("");
 
   // Lazy-connect: only mint a token / fetch context the first time the
-  // person actually opens the widget, not on every page load.
+  // person actually opens the widget, not on every page load. Also
+  // restores their last active conversation (auto-saved after every
+  // exchange), so returning to the page continues where they left off.
   useEffect(() => {
     if (!open || initialized || !actor) return;
     setInitialized(true);
     (async () => {
       try {
-        const [t, ctx] = await Promise.all([actor.requestAgentChatToken(), actor.getAgentContext()]);
+        const [t, ctx, saved] = await Promise.all([
+          actor.requestAgentChatToken(),
+          actor.getAgentContext(),
+          actor.getCurrentConversation(),
+        ]);
         setToken(t);
+        tokenRef.current = t;
         setSystemContext(ctx);
+        const savedJson = saved && saved.length > 0 ? saved[0] : null;
+        if (savedJson) {
+          try {
+            const restored: ChatMessage[] = JSON.parse(savedJson);
+            if (Array.isArray(restored) && restored.length > 0) {
+              setMessages(restored);
+              setLastExtractedLength(restored.length);
+            }
+          } catch { /* corrupted save, ignore and start fresh */ }
+        }
         setReady(true);
       } catch (e) {
         setError("Brak dostępu do czatu agenta (moduł 'Agent AI' może być odznaczony). " + errMsg(e));
@@ -957,16 +984,36 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
     })();
   }, [open, initialized, actor]);
 
+  // Auto-save the active conversation after every change, so it survives
+  // a page reload — separate from the explicit 🗄️ archive action.
+  useEffect(() => {
+    if (!ready || !actor || messages.length === 0) return;
+    actor.saveCurrentConversation(safeStringify(messages)).catch(() => { /* best-effort */ });
+  }, [messages, ready, actor]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+  }, [messages, open]);
 
-  const callWorker = async (msgs: ApiMessage[]): Promise<any> => {
+  const callWorker = async (msgs: ApiMessage[], isRetry = false): Promise<any> => {
     const resp = await fetch(WORKER_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-      body: JSON.stringify({ messages: msgs, tools: TOOLS }),
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + tokenRef.current },
+      body: safeStringify({ messages: msgs, tools: TOOLS }),
     });
+    if (resp.status === 401 && !isRetry) {
+      // Chat tokens live 5 minutes (mintDriveToken). A conversation that
+      // runs longer than that hits a stale token — mint a fresh one and
+      // retry transparently instead of surfacing "unauthorized" mid-chat.
+      try {
+        const fresh = await actor.requestAgentChatToken();
+        setToken(fresh);
+        tokenRef.current = fresh;
+        return await callWorker(msgs, true);
+      } catch {
+        // fall through to normal error handling below
+      }
+    }
     const data = await resp.json();
     if (!resp.ok) throw new Error(data?.error || "Błąd Workera");
     return data.message;
@@ -1400,39 +1447,79 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
     }
   };
 
-  const runToolCallsAndContinue = async (apiHistory: ApiMessage[], assistantMsg: any, calls: any[]) => {
-    const toolResults: ApiMessage[] = [];
-    for (const call of calls) {
-      const result = await executeTool(call);
-      toolResults.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
-      setMessages((prev) => [...prev, { role: "system", content: "🔧 " + result.note }]);
+  const MAX_TOOL_ROUNDS = 6;
+
+  // Handles one assistant turn: if it wants to call tools, either runs
+  // them (read-only) or pauses for confirmation (writes), then recurses
+  // on the follow-up response — because the model may want to call
+  // MULTIPLE tools in sequence (e.g. list projects, then search expenses
+  // for one of them) before it has enough to actually answer. Previously
+  // only one round was handled, so a second round of tool_calls silently
+  // produced an empty assistant bubble and the chat looked "stuck".
+  const processAssistantTurn = async (apiHistory: ApiMessage[], assistantMsg: any, round: number) => {
+    if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
+      if (round >= MAX_TOOL_ROUNDS) {
+        setMessages((prev) => [...prev, { role: "assistant", content: "(Osiągnięto limit kolejnych akcji w jednej odpowiedzi — doprecyzuj pytanie i spróbuj ponownie.)" }]);
+        return;
+      }
+      const needsConfirm = assistantMsg.tool_calls.some((c: any) => !READ_ONLY_TOOLS.has(c.function.name));
+      if (needsConfirm) {
+        setPendingConfirm({ apiHistory, assistantMsg, calls: assistantMsg.tool_calls, round });
+        if (assistantMsg.content) {
+          setMessages((prev) => [...prev, { role: "assistant", content: assistantMsg.content }]);
+        }
+        return;
+      }
+      const toolResults: ApiMessage[] = [];
+      for (const call of assistantMsg.tool_calls) {
+        const result = await executeTool(call);
+        toolResults.push({ role: "tool", tool_call_id: call.id, content: safeStringify(result) });
+        setMessages((prev) => [...prev, { role: "system", content: "🔧 " + result.note }]);
+      }
+      const followUp: ApiMessage[] = [
+        ...apiHistory,
+        { role: "assistant", content: assistantMsg.content || "", tool_calls: assistantMsg.tool_calls },
+        ...toolResults,
+      ];
+      const nextMsg = await callWorker(followUp);
+      await processAssistantTurn(followUp, nextMsg, round + 1);
+      return;
     }
-    const followUp: ApiMessage[] = [
-      ...apiHistory,
-      { role: "assistant", content: assistantMsg.content || "", tool_calls: assistantMsg.tool_calls },
-      ...toolResults,
-    ];
-    const finalMsg = await callWorker(followUp);
-    setMessages((prev) => [...prev, { role: "assistant", content: finalMsg.content || "" }]);
+    if (assistantMsg.content) {
+      setMessages((prev) => [...prev, { role: "assistant", content: assistantMsg.content }]);
+    }
   };
 
   const confirmPendingActions = async () => {
     if (!pendingConfirm) return;
     setConfirming(true);
     setError("");
+    const { apiHistory, assistantMsg, calls, round } = pendingConfirm;
+    setPendingConfirm(null);
     try {
-      await runToolCallsAndContinue(pendingConfirm.apiHistory, pendingConfirm.assistantMsg, pendingConfirm.calls);
+      const toolResults: ApiMessage[] = [];
+      for (const call of calls) {
+        const result = await executeTool(call);
+        toolResults.push({ role: "tool", tool_call_id: call.id, content: safeStringify(result) });
+        setMessages((prev) => [...prev, { role: "system", content: "🔧 " + result.note }]);
+      }
+      const followUp: ApiMessage[] = [
+        ...apiHistory,
+        { role: "assistant", content: assistantMsg.content || "", tool_calls: assistantMsg.tool_calls },
+        ...toolResults,
+      ];
+      const nextMsg = await callWorker(followUp);
+      await processAssistantTurn(followUp, nextMsg, round + 1);
     } catch (e) {
       setError("Błąd czatu: " + errMsg(e));
     } finally {
       setConfirming(false);
-      setPendingConfirm(null);
     }
   };
 
   const cancelPendingActions = async () => {
     if (!pendingConfirm) return;
-    const { apiHistory, assistantMsg, calls } = pendingConfirm;
+    const { apiHistory, assistantMsg, calls, round } = pendingConfirm;
     setPendingConfirm(null);
     setConfirming(true);
     setError("");
@@ -1440,7 +1527,7 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
       const toolResults: ApiMessage[] = calls.map((call) => ({
         role: "tool",
         tool_call_id: call.id,
-        content: JSON.stringify({ ok: false, note: "Użytkownik odrzucił wykonanie tej akcji." }),
+        content: safeStringify({ ok: false, note: "Użytkownik odrzucił wykonanie tej akcji." }),
       }));
       setMessages((prev) => [...prev, { role: "system", content: "🚫 Odrzucono proponowane akcje." }]);
       const followUp: ApiMessage[] = [
@@ -1448,8 +1535,8 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
         { role: "assistant", content: assistantMsg.content || "", tool_calls: assistantMsg.tool_calls },
         ...toolResults,
       ];
-      const finalMsg = await callWorker(followUp);
-      setMessages((prev) => [...prev, { role: "assistant", content: finalMsg.content || "" }]);
+      const nextMsg = await callWorker(followUp);
+      await processAssistantTurn(followUp, nextMsg, round + 1);
     } catch (e) {
       setError("Błąd czatu: " + errMsg(e));
     } finally {
@@ -1464,8 +1551,10 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
     const title = window.prompt("Tytuł archiwizowanej rozmowy:", defaultTitle);
     if (title === null) return; // cancelled
     try {
-      await actor.archiveConversation(title || defaultTitle, JSON.stringify(messages));
+      await actor.archiveConversation(title || defaultTitle, safeStringify(messages));
+      await actor.clearCurrentConversation().catch(() => { /* best-effort */ });
       setMessages([{ role: "system", content: "🗄️ Rozmowa zarchiwizowana. Zaczynasz od nowa." }]);
+      setLastExtractedLength(0);
     } catch (e) {
       setError("Błąd archiwizacji: " + errMsg(e));
     }
@@ -1496,6 +1585,7 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
       }
       const restored: ChatMessage[] = JSON.parse(json);
       setMessages(restored);
+      setLastExtractedLength(restored.length);
       setShowArchive(false);
     } catch (e) {
       setArchiveError("Błąd przywracania: " + errMsg(e));
@@ -1510,6 +1600,43 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
     } catch (e) {
       setArchiveError("Błąd usuwania: " + errMsg(e));
     }
+  };
+
+  const extractKnowledgeOnClose = async () => {
+    if (!ready || !token || messages.length <= lastExtractedLength || messages.length < 3) return;
+    setLastExtractedLength(messages.length);
+    try {
+      const extractionSystem: ApiMessage = {
+        role: "system",
+        content:
+          "Przeanalizuj poniższą rozmowę pracownika z agentem AI (Bartolini Air Simulation). " +
+          "Jeśli wynikło z niej coś praktycznego i wielokrotnego użytku na przyszłość (zamiennik komponentu, " +
+          "problem z konkretnym dostawcą, ustalona procedura, przydatny fakt techniczny) — wypisz to jako krótkie, " +
+          "samodzielne notatki (max 1-2 zdania każda, po polsku). Jeśli rozmowa nie zawiera niczego wartego " +
+          "zapamiętania na przyszłość (samo pytanie o dane, drobna czynność, nic uogólnialnego) — nie wypisuj nic. " +
+          "Odpowiedz WYŁĄCZNIE czystym JSON, bez żadnego innego tekstu, w formacie: {\"notes\": [\"...\", \"...\"]} " +
+          "(pusta tablica jeśli nic nie warto zapisać).",
+      };
+      const convo: ApiMessage[] = messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role, content: m.content }));
+      const resp = await callWorker([extractionSystem, ...convo]);
+      const raw = (resp?.content || "").trim();
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return;
+      const parsed = JSON.parse(jsonMatch[0]);
+      const notes: string[] = Array.isArray(parsed?.notes) ? parsed.notes.filter((n: any) => typeof n === "string" && n.trim()) : [];
+      for (const note of notes) {
+        await actor.addKnowledgeEntry(note.trim());
+      }
+    } catch {
+      // Best-effort background task — never surface errors to the user for this.
+    }
+  };
+
+  const closeChat = () => {
+    setOpen(false);
+    extractKnowledgeOnClose();
   };
 
   const send = async () => {
@@ -1539,21 +1666,7 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
       const apiHistory: ApiMessage[] = [systemMsg, ...history.map((m) => ({ role: m.role, content: m.content }))];
 
       const assistantMsg = await callWorker(apiHistory);
-
-      if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
-        const needsConfirm = assistantMsg.tool_calls.some((c: any) => !READ_ONLY_TOOLS.has(c.function.name));
-        if (needsConfirm) {
-          setPendingConfirm({ apiHistory, assistantMsg, calls: assistantMsg.tool_calls });
-          if (assistantMsg.content) {
-            setMessages((prev) => [...prev, { role: "assistant", content: assistantMsg.content }]);
-          }
-          return;
-        }
-        await runToolCallsAndContinue(apiHistory, assistantMsg, assistantMsg.tool_calls);
-        return;
-      }
-
-      setMessages((prev) => [...prev, { role: "assistant", content: assistantMsg.content || "" }]);
+      await processAssistantTurn(apiHistory, assistantMsg, 0);
     } catch (e) {
       setError("Błąd czatu: " + errMsg(e));
     } finally {
@@ -1589,7 +1702,7 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
           <button onClick={openArchive} title="Otwórz archiwum rozmów" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-sm leading-none px-1">
             📂
           </button>
-          <button onClick={() => setOpen(false)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-lg leading-none px-1">
+          <button onClick={closeChat} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-lg leading-none px-1">
             ✕
           </button>
         </div>

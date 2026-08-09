@@ -36,6 +36,7 @@ import ProjectTemplatesApi "mixins/ProjectTemplatesApi";
 import WelcomeSummaryApi "mixins/WelcomeSummaryApi";
 import ProjectBuildsApi "mixins/ProjectBuildsApi";
 import ChatArchiveApi "mixins/ChatArchiveApi";
+import AgentKnowledgeApi "mixins/AgentKnowledgeApi";
 
 persistent actor {
   let projects = Map.empty<Nat, Types.Project>();
@@ -124,6 +125,8 @@ persistent actor {
   let userLastSeen = Map.empty<Principal, Int>();
   let projectBuilds = Map.empty<Nat, Types.ProjectBuild>();
   let chatArchives = Map.empty<Nat, Types.ChatArchiveEntry>();
+  let currentConversations = Map.empty<Principal, Text>();
+  let knowledgeEntries = Map.empty<Nat, Types.KnowledgeEntry>();
 
   // Punkt wyjścia do edycji w panelu Agenta AI — czasy w dniach są
   // orientacyjne, podmień na realne na podstawie BAS004 / TRA003 / BAS005.
@@ -209,7 +212,8 @@ persistent actor {
   include ProjectTemplatesApi(projectTemplates, aiConfigUnlocked, accessRoles, moduleAccess);
   include WelcomeSummaryApi(orders, ordersTrashed, contracts, contractsTrashed, calendarEvents, calendarEventsTrashed, pendingInvoices, userLastSeen, accessRoles, moduleAccess);
   include ProjectBuildsApi(projectBuilds, accessRoles, moduleAccess);
-  include ChatArchiveApi(chatArchives, accessRoles, moduleAccess);
+  include ChatArchiveApi(chatArchives, currentConversations, accessRoles, moduleAccess);
+  include AgentKnowledgeApi(knowledgeEntries, accessRoles, moduleAccess);
 
   func isAdmin(caller : Principal) : Bool {
     let bootstrapMatch = switch (adminPrincipal) { case (?admin) { Principal.equal(admin, caller) }; case null { false } };
@@ -289,7 +293,11 @@ persistent actor {
         buildsText #= "\n  - [id=" # Nat.toText(t.id) # "] " # t.title # " (" # t.category # ") status=" # st # " plan: " # t.plannedStart # " → " # t.plannedEnd;
       };
     };
-    "KONFIGURACJA AGENTA (instrukcje ustawione przez admina):\n" # configText # "\nAKTYWNE BUDOWY PROJEKTÓW:" # buildsText;
+    var knowledgeText = "";
+    for ((_, k) in knowledgeEntries.entries()) {
+      knowledgeText #= "\n- " # k.text;
+    };
+    "KONFIGURACJA AGENTA (instrukcje ustawione przez admina):\n" # configText # "\nAKTYWNE BUDOWY PROJEKTÓW:" # buildsText # "\n\nWIEDZA ZESPOŁU (wydestylowana z wcześniejszych rozmów, wykorzystuj gdy pasuje do pytania):" # knowledgeText;
   };
 
   // Narzędzie dla czatu agenta: koszty/faktury WYŁĄCZNIE przypisane do

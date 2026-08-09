@@ -420,4 +420,11 @@ module {
     messagesJson : Text;
     archivedAt : Int;
   };
+
+  public type KnowledgeEntry = {
+    id : Nat;
+    text : Text;
+    addedBy : Principal;
+    addedAt : Int;
+  };
 };

@@ -474,11 +474,6 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)]">
       <div className="max-w-[1600px] mx-auto p-6 space-y-6">
-        <div className="flex items-center gap-4 pb-2">
-          <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Zgłoszenia</h1>
-          <InfoTip text="System ticketów od klientów. Pole „Numer urządzenia” łączy zgłoszenie z kartą urządzenia w Rejestrze urządzeń. Odpowiadając masz do wyboru notatkę wewnętrzną, powiadomienie zespołu mailem i utworzenie wydarzenia w kalendarzu." />
-        </div>
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-sm overflow-hidden">

@@ -3,7 +3,6 @@ import { TopBar } from "./TopBar";
 import { renderReadableInvoiceHtml, printInvoiceHtml } from "../lib/ksefInvoicePreview";
 import { setKsefActor } from "../lib/ksefConfig";
 import { odDownloadFileBlob, setDriveActor } from "../lib/oneDriveConfig";
-import { InfoTip } from "./InfoTip";
 
 export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string; actor: any }) {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -94,11 +93,6 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)]">
       <div className="max-w-[1200px] mx-auto p-6 space-y-6">
-        <div className="flex items-center gap-4 pb-2">
-          <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">KSeF — Faktury zakupowe</h1>
-          <InfoTip text="Automatyczne pobieranie faktur z Krajowego Systemu e-Faktur. Udostępnienie faktury generuje plik HTML i wgrywa go na OneDrive, a link zapisuje się przy fakturze." />
-        </div>
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
 
         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4">

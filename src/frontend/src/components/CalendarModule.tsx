@@ -317,11 +317,6 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)]">
       <div className="max-w-[1200px] mx-auto p-6 space-y-6">
-        <div className="flex items-center gap-4 pb-2">
-          <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Kalendarz zespołu</h1>
-          <InfoTip text="Spotkania, wyjazdy, ważne daty i zadania. Wydarzenia mogą też powstawać automatycznie ze zgłoszeń — patrz moduł Zgłoszenia. System ostrzega o kolizji terminów." />
-        </div>
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">

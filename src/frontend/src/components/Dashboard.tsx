@@ -5,7 +5,6 @@ import { PaymentsLedger } from "./PaymentsLedger";
 import { ProjectsBar } from "./ProjectsBar";
 import { ExpensesTable } from "./ExpensesTable";
 import { TopBar } from "./TopBar";
-import { InfoTip } from "./InfoTip";
 import { FlaggedActionsPanel } from "./FlaggedActionsPanel";
 
 export function Dashboard({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
@@ -84,11 +83,6 @@ export function Dashboard({ onHome, onNavigate, currentModule }: { onHome: () =>
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)]">
       <div className="max-w-[1600px] mx-auto p-6 space-y-6">
-        <div className="flex items-center gap-4 pb-2">
-          <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Rejestr Faktur</h1>
-          <InfoTip text="Wydatki, zaliczki i statusy (Opłacone/FV/Potwierdzone klikasz bezpośrednio w tabeli). Import/Eksport Excel dopisuje tylko nowe rekordy, nic nie nadpisuje." />
-        </div>
         <TopBar
           currentModule={currentModule}
           onNavigate={onNavigate}

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { DriveFolderPanel } from "./DriveFolderPanel";
-import { InfoTip } from "./InfoTip";
 import { setDriveActor } from "../lib/oneDriveConfig";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -135,11 +134,6 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)]">
       <div className="max-w-[1600px] mx-auto p-6 space-y-6">
-        <div className="flex items-center gap-4 pb-2">
-          <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
-          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Zamówienia</h1>
-          <InfoTip text="Osobny rejestr od Rejestru Faktur — dotyczy zamówień u dostawców w trakcie realizacji. Zmiana statusu na „zrealizowane” NIE tworzy automatycznie wpisu w Rejestrze Faktur — trzeba dodać go ręcznie po otrzymaniu faktury końcowej." />
-        </div>
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-sm overflow-hidden">
