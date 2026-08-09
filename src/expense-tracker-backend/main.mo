@@ -10,6 +10,8 @@ import ExperimentalCycles "mo:base/ExperimentalCycles";
 import Json "mo:json";
 import Random "mo:core/Random";
 import Char "mo:core/Char";
+import Float "mo:core/Float";
+import Nat "mo:core/Nat";
 import Types "types";
 import AccessLib "lib/access";
 import InvitesLib "lib/invites";
@@ -32,6 +34,7 @@ import AiAgentConfigApi "mixins/AiAgentConfigApi";
 import FlaggedActionsApi "mixins/FlaggedActionsApi";
 import ProjectTemplatesApi "mixins/ProjectTemplatesApi";
 import WelcomeSummaryApi "mixins/WelcomeSummaryApi";
+import ProjectBuildsApi "mixins/ProjectBuildsApi";
 
 persistent actor {
   let projects = Map.empty<Nat, Types.Project>();
@@ -91,6 +94,7 @@ persistent actor {
   // upgrade-safe.
   let ticketDriveFolders = Map.empty<Nat, Text>();
   let orderDriveFolders = Map.empty<Nat, Text>();
+  let orderProductionEstimates = Map.empty<Nat, Text>();
   let contractDriveFolders = Map.empty<Nat, Text>();
   let recentSubmissionTimes = List.empty<Int>();
   let recentClientReplyTimes = List.empty<Int>();
@@ -117,6 +121,7 @@ persistent actor {
   let aiConfigAttempts = Map.empty<Principal, (Nat, Int)>();
   let projectTemplates = Map.empty<Text, Types.ProjectTemplate>();
   let userLastSeen = Map.empty<Principal, Int>();
+  let projectBuilds = Map.empty<Nat, Types.ProjectBuild>();
 
   // Punkt wyjścia do edycji w panelu Agenta AI — czasy w dniach są
   // orientacyjne, podmień na realne na podstawie BAS004 / TRA003 / BAS005.
@@ -198,9 +203,10 @@ persistent actor {
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
   include AiAgentConfigApi(aiAgentConfig, aiConfigPasswords, aiConfigUnlocked, aiConfigAuditLog, aiConfigAttempts, accessRoles, moduleAccess);
-  include FlaggedActionsApi(orders, ordersTrashed, orderDriveFolders, contracts, contractsTrashed, contractDriveFolders, expenses, expensesTrashed, pendingInvoices, accessRoles, moduleAccess);
+  include FlaggedActionsApi(orders, ordersTrashed, orderDriveFolders, orderProductionEstimates, contracts, contractsTrashed, contractDriveFolders, expenses, expensesTrashed, pendingInvoices, accessRoles, moduleAccess);
   include ProjectTemplatesApi(projectTemplates, aiConfigUnlocked, accessRoles, moduleAccess);
   include WelcomeSummaryApi(orders, ordersTrashed, contracts, contractsTrashed, calendarEvents, calendarEventsTrashed, pendingInvoices, userLastSeen, accessRoles, moduleAccess);
+  include ProjectBuildsApi(projectBuilds, accessRoles, moduleAccess);
 
   func isAdmin(caller : Principal) : Bool {
     let bootstrapMatch = switch (adminPrincipal) { case (?admin) { Principal.equal(admin, caller) }; case null { false } };
@@ -238,6 +244,84 @@ persistent actor {
   public shared ({ caller }) func requestDriveAccessToken() : async Text {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     await* mintDriveToken(caller);
+  };
+
+  // Same short-lived (5 min) token mechanism as Drive — the onedrive-proxy
+  // Worker's existing getDriveTokenRole(token) query is fully generic (just
+  // "is this token valid, and what's its owner's role"), so the same Worker
+  // reuses it here unchanged for the AI agent chat endpoint. Only difference:
+  // this mint additionally requires the "agent" module checkbox.
+  public shared ({ caller }) func requestAgentChatToken() : async Text {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "agent")) { Runtime.trap("Module access required: agent"); };
+    await* mintDriveToken(caller);
+  };
+
+  // Assembles the system-prompt context for the agent chat: the free-text
+  // instructions calibrated in the config panel, plus a snapshot of active
+  // project builds (task list + planned dates + status) so the model can
+  // reason about the real current state without needing separate tool
+  // calls for every question.
+  public query ({ caller }) func getAgentContext() : async Text {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "agent")) { Runtime.trap("Module access required: agent"); };
+    var configText = "";
+    for ((_, e) in aiAgentConfig.entries()) {
+      let valueText = switch (e.value) {
+        case (#bool(b)) { if (b) { "true" } else { "false" } };
+        case (#text(t)) { t };
+        case (#number(n)) { Float.toText(n) };
+      };
+      configText #= e.key # ": " # valueText # "\n";
+    };
+    var buildsText = "";
+    for ((_, b) in projectBuilds.entries()) {
+      buildsText #= "\nBuild " # b.projectCode # " (szablon " # b.templateKey # ", id=" # Nat.toText(b.id) # "):";
+      for (t in b.tasks.vals()) {
+        let st = switch (t.status) {
+          case (#notStarted) { "nie rozpoczęto" };
+          case (#inProgress) { "w trakcie" };
+          case (#done) { "zrobione" };
+        };
+        buildsText #= "\n  - [id=" # Nat.toText(t.id) # "] " # t.title # " (" # t.category # ") status=" # st # " plan: " # t.plannedStart # " → " # t.plannedEnd;
+      };
+    };
+    "KONFIGURACJA AGENTA (instrukcje ustawione przez admina):\n" # configText # "\nAKTYWNE BUDOWY PROJEKTÓW:" # buildsText;
+  };
+
+  // Narzędzie dla czatu agenta: koszty/faktury WYŁĄCZNIE przypisane do
+  // projektów (moduł "Rejestr Faktur"). Celowo nie dotyka zamówień,
+  // kontraktów, KSeF ani samego panelu admina/konfiguracji agenta —
+  // to osobne, nieudostępnione tu dane. Wymaga modułów "agent" ORAZ
+  // "invoices", nie wymaga roli admin.
+  public query ({ caller }) func searchProjectExpenses(projectNameQuery : Text) : async [Types.ProjectExpenseSummary] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "agent")) { Runtime.trap("Module access required: agent"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "invoices")) { Runtime.trap("Module access required: invoices"); };
+    var result = List.empty<Types.ProjectExpenseSummary>();
+    var count = 0;
+    label outer for ((pid, p) in projects.entries()) {
+      if (projectsTrashed.get(pid) == null and (projectNameQuery == "" or Text.contains(p.name, #text projectNameQuery))) {
+        for ((eid, e) in expenses.entries()) {
+          if (count >= 200) { break outer; };
+          if (e.projectId == pid and expensesTrashed.get(eid) == null) {
+            result.add({
+              projectId = pid;
+              projectName = p.name;
+              supplier = e.supplier;
+              productService = e.productService;
+              priceNet = e.priceNet;
+              pricePln = e.pricePln;
+              orderDate = e.orderDate;
+              hasInvoice = e.hasInvoice;
+              paid = e.paid;
+            });
+            count += 1;
+          };
+        };
+      };
+    };
+    result.toArray();
   };
 
   // Lets an anonymous client who just submitted a support ticket upload

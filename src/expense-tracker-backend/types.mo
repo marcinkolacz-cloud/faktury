@@ -342,6 +342,7 @@ module {
     #expenseMissingInvoice;
     #ksefInvoicePendingTooLong;
     #expenseAmountAnomaly;
+    #orderMissingProductionEstimate;
   };
 
   public type FlaggedAction = {
@@ -377,5 +378,38 @@ module {
     entityRef : Text;
     entityLabel : Text;
     detail : Text;
+  };
+
+  public type BuildTaskStatus = { #notStarted; #inProgress; #done };
+
+  public type ProjectBuildTask = {
+    id : Nat;
+    title : Text;
+    category : Text;
+    plannedStart : Text;
+    plannedEnd : Text;
+    status : BuildTaskStatus;
+    actualEnd : ?Text;
+  };
+
+  public type ProjectBuild = {
+    id : Nat;
+    projectCode : Text;
+    templateKey : Text;
+    startDate : Text;
+    tasks : [ProjectBuildTask];
+    createdAt : Int;
+  };
+
+  public type ProjectExpenseSummary = {
+    projectId : Nat;
+    projectName : Text;
+    supplier : Text;
+    productService : Text;
+    priceNet : ?Float;
+    pricePln : ?Float;
+    orderDate : Text;
+    hasInvoice : Bool;
+    paid : Bool;
   };
 };

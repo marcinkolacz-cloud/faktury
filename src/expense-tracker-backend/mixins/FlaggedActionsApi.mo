@@ -16,6 +16,7 @@ mixin (
   orders : Map.Map<Nat, Types.Order>,
   ordersTrashed : Map.Map<Nat, Int>,
   orderDriveFolders : Map.Map<Nat, Text>,
+  orderProductionEstimates : Map.Map<Nat, Text>,
   contracts : Map.Map<Nat, Types.Contract>,
   contractsTrashed : Map.Map<Nat, Int>,
   contractDriveFolders : Map.Map<Nat, Text>,
@@ -43,6 +44,14 @@ mixin (
           entityRef = Nat.toText(id);
           entityLabel = "Zamówienie #" # Nat.toText(id) # " (" # o.name # ")";
           detail = "Zamówienie w toku bez podpiętego folderu OneDrive.";
+        });
+      };
+      if (canOrders and ordersTrashed.get(id) == null and isPending and orderProductionEstimates.get(id) == null) {
+        result.add({
+          kind = #orderMissingProductionEstimate;
+          entityRef = Nat.toText(id);
+          entityLabel = "Zamówienie #" # Nat.toText(id) # " (" # o.name # ")";
+          detail = "Zamówiono, ale nie podano przewidywanego czasu produkcji/dostawy.";
         });
       };
     };
@@ -134,5 +143,13 @@ mixin (
     };
 
     result.toArray();
+  };
+
+  // Zapisuje odpowiedź na pytanie agenta "jaki przewidywany czas produkcji?"
+  // — osobna mapa równoległa do Order (nigdy nie retypujemy istniejącego
+  // stabilnego pola), więc bezpieczne przy upgrade.
+  public shared ({ caller }) func setOrderProductionEstimate(orderId : Nat, estimate : Text) : async () {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Admin access required"); };
+    orderProductionEstimates.add(orderId, estimate);
   };
 };

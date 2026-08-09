@@ -3,10 +3,6 @@ import { useEffect, useState } from "react";
 type FieldKind = "bool" | "text" | "number" | "textarea";
 type Field = { key: string; label: string; kind: FieldKind; hint?: string };
 
-// Add new tunables here as the agent grows — no backend change needed,
-// AgentConfig is a free-form Map<Text, ConfigValue>. "textarea" fields are
-// meant for long, free-form behavioural instructions (a mini system prompt
-// per topic), not just single toggles.
 const FIELDS: Field[] = [
   { key: "search_priority_enabled", label: "Wymuś priorytetowe źródło wyszukiwania komponentów", kind: "bool" },
   { key: "search_priority_site", label: "Priorytetowa strona (np. allegro.pl)", kind: "text" },
@@ -50,9 +46,12 @@ function decodeValue(v: any): string {
   return v.text ?? "";
 }
 
-export function AiAgentConfigModule({ actor }: { actor: any }) {
+export function AiAgentConfigModule({ actor, onUnlockedChange }: { actor: any; onUnlockedChange?: (u: boolean) => void }) {
+  // null = not yet confirmed either way. Rendering never blocks on this —
+  // the password field is the default view regardless, so a slow or
+  // failed check never leaves the user staring at a spinner.
   const [hasPassword, setHasPassword] = useState<boolean | null>(null);
-  const [unlocked, setUnlocked] = useState<boolean | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [unlockError, setUnlockError] = useState("");
   const [unlocking, setUnlocking] = useState(false);
@@ -62,6 +61,10 @@ export function AiAgentConfigModule({ actor }: { actor: any }) {
   const [showAudit, setShowAudit] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  useEffect(() => {
+    onUnlockedChange?.(unlocked);
+  }, [unlocked]);
+
   const reload = async () => {
     const [entries, log] = await Promise.all([actor.listAgentConfig(), actor.getAgentConfigAuditLog()]);
     const map: Record<string, string> = {};
@@ -70,23 +73,22 @@ export function AiAgentConfigModule({ actor }: { actor: any }) {
     setAudit([...log].sort((a: any, b: any) => Number(b.timestamp) - Number(a.timestamp)));
   };
 
-  // Nothing is ever stored client-side — whether this principal is
-  // unlocked lives entirely in the canister (aiConfigUnlocked), keyed by
-  // the IC-authenticated principal, so this just re-checks on every visit.
   useEffect(() => {
     if (!actor) return;
     let cancelled = false;
-    actor.hasAgentConfigPassword().then(async (has: boolean) => {
-      if (cancelled) return;
-      setHasPassword(has);
-      if (!has) return;
-      const isUnlocked = await actor.isAgentConfigUnlocked();
-      if (cancelled) return;
-      setUnlocked(isUnlocked);
-      if (isUnlocked) await reload();
-    }).catch(() => {
-      if (!cancelled) setHasPassword(false);
-    });
+
+    actor.hasAgentConfigPassword()
+      .then((has: boolean) => { if (!cancelled) setHasPassword(has); })
+      .catch(() => { /* leave hasPassword null — password field stays the default */ });
+
+    actor.isAgentConfigUnlocked()
+      .then(async (isUnlocked: boolean) => {
+        if (cancelled || !isUnlocked) return;
+        setUnlocked(true);
+        await reload();
+      })
+      .catch(() => { /* not unlocked yet — password field stays visible, harmless */ });
+
     return () => { cancelled = true; };
   }, [actor]);
 
@@ -110,7 +112,7 @@ export function AiAgentConfigModule({ actor }: { actor: any }) {
   };
 
   const lock = async () => {
-    await actor.lockAgentConfigForMe();
+    try { await actor.lockAgentConfigForMe(); } catch { /* ignore */ }
     setUnlocked(false);
   };
 
@@ -127,11 +129,60 @@ export function AiAgentConfigModule({ actor }: { actor: any }) {
 
   const header = <h2 className="font-semibold text-[var(--text-primary)]">🤖 Agent AI</h2>;
 
-  if (hasPassword === null || unlocked === null) {
+  if (unlocked) {
     return (
-      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 shadow-sm">
-        {header}
-        <p className="text-xs text-[var(--text-secondary)] mt-1">Sprawdzam dostęp…</p>
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-4 shadow-sm">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          {header}
+          <div className="flex gap-3">
+            <button onClick={() => setShowAudit((s) => !s)} className="text-xs text-cyan-600 hover:underline">
+              {showAudit ? "Ukryj historię zmian" : "Historia zmian"}
+            </button>
+            <button onClick={lock} className="text-xs text-[var(--text-secondary)] hover:underline">
+              Zablokuj konto
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {FIELDS.map((f) => (
+            <ConfigRow
+              key={f.key}
+              field={f}
+              value={values[f.key] ?? (f.kind === "bool" ? "false" : "")}
+              onSave={(raw) => saveField(f, raw)}
+            />
+          ))}
+        </div>
+
+        {saveError && <div className="text-xs text-red-500">{saveError}</div>}
+
+        {showAudit && (
+          <div className="mobile-scroll-table overflow-auto max-h-48 border-t border-[var(--border-color-light)] pt-2">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-[var(--text-muted)]">
+                  <th className="p-1">Kiedy</th>
+                  <th className="p-1">Pole</th>
+                  <th className="p-1">Stara wartość</th>
+                  <th className="p-1">Nowa wartość</th>
+                  <th className="p-1">Kto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audit.map((a, i) => (
+                  <tr key={i} className="border-t border-[var(--border-color-light)]">
+                    <td className="p-1 whitespace-nowrap">{new Date(Number(a.timestamp) / 1_000_000).toLocaleString("pl-PL")}</td>
+                    <td className="p-1">{a.key}</td>
+                    <td className="p-1 max-w-[160px] truncate" title={a.oldValue?.[0] ?? ""}>{a.oldValue?.[0] ?? "—"}</td>
+                    <td className="p-1 max-w-[160px] truncate" title={a.newValue}>{a.newValue}</td>
+                    <td className="p-1 font-mono text-[9px]">{a.principal.toString().slice(0, 10)}…</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     );
   }
@@ -148,90 +199,34 @@ export function AiAgentConfigModule({ actor }: { actor: any }) {
     );
   }
 
-  if (!unlocked) {
-    return (
-      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
-        {header}
-        <p className="text-xs text-[var(--text-secondary)]">
-          Zmiana zachowania agenta wymaga osobnego hasła konfiguracji (innego niż hasło logowania).
-          Po jednorazowym odblokowaniu Twoje konto pozostaje odblokowane — nic nie jest zapisywane w tej przeglądarce.
-        </p>
-        <div className="flex gap-2 items-center flex-wrap">
-          <input
-            type="password"
-            value={passwordInput}
-            onChange={(e) => setPasswordInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && unlock()}
-            placeholder="Hasło konfiguracji agenta"
-            className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm w-64"
-            autoFocus
-          />
-          <button
-            onClick={unlock}
-            disabled={unlocking || !passwordInput}
-            className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded text-sm font-medium"
-          >
-            {unlocking ? "Sprawdzam…" : "Odblokuj"}
-          </button>
-        </div>
-        {unlockError && <div className="text-xs text-red-500">{unlockError}</div>}
-      </div>
-    );
-  }
-
+  // Default view: password field. Shown immediately, and stays shown even
+  // if the background checks above are slow, fail, or the account simply
+  // doesn't have a password confirmed yet — never a bare loading state.
   return (
-    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-4 shadow-sm">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        {header}
-        <div className="flex gap-3">
-          <button onClick={() => setShowAudit((s) => !s)} className="text-xs text-cyan-600 hover:underline">
-            {showAudit ? "Ukryj historię zmian" : "Historia zmian"}
-          </button>
-          <button onClick={lock} className="text-xs text-[var(--text-secondary)] hover:underline">
-            Zablokuj konto
-          </button>
-        </div>
+    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
+      {header}
+      <p className="text-xs text-[var(--text-secondary)]">
+        Zmiana zachowania agenta wymaga osobnego hasła konfiguracji (innego niż hasło logowania).
+      </p>
+      <div className="flex gap-2 items-center flex-wrap">
+        <input
+          type="password"
+          value={passwordInput}
+          onChange={(e) => setPasswordInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && unlock()}
+          placeholder="Hasło konfiguracji agenta"
+          className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm w-64"
+          autoFocus
+        />
+        <button
+          onClick={unlock}
+          disabled={unlocking || !passwordInput}
+          className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded text-sm font-medium"
+        >
+          {unlocking ? "Sprawdzam…" : "Odblokuj"}
+        </button>
       </div>
-
-      <div className="space-y-4">
-        {FIELDS.map((f) => (
-          <ConfigRow
-            key={f.key}
-            field={f}
-            value={values[f.key] ?? (f.kind === "bool" ? "false" : "")}
-            onSave={(raw) => saveField(f, raw)}
-          />
-        ))}
-      </div>
-
-      {saveError && <div className="text-xs text-red-500">{saveError}</div>}
-
-      {showAudit && (
-        <div className="mobile-scroll-table overflow-auto max-h-48 border-t border-[var(--border-color-light)] pt-2">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-left text-[var(--text-muted)]">
-                <th className="p-1">Kiedy</th>
-                <th className="p-1">Pole</th>
-                <th className="p-1">Stara wartość</th>
-                <th className="p-1">Nowa wartość</th>
-                <th className="p-1">Kto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {audit.map((a, i) => (
-                <tr key={i} className="border-t border-[var(--border-color-light)]">
-                  <td className="p-1 whitespace-nowrap">{new Date(Number(a.timestamp) / 1_000_000).toLocaleString("pl-PL")}</td>
-                  <td className="p-1">{a.key}</td>
-                  <td className="p-1 max-w-[160px] truncate" title={a.oldValue?.[0] ?? ""}>{a.oldValue?.[0] ?? "—"}</td>
-                  <td className="p-1 max-w-[160px] truncate" title={a.newValue}>{a.newValue}</td>
-                  <td className="p-1 font-mono text-[9px]">{a.principal.toString().slice(0, 10)}…</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {unlockError && <div className="text-xs text-red-500">{unlockError}</div>}
     </div>
   );
 }

@@ -19,6 +19,7 @@ import { DevicesModule } from "./components/DevicesModule";
 import { ManualModule } from "./components/ManualModule";
 import { AgentModule } from "./components/AgentModule";
 import { WelcomeBackModal } from "./components/WelcomeBackModal";
+import { FloatingAgentChat } from "./components/FloatingAgentChat";
 import { KsefTeamView } from "./components/KsefTeamView";
 import { AdminPanel } from "./components/AdminPanel";
 import { TopBar } from "./components/TopBar";
@@ -138,6 +139,7 @@ function AccessGate({ children }: { children: React.ReactNode }) {
   return (
     <>
       <WelcomeBackModal actor={actor} />
+      <FloatingAgentChat actor={actor} />
       {children}
     </>
   );
