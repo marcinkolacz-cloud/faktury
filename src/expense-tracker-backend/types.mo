@@ -412,4 +412,12 @@ module {
     hasInvoice : Bool;
     paid : Bool;
   };
+
+  public type ChatArchiveEntry = {
+    id : Nat;
+    owner : Principal;
+    title : Text;
+    messagesJson : Text;
+    archivedAt : Int;
+  };
 };

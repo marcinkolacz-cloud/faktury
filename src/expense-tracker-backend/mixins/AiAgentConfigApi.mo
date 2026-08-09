@@ -113,6 +113,17 @@ mixin (
     aiConfigUnlocked.remove(caller);
   };
 
+  // Lets a super-admin instantly revoke ANY principal's unlocked state,
+  // regardless of how they got unlocked or what their role/module access
+  // is now — useful when someone was unlocked during earlier testing (e.g.
+  // while they briefly had admin role) and later downgraded, since a role
+  // or module change alone does NOT clear this flag (it's tracked
+  // independently). This is the direct fix for that class of surprise.
+  public shared ({ caller }) func adminForceLockAgentConfig(target : Principal) : async () {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Admin access required"); };
+    aiConfigUnlocked.remove(target);
+  };
+
   public shared ({ caller }) func setAgentConfigValue(key : Text, value : Types.AiAgentConfigValue) : async Bool {
     requireStaff(caller);
     if (not isUnlocked(caller)) { Runtime.trap("Locked — verify the AI agent configuration password first"); };

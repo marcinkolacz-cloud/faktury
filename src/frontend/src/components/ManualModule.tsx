@@ -128,6 +128,22 @@ const sections: Section[] = [
       "Urządzenia usunięte trafiają do kosza (nie znikają bezpowrotnie) — na razie bez osobnego widoku przywracania z poziomu interfejsu, w razie potrzeby przywrócenia skontaktuj się z administratorem.",
     ],
   },
+  {
+    id: "agent",
+    icon: "🤖",
+    title: "Agent AI",
+    body: [
+      "Agent AI to dwie osobne rzeczy w tej apce: kafelek/zakładka „Agent AI” (szablony budowy projektów i harmonogramy — dostępne dla każdego z odblokowanym modułem) oraz pływający czat 💬 w prawym dolnym rogu, widoczny na każdym ekranie — to on jest głównym narzędziem do rozmowy z agentem.",
+      "Dostęp do czatu wymaga zaznaczonego checkboxa modułu „Agent AI” w Twoim koncie (ustawia go admin w panelu Admina → Lista dostępu). Bez tego czat w ogóle się nie otworzy — poproś administratora o dostęp, jeśli go potrzebujesz.",
+      "Jak zacząć: kliknij 💬, poczekaj chwilę na połączenie („Łączenie z agentem…”), potem po prostu pisz zwykłym językiem — tak jak do kolegi z zespołu, nie trzeba żadnej specjalnej składni ani komend.",
+      "Co agent widzi: dane z modułów, do których Ty masz dostęp — Rejestr Faktur, Projekty, Kalendarz, Magazyn, Zgłoszenia, Zamówienia, Umowy, Urządzenia, Bartolini Drive (tylko odczyt plików), Powiadomienia oraz zaakceptowane już przez admina faktury KSeF. Agent NIE ma i nigdy nie będzie miał dostępu do panelu Admina ani do własnej konfiguracji (instrukcji, promptów) — to wyłącznie w rękach administratora.",
+      "Co możesz mu zlecić — przykłady: „Pokaż mi wszystkie nieopłacone faktury z projektu BAS006”, „Ile wydaliśmy do tej pory na TRA003?”, „Dodaj nowe zamówienie: płyta główna Supermicro, dostawca X, 4500 PLN, waluta PLN”, „Przełącz zadanie #3 w buildzie BAS006 na zrobione”, „Jakie mamy urządzenia z gwarancją wygasającą w tym miesiącu?”, „Znajdź zamiennik do przestarzałej płyty głównej — pamiętaj o vPro i IPMI” (jeśli masz to wpisane w instrukcjach agenta), „Podsumuj otwarte zgłoszenia od klientów”.",
+      "Ważne — potwierdzanie akcji: agent NIGDY nie wykonuje sam żadnej zmiany w danych (dodanie, edycja, usunięcie, zmiana statusu). Gdy zaproponuje akcję, zobaczysz żółtą kartę z dokładną nazwą operacji i parametrami — dopiero kliknięcie „Zatwierdź i wykonaj” uruchamia zmianę. „Odrzuć” anuluje bez żadnego efektu. Same odczyty/wyszukiwania (np. „pokaż listę…”) wykonują się od razu, bez pytania — nic nie zmieniają.",
+      "Jak dobrze rozmawiać z agentem: podawaj konkretne dane (numer projektu, ID zadania/zamówienia, dokładne kwoty) zamiast ogólników — im więcej konkretów, tym trafniejsza propozycja akcji do zatwierdzenia. Jeśli czegoś nie wie z kontekstu, powinien zapytać zamiast zgadywać — jeśli zaczyna zmyślać dane, popraw go wprost.",
+      "Archiwizowanie rozmów: przycisk 🗄️ w nagłówku okna czatu zapisuje bieżącą rozmowę do Twojego prywatnego archiwum i czyści okno pod nową rozmowę. Przycisk 📂 otwiera listę zarchiwizowanych rozmów — „Przywróć” wczytuje daną rozmowę z powrotem do aktywnego okna czatu, „Usuń trwale” kasuje ją bez możliwości cofnięcia. Archiwum jest prywatne — widzisz wyłącznie swoje rozmowy, nie innych członków zespołu.",
+      "Konfiguracja zachowania agenta (instrukcje ogólne, zasady zakupów, szablony projektów, kiedy ma pytać) ustawia wyłącznie administrator w panelu Admina, chronione osobnym hasłem konfiguracji — zwykli użytkownicy tego nie widzą ani nie edytują, tylko z niego korzystają w rozmowie.",
+    ],
+  },
 ];
 
 function highlight(text: string) {

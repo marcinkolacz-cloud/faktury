@@ -35,6 +35,7 @@ import FlaggedActionsApi "mixins/FlaggedActionsApi";
 import ProjectTemplatesApi "mixins/ProjectTemplatesApi";
 import WelcomeSummaryApi "mixins/WelcomeSummaryApi";
 import ProjectBuildsApi "mixins/ProjectBuildsApi";
+import ChatArchiveApi "mixins/ChatArchiveApi";
 
 persistent actor {
   let projects = Map.empty<Nat, Types.Project>();
@@ -122,6 +123,7 @@ persistent actor {
   let projectTemplates = Map.empty<Text, Types.ProjectTemplate>();
   let userLastSeen = Map.empty<Principal, Int>();
   let projectBuilds = Map.empty<Nat, Types.ProjectBuild>();
+  let chatArchives = Map.empty<Nat, Types.ChatArchiveEntry>();
 
   // Punkt wyjścia do edycji w panelu Agenta AI — czasy w dniach są
   // orientacyjne, podmień na realne na podstawie BAS004 / TRA003 / BAS005.
@@ -207,6 +209,7 @@ persistent actor {
   include ProjectTemplatesApi(projectTemplates, aiConfigUnlocked, accessRoles, moduleAccess);
   include WelcomeSummaryApi(orders, ordersTrashed, contracts, contractsTrashed, calendarEvents, calendarEventsTrashed, pendingInvoices, userLastSeen, accessRoles, moduleAccess);
   include ProjectBuildsApi(projectBuilds, accessRoles, moduleAccess);
+  include ChatArchiveApi(chatArchives, accessRoles, moduleAccess);
 
   func isAdmin(caller : Principal) : Bool {
     let bootstrapMatch = switch (adminPrincipal) { case (?admin) { Principal.equal(admin, caller) }; case null { false } };

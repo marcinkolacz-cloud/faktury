@@ -37,6 +37,7 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
     { id: "drive", label: "Bartolini Drive" },
     { id: "emailSubscribers", label: "Powiadomienia" },
     { id: "devices", label: "Urządzenia" },
+    { id: "agent", label: "🤖 Agent AI" },
   ].filter((t) => allowedModules.includes(t.id));
   tabs.push({ id: "manual", label: "📖 Instrukcja" });
 

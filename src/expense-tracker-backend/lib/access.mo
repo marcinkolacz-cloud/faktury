@@ -37,7 +37,16 @@ module {
   ) : [Text] {
     switch (moduleAccess.get(caller)) {
       case (?modules) { modules };
-      case null { ["invoices", "warehouse", "tickets", "ksef", "drive", "projects", "calendar", "orders", "contracts", "agent"] };
+      case null { ["invoices", "warehouse", "tickets", "ksef", "drive", "projects", "calendar", "orders", "contracts"] };
+      // "agent" is deliberately excluded from this default-allow fallback.
+      // Every other module here defaults to allowed for backward
+      // compatibility (accounts created before per-module checkboxes
+      // existed never got an explicit moduleAccess entry, and losing
+      // access to invoices/warehouse/etc. on deploy would lock people out
+      // of their daily work). The AI agent module is different: it grants
+      // a chatbot with CRUD write access across every module below, so it
+      // must be opt-in only — an account with no explicit moduleAccess
+      // entry gets zero agent access until an admin checks the box.
     };
   };
   public func hasModuleAccess(
