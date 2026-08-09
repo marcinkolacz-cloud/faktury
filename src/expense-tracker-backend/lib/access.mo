@@ -37,7 +37,7 @@ module {
   ) : [Text] {
     switch (moduleAccess.get(caller)) {
       case (?modules) { modules };
-      case null { ["invoices", "warehouse", "tickets", "ksef", "drive", "projects", "calendar", "orders", "contracts"] };
+      case null { ["invoices", "warehouse", "tickets", "ksef", "drive", "projects", "calendar", "orders", "contracts", "agent"] };
     };
   };
   public func hasModuleAccess(

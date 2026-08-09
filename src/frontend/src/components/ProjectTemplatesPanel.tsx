@@ -1,0 +1,220 @@
+import { useEffect, useState } from "react";
+
+type Task = { id: number; title: string; category: string; estimatedDays: number };
+type Template = { key: string; title: string; tasks: Task[] };
+
+function fmtDate(d: Date) {
+  return d.toLocaleDateString("pl-PL", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
+export function ProjectTemplatesPanel({ actor }: { actor: any }) {
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [unlocked, setUnlocked] = useState(false);
+  const [editing, setEditing] = useState<Record<string, Task[]>>({});
+  const [saveError, setSaveError] = useState("");
+
+  const [schedKey, setSchedKey] = useState("");
+  const [schedProject, setSchedProject] = useState("");
+  const [schedStart, setSchedStart] = useState(() => new Date().toISOString().slice(0, 10));
+  const [schedule, setSchedule] = useState<{ title: string; category: string; start: string; end: string }[] | null>(null);
+
+  const reload = async () => {
+    const list: Template[] = await actor.listProjectTemplates();
+    setTemplates(list);
+    const e: Record<string, Task[]> = {};
+    list.forEach((t) => { e[t.key] = t.tasks.map((x: any) => ({ ...x, id: Number(x.id), estimatedDays: Number(x.estimatedDays) })); });
+    setEditing(e);
+    if (!schedKey && list.length) setSchedKey(list[0].key);
+  };
+
+  useEffect(() => {
+    if (!actor) return;
+    actor.isAgentConfigUnlocked().then(setUnlocked).catch(() => setUnlocked(false));
+    reload();
+  }, [actor]);
+
+  const updateTask = (tKey: string, taskId: number, field: "title" | "category" | "estimatedDays", value: string) => {
+    setEditing((prev) => ({
+      ...prev,
+      [tKey]: prev[tKey].map((t) => (t.id === taskId ? { ...t, [field]: field === "estimatedDays" ? parseInt(value) || 0 : value } : t)),
+    }));
+  };
+
+  const addTask = (tKey: string) => {
+    setEditing((prev) => {
+      const nextId = (prev[tKey].reduce((m, t) => Math.max(m, t.id), 0) || 0) + 1;
+      return { ...prev, [tKey]: [...prev[tKey], { id: nextId, title: "Nowa czynność", category: "Inne", estimatedDays: 1 }] };
+    });
+  };
+
+  const removeTask = (tKey: string, taskId: number) => {
+    setEditing((prev) => ({ ...prev, [tKey]: prev[tKey].filter((t) => t.id !== taskId) }));
+  };
+
+  const moveTask = (tKey: string, idx: number, dir: -1 | 1) => {
+    setEditing((prev) => {
+      const arr = [...prev[tKey]];
+      const j = idx + dir;
+      if (j < 0 || j >= arr.length) return prev;
+      [arr[idx], arr[j]] = [arr[j], arr[idx]];
+      return { ...prev, [tKey]: arr };
+    });
+  };
+
+  const saveTemplate = async (t: Template) => {
+    setSaveError("");
+    try {
+      await actor.saveProjectTemplate(t.key, t.title, editing[t.key]);
+      reload();
+    } catch (e: any) {
+      setSaveError("Zapis nieudany — odblokuj panel Agenta AI hasłem.");
+    }
+  };
+
+  const generateSchedule = () => {
+    const tpl = templates.find((t) => t.key === schedKey);
+    if (!tpl) return;
+    let cursor = new Date(schedStart + "T00:00:00");
+    const rows = editing[tpl.key].map((task) => {
+      const start = new Date(cursor);
+      const end = new Date(cursor);
+      end.setDate(end.getDate() + Math.max(task.estimatedDays - 1, 0));
+      cursor = new Date(end);
+      cursor.setDate(cursor.getDate() + 1);
+      return { title: task.title, category: task.category, start: fmtDate(start), end: fmtDate(end) };
+    });
+    setSchedule(rows);
+  };
+
+  return (
+    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-4 shadow-sm">
+      <h2 className="font-semibold text-[var(--text-primary)]">Szablony budowy projektu</h2>
+      <p className="text-xs text-[var(--text-secondary)]">
+        Spis czynności dla każdego typu projektu (BAS pełny, TRA, BAS bez kabiny/ekranów). Dni to szacunki startowe —
+        podmień na realne na podstawie BAS004 / TRA003 / BAS005. Edycja wymaga odblokowanego Agenta AI.
+      </p>
+
+      {templates.map((t) => (
+        <div key={t.key} className="border border-[var(--border-color-light)] rounded p-3 space-y-2">
+          <div className="font-medium text-sm text-[var(--text-primary)]">{t.title}</div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-[var(--text-muted)]">
+                <th className="p-1">Czynność</th>
+                <th className="p-1 w-28">Kategoria</th>
+                <th className="p-1 w-16">Dni</th>
+                {unlocked && <th className="p-1 w-24"></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {(editing[t.key] || []).map((task, idx) => (
+                <tr key={task.id} className="border-t border-[var(--border-color-light)]">
+                  <td className="p-1">
+                    {unlocked ? (
+                      <input
+                        value={task.title}
+                        onChange={(e) => updateTask(t.key, task.id, "title", e.target.value)}
+                        className="w-full border border-[var(--border-color)] rounded px-1 py-0.5"
+                      />
+                    ) : task.title}
+                  </td>
+                  <td className="p-1">
+                    {unlocked ? (
+                      <input
+                        value={task.category}
+                        onChange={(e) => updateTask(t.key, task.id, "category", e.target.value)}
+                        className="w-full border border-[var(--border-color)] rounded px-1 py-0.5"
+                      />
+                    ) : task.category}
+                  </td>
+                  <td className="p-1">
+                    {unlocked ? (
+                      <input
+                        type="number"
+                        value={task.estimatedDays}
+                        onChange={(e) => updateTask(t.key, task.id, "estimatedDays", e.target.value)}
+                        className="w-16 border border-[var(--border-color)] rounded px-1 py-0.5"
+                      />
+                    ) : task.estimatedDays}
+                  </td>
+                  {unlocked && (
+                    <td className="p-1 space-x-1 whitespace-nowrap">
+                      <button onClick={() => moveTask(t.key, idx, -1)} className="text-[var(--text-secondary)]">↑</button>
+                      <button onClick={() => moveTask(t.key, idx, 1)} className="text-[var(--text-secondary)]">↓</button>
+                      <button onClick={() => removeTask(t.key, task.id)} className="text-red-500">✕</button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {unlocked && (
+            <div className="flex gap-2">
+              <button onClick={() => addTask(t.key)} className="text-xs text-cyan-600 hover:underline">
+                + Dodaj czynność
+              </button>
+              <button onClick={() => saveTemplate(t)} className="px-2 py-1 text-xs rounded bg-cyan-600 hover:bg-cyan-500 text-white ml-auto">
+                Zapisz szablon
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+      {saveError && <div className="text-xs text-red-500">{saveError}</div>}
+
+      <div className="border-t border-[var(--border-color-light)] pt-3 space-y-2">
+        <div className="font-medium text-sm text-[var(--text-primary)]">Generuj harmonogram nowego projektu</div>
+        <div className="flex gap-2 items-center flex-wrap">
+          <select value={schedKey} onChange={(e) => setSchedKey(e.target.value)} className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm">
+            {templates.map((t) => <option key={t.key} value={t.key}>{t.title}</option>)}
+          </select>
+          <input
+            value={schedProject}
+            onChange={(e) => setSchedProject(e.target.value)}
+            placeholder="np. BAS006"
+            className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm w-32"
+          />
+          <input
+            type="date"
+            value={schedStart}
+            onChange={(e) => setSchedStart(e.target.value)}
+            className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm"
+          />
+          <button onClick={generateSchedule} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-medium">
+            Generuj
+          </button>
+        </div>
+
+        {schedule && (
+          <div className="mobile-scroll-table overflow-auto">
+            <table className="w-full text-xs mt-2">
+              <thead>
+                <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-color)]">
+                  <th className="p-1">{schedProject || "Projekt"} — czynność</th>
+                  <th className="p-1">Kategoria</th>
+                  <th className="p-1">Start</th>
+                  <th className="p-1">Koniec</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedule.map((r, i) => (
+                  <tr key={i} className="border-t border-[var(--border-color-light)]">
+                    <td className="p-1">{r.title}</td>
+                    <td className="p-1">{r.category}</td>
+                    <td className="p-1">{r.start}</td>
+                    <td className="p-1">{r.end}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {schedule.length > 0 && (
+              <div className="text-xs text-[var(--text-secondary)] mt-1">
+                Przewidywana data zakończenia: <strong>{schedule[schedule.length - 1].end}</strong>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

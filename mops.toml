@@ -12,6 +12,7 @@ main = "src/expense-tracker-backend/main.mo"
 [dependencies]
 core = "2.6.0"
 json = "1.4.0"
+sha2 = "0.2.5"
 
 [toolchain]
 moc = "1.11.0"

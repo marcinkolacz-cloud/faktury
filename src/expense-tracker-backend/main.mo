@@ -28,6 +28,10 @@ import ContractsApi "mixins/ContractsApi";
 import KsefApi "mixins/KsefApi";
 import EmailSubscribersApi "mixins/EmailSubscribersApi";
 import DevicesApi "mixins/DevicesApi";
+import AiAgentConfigApi "mixins/AiAgentConfigApi";
+import FlaggedActionsApi "mixins/FlaggedActionsApi";
+import ProjectTemplatesApi "mixins/ProjectTemplatesApi";
+import WelcomeSummaryApi "mixins/WelcomeSummaryApi";
 
 persistent actor {
   let projects = Map.empty<Nat, Types.Project>();
@@ -106,6 +110,59 @@ persistent actor {
   // proxy risk). Any logged-in staff member (any role) can request one.
   let staffActionTokens = Map.empty<Text, Int>();
   let principalDisplayNames = Map.empty<Principal, Text>();
+  let aiAgentConfig = Map.empty<Text, Types.AiAgentConfigEntry>();
+  let aiConfigPasswords = Map.empty<Principal, Blob>();
+  let aiConfigUnlocked = Map.empty<Principal, Bool>();
+  let aiConfigAuditLog = List.empty<Types.AiConfigAuditEntry>();
+  let aiConfigAttempts = Map.empty<Principal, (Nat, Int)>();
+  let projectTemplates = Map.empty<Text, Types.ProjectTemplate>();
+  let userLastSeen = Map.empty<Principal, Int>();
+
+  // Punkt wyjścia do edycji w panelu Agenta AI — czasy w dniach są
+  // orientacyjne, podmień na realne na podstawie BAS004 / TRA003 / BAS005.
+  let defaultBasTasks : [Types.ProjectTemplateTask] = [
+    { id = 1; title = "Projekt / aktualizacja BOM na bazie poprzedniego projektu"; category = "Projektowanie"; estimatedDays = 3 },
+    { id = 2; title = "Zamówienie płyty głównej i komponentów kluczowych (z uwzględnieniem zamienników)"; category = "Zakupy"; estimatedDays = 14 },
+    { id = 3; title = "Budowa konstrukcji / obudowy"; category = "Mechanika"; estimatedDays = 10 },
+    { id = 4; title = "Montaż elektroniki i okablowania"; category = "Elektronika"; estimatedDays = 7 },
+    { id = 5; title = "Instalacja i konfiguracja komputera głównego"; category = "Software"; estimatedDays = 3 },
+    { id = 6; title = "Montaż ekranów i systemu wizualizacji"; category = "Wizualizacja"; estimatedDays = 5 },
+    { id = 7; title = "Budowa i montaż kabiny instruktora"; category = "Mechanika"; estimatedDays = 7 },
+    { id = 8; title = "Kalibracja i testy systemów"; category = "Testy"; estimatedDays = 5 },
+    { id = 9; title = "Testy końcowe i odbiór"; category = "Testy"; estimatedDays = 3 },
+    { id = 10; title = "Pakowanie i wysyłka"; category = "Logistyka"; estimatedDays = 2 },
+  ];
+
+  let defaultTraTasks : [Types.ProjectTemplateTask] = [
+    { id = 1; title = "Projekt / aktualizacja BOM"; category = "Projektowanie"; estimatedDays = 2 },
+    { id = 2; title = "Zamówienie komponentów"; category = "Zakupy"; estimatedDays = 10 },
+    { id = 3; title = "Budowa konstrukcji"; category = "Mechanika"; estimatedDays = 5 },
+    { id = 4; title = "Montaż elektroniki"; category = "Elektronika"; estimatedDays = 4 },
+    { id = 5; title = "Instalacja i konfiguracja oprogramowania"; category = "Software"; estimatedDays = 2 },
+    { id = 6; title = "Kalibracja i testy"; category = "Testy"; estimatedDays = 3 },
+    { id = 7; title = "Pakowanie i wysyłka"; category = "Logistyka"; estimatedDays = 1 },
+  ];
+
+  let defaultBasLiteTasks : [Types.ProjectTemplateTask] = [
+    { id = 1; title = "Projekt / aktualizacja BOM na bazie poprzedniego projektu"; category = "Projektowanie"; estimatedDays = 3 },
+    { id = 2; title = "Zamówienie komponentów (bez ekranów i kabiny instruktora)"; category = "Zakupy"; estimatedDays = 12 },
+    { id = 3; title = "Budowa konstrukcji / obudowy"; category = "Mechanika"; estimatedDays = 8 },
+    { id = 4; title = "Montaż elektroniki i okablowania"; category = "Elektronika"; estimatedDays = 6 },
+    { id = 5; title = "Instalacja i konfiguracja komputera głównego"; category = "Software"; estimatedDays = 3 },
+    { id = 6; title = "Kalibracja i testy systemów"; category = "Testy"; estimatedDays = 4 },
+    { id = 7; title = "Testy końcowe i odbiór"; category = "Testy"; estimatedDays = 2 },
+    { id = 8; title = "Pakowanie i wysyłka"; category = "Logistyka"; estimatedDays = 2 },
+  ];
+
+  func seedProjectTemplateIfMissing(key : Text, title : Text, tasks : [Types.ProjectTemplateTask]) {
+    switch (projectTemplates.get(key)) {
+      case (?_) {};
+      case null { projectTemplates.add(key, { key; title; tasks }); };
+    };
+  };
+  seedProjectTemplateIfMissing("BAS", "Symulator BAS (pełny — kabina instruktora + ekrany), np. BAS004", defaultBasTasks);
+  seedProjectTemplateIfMissing("TRA", "Trenażer TRA, np. TRA003", defaultTraTasks);
+  seedProjectTemplateIfMissing("BAS_LITE", "Symulator BAS bez kabiny instruktora i ekranów, np. BAS005", defaultBasLiteTasks);
 
   let oneDriveClientId = "427bbeee-c6bd-4dfc-9946-9b230aec7861";
 
@@ -140,6 +197,10 @@ persistent actor {
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
+  include AiAgentConfigApi(aiAgentConfig, aiConfigPasswords, aiConfigUnlocked, aiConfigAuditLog, aiConfigAttempts, accessRoles, moduleAccess);
+  include FlaggedActionsApi(orders, ordersTrashed, orderDriveFolders, contracts, contractsTrashed, contractDriveFolders, expenses, expensesTrashed, pendingInvoices, accessRoles, moduleAccess);
+  include ProjectTemplatesApi(projectTemplates, aiConfigUnlocked, accessRoles, moduleAccess);
+  include WelcomeSummaryApi(orders, ordersTrashed, contracts, contractsTrashed, calendarEvents, calendarEventsTrashed, pendingInvoices, userLastSeen, accessRoles, moduleAccess);
 
   func isAdmin(caller : Principal) : Bool {
     let bootstrapMatch = switch (adminPrincipal) { case (?admin) { Principal.equal(admin, caller) }; case null { false } };

@@ -6,6 +6,7 @@ import { ProjectsBar } from "./ProjectsBar";
 import { ExpensesTable } from "./ExpensesTable";
 import { TopBar } from "./TopBar";
 import { InfoTip } from "./InfoTip";
+import { FlaggedActionsPanel } from "./FlaggedActionsPanel";
 
 export function Dashboard({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
   const actor = useBackendActor();
@@ -99,6 +100,7 @@ export function Dashboard({ onHome, onNavigate, currentModule }: { onHome: () =>
           onDataChange={reload}
         />
         <>
+          {myRole === "admin" && <FlaggedActionsPanel actor={actor} />}
           <SummaryBar totalReceived={totalReceived} totalSpent={totalSpent} />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <PaymentsLedger payments={payments} actor={actor} onChange={reload} canWrite={canWrite} />

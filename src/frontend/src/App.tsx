@@ -17,6 +17,8 @@ import { ContractsModule } from "./components/ContractsModule";
 import { EmailSubscribersModule } from "./components/EmailSubscribersModule";
 import { DevicesModule } from "./components/DevicesModule";
 import { ManualModule } from "./components/ManualModule";
+import { AgentModule } from "./components/AgentModule";
+import { WelcomeBackModal } from "./components/WelcomeBackModal";
 import { KsefTeamView } from "./components/KsefTeamView";
 import { AdminPanel } from "./components/AdminPanel";
 import { TopBar } from "./components/TopBar";
@@ -133,7 +135,12 @@ function AccessGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <WelcomeBackModal actor={actor} />
+      {children}
+    </>
+  );
 }
 
 function ModuleRouter() {
@@ -187,6 +194,9 @@ function ModuleRouter() {
   }
   if (baseModule === "devices") {
     return <DevicesModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
+  }
+  if (baseModule === "agent") {
+    return <AgentModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
   if (baseModule === "manual") {
     return <ManualModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} initialAnchor={manualAnchor} />;

@@ -314,4 +314,68 @@ module {
     ksefNote : Text;
     note : Text;
   };
+
+  public type AiAgentConfigValue = {
+    #bool : Bool;
+    #text : Text;
+    #number : Float;
+  };
+
+  public type AiAgentConfigEntry = {
+    key : Text;
+    value : AiAgentConfigValue;
+    updatedBy : Principal;
+    updatedAt : Int;
+  };
+
+  public type AiConfigAuditEntry = {
+    principal : Principal;
+    key : Text;
+    oldValue : ?Text;
+    newValue : Text;
+    timestamp : Int;
+  };
+
+  public type FlaggedActionKind = {
+    #orderMissingDriveFolder;
+    #contractMissingDriveFolder;
+    #expenseMissingInvoice;
+    #ksefInvoicePendingTooLong;
+    #expenseAmountAnomaly;
+  };
+
+  public type FlaggedAction = {
+    kind : FlaggedActionKind;
+    entityRef : Text;
+    entityLabel : Text;
+    detail : Text;
+  };
+
+  public type ProjectTemplateTask = {
+    id : Nat;
+    title : Text;
+    category : Text;
+    estimatedDays : Nat;
+  };
+
+  public type ProjectTemplate = {
+    key : Text;
+    title : Text;
+    tasks : [ProjectTemplateTask];
+  };
+
+  public type WelcomeItemKind = {
+    #newOrder;
+    #newContract;
+    #newCalendarEvent;
+    #newKsefInvoice;
+    #upcomingImportantDate;
+  };
+
+  public type WelcomeItem = {
+    kind : WelcomeItemKind;
+    entityRef : Text;
+    entityLabel : Text;
+    detail : Text;
+  };
 };

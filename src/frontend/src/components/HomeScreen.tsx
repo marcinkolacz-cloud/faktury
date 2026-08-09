@@ -22,6 +22,7 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
     { id: "drive", title: "Bartolini Drive", desc: "Pliki, zdjęcia, dokumenty (OneDrive)" },
     { id: "emailSubscribers", title: "Powiadomienia e-mail", desc: "Lista adresatów pilnych powiadomień" },
     { id: "devices", title: "Rejestr urządzeń", desc: "Urządzenia klientów, gwarancje, support, historia zgłoszeń" },
+    { id: "agent", title: "🤖 Agent AI", desc: "Konfiguracja zachowania i uprawnień agenta" },
   ];
 
   const visibleTiles = allowedModules === null ? [] : tiles.filter((t) => allowedModules.includes(t.id));
