@@ -58,6 +58,7 @@ persistent actor {
   let ticketAttachmentUploader = Map.empty<Nat, Principal>();
   let ticketDriveAttachments = Map.empty<Nat, Types.TicketDriveAttachment>();
   let pendingInvoices = Map.empty<Text, Types.PendingInvoice>();
+  let invoiceRegistryExpenseId = Map.empty<Text, Nat>();
   let invoiceSharedToTeam = Map.empty<Text, Bool>();
   let invoiceLineItems = Map.empty<Text, [Types.InvoiceLineItem]>();
   let invoiceOneDriveLink = Map.empty<Text, Text>();
@@ -207,6 +208,68 @@ persistent actor {
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
+
+  // Kwarantanna KSeF → Rejestr Faktur. Osobna, równoległa mapa
+  // (invoiceRegistryExpenseId) zamiast dotykania istniejącego pola
+  // `status` na PendingInvoice — bezpieczne przy upgrade, i pozwala
+  // odróżnić "dodano do magazynu" (osobny, już istniejący przepływ) od
+  // "dodano do rejestru faktur" (ten). Jedna faktura KSeF może trafić do
+  // obu, niezależnie.
+  public shared ({ caller }) func addKsefInvoiceToExpenseRegistry(
+    ksefNumber : Text,
+    projectId : Nat,
+    productService : Text,
+    paidBy : Text,
+    note : Text,
+  ) : async ?Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can add to invoice registry"); };
+    switch (invoiceRegistryExpenseId.get(ksefNumber)) {
+      case (?_) { return null }; // already added — avoid duplicates
+      case null {};
+    };
+    switch (pendingInvoices.get(ksefNumber)) {
+      case (?inv) {
+        var maxId = 0;
+        var any = false;
+        for ((id, _) in expenses.entries()) { if (not any or id >= maxId) { maxId := id; any := true; }; };
+        let newId = if (any) { maxId + 1 } else { 0 };
+        let pricePln : ?Float = if (inv.currency == "PLN") { ?inv.grossAmount } else { null };
+        let priceEur : ?Float = if (inv.currency == "EUR") { ?inv.grossAmount } else { null };
+        let priceUsd : ?Float = if (inv.currency == "USD") { ?inv.grossAmount } else { null };
+        let expense : Types.Expense = {
+          id = newId;
+          projectId;
+          productService;
+          supplier = inv.sellerName;
+          serialNumber = "";
+          quantity = null;
+          priceEur;
+          priceUsd;
+          pricePln;
+          priceNet = ?inv.netAmount;
+          orderDate = inv.issueDate;
+          paid = false;
+          paidBy;
+          hasInvoice = true;
+          invoiceNumber = inv.invoiceNumber;
+          confirmed = false;
+          ksefNote = ksefNumber;
+          note;
+        };
+        expenses.add(newId, expense);
+        invoiceRegistryExpenseId.add(ksefNumber, newId);
+        ?newId;
+      };
+      case null { null };
+    };
+  };
+
+  public query ({ caller }) func listInvoiceRegistryStatuses() : async [(Text, Nat)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can view this"); };
+    var result = List.empty<(Text, Nat)>();
+    for ((k, v) in invoiceRegistryExpenseId.entries()) { result.add((k, v)); };
+    result.toArray();
+  };
   include AiAgentConfigApi(aiAgentConfig, aiConfigPasswords, aiConfigUnlocked, aiConfigAuditLog, aiConfigAttempts, accessRoles, moduleAccess);
   include FlaggedActionsApi(orders, ordersTrashed, orderDriveFolders, orderProductionEstimates, contracts, contractsTrashed, contractDriveFolders, expenses, expensesTrashed, pendingInvoices, accessRoles, moduleAccess);
   include ProjectTemplatesApi(projectTemplates, aiConfigUnlocked, accessRoles, moduleAccess);

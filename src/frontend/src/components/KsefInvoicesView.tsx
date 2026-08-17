@@ -45,6 +45,12 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
     const map: Record<string, boolean> = {};
     statuses.forEach(([id, isShared]: [string, boolean]) => { map[id] = isShared; });
     setSharedMap(map);
+    const regStatuses = await actor.listInvoiceRegistryStatuses();
+    const regMap: Record<string, number> = {};
+    regStatuses.forEach(([id, expenseId]: [string, bigint]) => { regMap[id] = Number(expenseId); });
+    setRegistryStatus(regMap);
+    const projectList = await actor.listMyProjects();
+    setProjects(projectList.map((p: any) => ({ id: Number(p.id), name: p.name })));
     setLoadingList(false);
   };
 
@@ -142,6 +148,14 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
   const [selectedDecided, setSelectedDecided] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [addingToWarehouse, setAddingToWarehouse] = useState<string | null>(null);
+  const [registryStatus, setRegistryStatus] = useState<Record<string, number>>({});
+  const [projects, setProjects] = useState<{ id: number; name: string }[]>([]);
+  const [registryModal, setRegistryModal] = useState<{ ksefNumber: string; sellerName: string } | null>(null);
+  const [registryProjectId, setRegistryProjectId] = useState("");
+  const [registryProductService, setRegistryProductService] = useState("");
+  const [registryPaidBy, setRegistryPaidBy] = useState("");
+  const [registryNote, setRegistryNote] = useState("");
+  const [registrySaving, setRegistrySaving] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [previewCache, setPreviewCache] = useState<Record<string, { name: string; quantity: number; unit: string }[]>>({});
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
@@ -264,6 +278,37 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
       alert("Błąd: " + String(e?.message || e));
     }
     setAddingToWarehouse(null);
+  };
+
+  const openRegistryModal = (ksefNumber: string, sellerName: string) => {
+    setRegistryModal({ ksefNumber, sellerName });
+    setRegistryProjectId(projects[0] ? String(projects[0].id) : "");
+    setRegistryProductService("Faktura KSeF — " + sellerName);
+    setRegistryPaidBy("");
+    setRegistryNote("");
+  };
+
+  const saveToRegistry = async () => {
+    if (!registryModal || !registryProjectId || !registryPaidBy.trim()) return;
+    setRegistrySaving(true);
+    try {
+      const result = await actor.addKsefInvoiceToExpenseRegistry(
+        registryModal.ksefNumber,
+        parseInt(registryProjectId),
+        registryProductService.trim(),
+        registryPaidBy.trim(),
+        registryNote.trim(),
+      );
+      const expenseId = result && result.length > 0 ? result[0] : null;
+      if (expenseId === null) {
+        alert("Ta faktura jest już w rejestrze faktur.");
+      }
+      setRegistryModal(null);
+      reloadPending();
+    } catch (e: any) {
+      alert("Błąd: " + String(e?.message || e));
+    }
+    setRegistrySaving(false);
   };
 
   const rejectInvoice = async (ksefNumber: string) => {
@@ -619,6 +664,13 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
                           {addingToWarehouse === inv.ksefNumber ? "Przetwarzam..." : "➡️ Do magazynu"}
                         </button>
                       )}
+                      {registryStatus[inv.ksefNumber] !== undefined ? (
+                        <span className="text-emerald-600 mr-2">✅ W rejestrze faktur</span>
+                      ) : Object.keys(inv.status)[0] === "pending" ? (
+                        <button onClick={() => openRegistryModal(inv.ksefNumber, inv.sellerName)} className="text-cyan-600 hover:underline mr-2">
+                          📋 Do rejestru faktur
+                        </button>
+                      ) : null}
                       {Object.keys(inv.status)[0] === "pending" && (
                         <button onClick={() => rejectInvoice(inv.ksefNumber)} className="text-red-500 hover:underline">🗑️ Odrzuć</button>
                       )}
@@ -714,6 +766,68 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
             ) : (
               <div className="p-4" dangerouslySetInnerHTML={{ __html: readableHtml }} />
             )}
+          </div>
+        </div>
+      )}
+      {registryModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setRegistryModal(null)}>
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 w-full max-w-md space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-[var(--text-primary)]">Dodaj do rejestru faktur</h3>
+            <p className="text-xs text-[var(--text-secondary)]">
+              Faktura od <strong>{registryModal.sellerName}</strong> zostanie dodana jako wydatek w Rejestrze Faktur.
+            </p>
+            <div className="space-y-2">
+              <label className="block text-xs text-[var(--text-secondary)]">
+                Projekt
+                <select
+                  value={registryProjectId}
+                  onChange={(e) => setRegistryProjectId(e.target.value)}
+                  className="w-full border border-[var(--border-color)] rounded px-2 py-1.5 text-sm mt-1"
+                >
+                  <option value="">— wybierz projekt —</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs text-[var(--text-secondary)]">
+                Opis (produkt/usługa)
+                <input
+                  value={registryProductService}
+                  onChange={(e) => setRegistryProductService(e.target.value)}
+                  className="w-full border border-[var(--border-color)] rounded px-2 py-1.5 text-sm mt-1"
+                />
+              </label>
+              <label className="block text-xs text-[var(--text-secondary)]">
+                Kto zapłacił
+                <input
+                  value={registryPaidBy}
+                  onChange={(e) => setRegistryPaidBy(e.target.value)}
+                  placeholder="np. Marcin"
+                  className="w-full border border-[var(--border-color)] rounded px-2 py-1.5 text-sm mt-1"
+                />
+              </label>
+              <label className="block text-xs text-[var(--text-secondary)]">
+                Notatka (opcjonalnie)
+                <input
+                  value={registryNote}
+                  onChange={(e) => setRegistryNote(e.target.value)}
+                  className="w-full border border-[var(--border-color)] rounded px-2 py-1.5 text-sm mt-1"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setRegistryModal(null)} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)]">
+                Anuluj
+              </button>
+              <button
+                onClick={saveToRegistry}
+                disabled={registrySaving || !registryProjectId || !registryPaidBy.trim()}
+                className="px-3 py-1.5 text-sm rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white"
+              >
+                {registrySaving ? "Zapisuję…" : "Dodaj do rejestru"}
+              </button>
+            </div>
           </div>
         </div>
       )}
