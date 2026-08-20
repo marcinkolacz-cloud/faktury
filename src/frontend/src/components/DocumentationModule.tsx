@@ -25,16 +25,37 @@ type Chapter = { id: number; title: string; contentHtml: string; order: number }
 // via querySelectorAll, which is immune to nesting depth, and writes it
 // into a data-num attribute that this CSS just displays verbatim.
 const COUNTER_CSS = `
-#doc-editor-content h1 { font-size: 22px; color: #1a1a8c; margin: 18px 0 10px; }
+#doc-editor-content { font-family: Calibri, "Segoe UI", Arial, sans-serif; }
+#doc-editor-content p, #doc-editor-content div, #doc-editor-content li { font-family: Calibri, "Segoe UI", Arial, sans-serif; color: #000; font-weight: bold; font-size: 10pt; }
+#doc-editor-content ul { list-style: disc outside; padding-left: 24px; margin: 8px 0; }
+#doc-editor-content ol { list-style: decimal outside; padding-left: 24px; margin: 8px 0; }
+#doc-editor-content li { list-style: inherit; display: list-item; }
+#doc-editor-content h1 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 14pt; color: #000; font-weight: bold; margin: 18px 0 10px; }
 #doc-editor-content h1::before { content: attr(data-num); }
-#doc-editor-content h2 { font-size: 18px; margin: 14px 0 8px; }
+#doc-editor-content h2 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 12pt; color: #000; font-weight: bold; margin: 14px 0 8px; }
 #doc-editor-content h2::before { content: attr(data-num); }
-#doc-editor-content h3 { font-size: 15px; margin: 10px 0 6px; }
+#doc-editor-content h3 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #000; font-weight: bold; margin: 10px 0 6px; }
 #doc-editor-content h3::before { content: attr(data-num); }
 #doc-editor-content img { max-width: 100%; height: auto; }
 #doc-editor-content .manual-page-break { border-top: 2px dashed #4fc3f7; text-align: center; color: #4fc3f7; font-size: 10px; margin: 16px 0; user-select: none; }
 #doc-editor-content .manual-page-break::before { content: attr(data-label); }
+#doc-editor-content table, #doc-editor-content td, #doc-editor-content th { border-color: var(--text-secondary) !important; }
+#doc-editor-content td[style*="background:#eee"], #doc-editor-content th[style*="background:#eee"] { background: var(--bg-hover) !important; }
+#doc-editor-content table td, #doc-editor-content table th { resize: both; overflow: hidden; }
+#doc-editor-content .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }
+#doc-editor-content .doc-comment-anchor.doc-comment-active { background: #ffe066; }
 `;
+// Repair pre-existing table cells saved before the border-shorthand bug
+// was fixed (see numberHeadingsForExport below for the full explanation):
+// a border-width with no border-style renders no border at all.
+function repairTableBorders(container: HTMLElement) {
+  container.querySelectorAll<HTMLElement>("td, th").forEach((cell) => {
+    if (cell.style.borderWidth && !cell.style.borderStyle) {
+      cell.style.borderStyle = "solid";
+    }
+  });
+}
+
 function applyLiveHeadingNumbers(container: HTMLElement, h1Start: number) {
   let h1 = h1Start;
   let h2 = 0;
@@ -73,6 +94,7 @@ function numberHeadingsForExport(chapters: Chapter[], includeIds?: Set<number>):
   const result: { html: string }[] = [];
   chapters.forEach((ch) => {
     const doc = new DOMParser().parseFromString(ch.contentHtml, "text/html");
+    repairTableBorders(doc.body);
     doc.body.querySelectorAll("h1, h2, h3").forEach((el) => {
       if (el.tagName === "H1") {
         h1 += 1; h2 = 0; h3 = 0;
@@ -250,6 +272,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [activeId, setActiveId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
+  const [fitToScreen, setFitToScreen] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(100);
   const [dirty, setDirty] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [renamingId, setRenamingId] = useState<number | null>(null);
@@ -272,7 +296,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [lockBusyMsg, setLockBusyMsg] = useState("");
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showTableModal, setShowTableModal] = useState(false);
-  const [tableDraft, setTableDraft] = useState({ rows: 3, cols: 3, headerRow: false });
+  const [tableDraft, setTableDraft] = useState({ rows: 3, cols: 3, headerRow: false, colWidthCm: "", rowHeightCm: "" });
+  const A4_USABLE_WIDTH_CM = 18.46; // 21cm - 1.27cm marginesy z każdej strony
   const tableInsertRangeRef = useRef<Range | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
@@ -326,6 +351,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const autoSaveTimer = useRef<number | null>(null);
   const [selectedImg, setSelectedImg] = useState<HTMLImageElement | null>(null);
+  const [selectedTableEl, setSelectedTableEl] = useState<HTMLTableElement | null>(null);
+  const [tableModalMode, setTableModalMode] = useState<"insert" | "resize">("insert");
+  const commentAreaRef = useRef<HTMLDivElement>(null);
+  const commentAnchorElRef = useRef<HTMLElement | null>(null);
+  const [commentPopup, setCommentPopup] = useState<{ top: number; left: number; lineWidth: number; draft: string } | null>(null);
   const [imgToolbarPos, setImgToolbarPos] = useState<{ top: number; left: number } | null>(null);
   const [handlePos, setHandlePos] = useState<{ top: number; left: number } | null>(null);
   const resizingRef = useRef<{ startX: number; startWidth: number; aspect: number } | null>(null);
@@ -459,6 +489,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     setHandlePos(null);
     if (editorRef.current) {
       editorRef.current.innerHTML = active?.contentHtml || "<p></p>";
+      repairTableBorders(editorRef.current);
       applyLiveHeadingNumbers(editorRef.current, h1Offset);
     }
   }, [activeId]);
@@ -471,6 +502,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     if (editMode) return;
     if (editorRef.current) {
       editorRef.current.innerHTML = active?.contentHtml || "<p></p>";
+      repairTableBorders(editorRef.current);
       applyLiveHeadingNumbers(editorRef.current, h1Offset);
     }
   }, [active?.contentHtml, editMode]);
@@ -540,6 +572,21 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     setDirty(true);
   };
 
+  // Sekcja = h4, celowo POZA numberHeadingsForExport/applyLiveHeadingNumbers
+  // (liczą tylko h1/h2/h3) — nienumerowana etykieta pisana ręcznie,
+  // wizualnie nad Rozdziałem. Styl inline (nie w COUNTER_CSS), żeby
+  // przetrwał identycznie w edytorze, podglądzie, PDF i Word.
+  const SECTION_STYLE = "display:block;font-family:Calibri, 'Segoe UI', Arial, sans-serif;font-size:20pt;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#000;border-bottom:3px solid #1a1a8c;margin:32px 0 16px;padding-bottom:6px;";
+  const applySectionStyle = () => {
+    document.execCommand("formatBlock", false, "<h4>");
+    const sel = window.getSelection();
+    const node = sel?.anchorNode;
+    const el = (node instanceof Element ? node : node?.parentElement)?.closest("h4") as HTMLElement | null;
+    if (el) el.setAttribute("style", SECTION_STYLE);
+    editorRef.current?.focus();
+    setDirty(true);
+  };
+
   // Enable the browser's own corner-drag resize handles for images inside
   // the editable region — without this, <img> tags inserted via
   // execCommand("insertImage", ...) have no way to be resized at all.
@@ -556,6 +603,18 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     setHandlePos({ top: imgRect.bottom - editorRect.top - 8, left: imgRect.right - editorRect.left - 8 });
   };
 
+  const syncCommentPopupPos = (anchorEl: HTMLElement) => {
+    const container = commentAreaRef.current;
+    if (!container) return;
+    const containerRect = container.getBoundingClientRect();
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const top = anchorRect.top - containerRect.top + container.scrollTop;
+    const left = anchorRect.right - containerRect.left;
+    const popupWidth = 260;
+    const lineWidth = Math.max(container.clientWidth - popupWidth - 24 - left, 20);
+    setCommentPopup((p) => (p ? { ...p, top, left, lineWidth } : p));
+  };
+
   const onEditorClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.tagName === "IMG") {
@@ -567,7 +626,69 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       setImgToolbarPos(null);
       setHandlePos(null);
     }
+    setSelectedTableEl(target.closest("table") as HTMLTableElement | null);
+    const commentEl = target.closest(".doc-comment-anchor") as HTMLElement | null;
+    if (commentEl && editorRef.current?.contains(commentEl)) {
+      commentAnchorElRef.current = commentEl;
+      const draft = commentEl.getAttribute("data-comment-text") || "";
+      setCommentPopup({ top: 0, left: 0, lineWidth: 0, draft });
+      requestAnimationFrame(() => syncCommentPopupPos(commentEl));
+    } else {
+      commentAnchorElRef.current = null;
+      setCommentPopup(null);
+    }
   };
+
+  const addComment = () => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+      alert("Zaznacz fragment tekstu, żeby dodać komentarz.");
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    if (!editorRef.current?.contains(range.commonAncestorContainer)) return;
+    const span = document.createElement("span");
+    span.className = "doc-comment-anchor";
+    span.setAttribute("data-comment-id", `c${Date.now()}`);
+    span.setAttribute("data-comment-text", "");
+    try {
+      range.surroundContents(span);
+    } catch {
+      // Zaznaczenie przecina granicę elementów (np. pogrubienie w środku)
+      // — surroundContents wymaga jednego spójnego węzła, więc wycinamy
+      // zawartość i owijamy ją ręcznie.
+      const frag = range.extractContents();
+      span.appendChild(frag);
+      range.insertNode(span);
+    }
+    sel.removeAllRanges();
+    commentAnchorElRef.current = span;
+    setCommentPopup({ top: 0, left: 0, lineWidth: 0, draft: "" });
+    requestAnimationFrame(() => syncCommentPopupPos(span));
+    setDirty(true);
+  };
+
+  const saveCommentDraft = (text: string) => {
+    if (!commentAnchorElRef.current) return;
+    commentAnchorElRef.current.setAttribute("data-comment-text", text);
+    setDirty(true);
+  };
+
+  const deleteComment = () => {
+    const anchor = commentAnchorElRef.current;
+    if (!anchor) return;
+    const parent = anchor.parentNode;
+    while (anchor.firstChild) parent?.insertBefore(anchor.firstChild, anchor);
+    anchor.remove();
+    commentAnchorElRef.current = null;
+    setCommentPopup(null);
+    setDirty(true);
+  };
+
+  useEffect(() => {
+    editorRef.current?.querySelectorAll(".doc-comment-anchor.doc-comment-active").forEach((el) => el.classList.remove("doc-comment-active"));
+    if (commentPopup && commentAnchorElRef.current) commentAnchorElRef.current.classList.add("doc-comment-active");
+  }, [commentPopup]);
 
   // Images are draggable by default in browsers, but relying on the
   // browser's own internal contenteditable drag-and-drop to relocate them
@@ -710,14 +831,39 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         el.removeAttribute("bgcolor");
       }
     });
+    // Pasted tables (Word/Excel) carry their own border color/width — often
+    // very light gray, invisible on a white page. Force the same plain
+    // solid black border every editor-inserted table uses, so pasted
+    // tables stay visible everywhere (editor, print preview, PDF, Word
+    // export) regardless of the source app's styling.
+    doc.body.querySelectorAll<HTMLElement>("td, th").forEach((el) => {
+      el.style.borderWidth = "1px";
+      el.style.borderStyle = "solid";
+      el.style.borderColor = "#000";
+    });
     return doc.body.innerHTML;
   };
 
   const onEditorPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     const html = e.clipboardData.getData("text/html");
     if (!html) return; // let default plain-text paste behave normally
+    const sanitized = sanitizePastedHtml(html);
+    // Same nested-table guard as the toolbar button: pasting a table while
+    // the cursor sits inside an existing table cell would nest it and
+    // break rendering everywhere.
+    if (/<table[\s>]/i.test(sanitized)) {
+      const sel0 = window.getSelection();
+      const anchorEl = sel0 && sel0.anchorNode
+        ? (sel0.anchorNode.nodeType === 1 ? (sel0.anchorNode as HTMLElement) : sel0.anchorNode.parentElement)
+        : null;
+      if (anchorEl && anchorEl.closest("table") && editorRef.current?.contains(anchorEl)) {
+        e.preventDefault();
+        alert("Wklejona treść zawiera tabelę, a kursor jest wewnątrz innej tabeli. Ustaw kursor poza tabelą i spróbuj ponownie.");
+        return;
+      }
+    }
     e.preventDefault();
-    document.execCommand("insertHTML", false, sanitizePastedHtml(html));
+    document.execCommand("insertHTML", false, sanitized);
     setDirty(true);
   };
 
@@ -726,6 +872,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // every export path (Word HTML import, print preview, PDF/print)
   // without any special mso-tricks, since inline styles always carry
   // through DOM/innerHTML round-trips unchanged.
+  const TABLE_CELL_STYLE = "border-width:1px;border-style:solid;border-color:#000;padding:6px 8px;min-width:60px;vertical-align:top;";
+
   const insertTable = () => {
     // window.prompt() steals focus and can lose the editor selection —
     // same issue already solved for image insertion. Save the current
@@ -734,12 +882,113 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // actual editor DOM node (looks fine visually, silently vanishes on
     // save/export since it was never really part of editorRef).
     const sel0 = window.getSelection();
+    // Refuse to insert a table with the cursor already inside another
+    // table — execCommand insertHTML would drop it straight into that
+    // cell, producing an invalid nested table that renders as a broken
+    // overlapping grid everywhere (editor, preview, Word).
+    const anchorEl = sel0 && sel0.anchorNode
+      ? (sel0.anchorNode.nodeType === 1 ? (sel0.anchorNode as HTMLElement) : sel0.anchorNode.parentElement)
+      : null;
+    if (anchorEl && anchorEl.closest("table") && editorRef.current?.contains(anchorEl)) {
+      alert("Nie można wstawić tabeli wewnątrz innej tabeli. Ustaw kursor poza tabelą (np. w akapicie pod nią) i spróbuj ponownie.");
+      return;
+    }
     tableInsertRangeRef.current = sel0 && sel0.rangeCount > 0 ? sel0.getRangeAt(0).cloneRange() : null;
-    setTableDraft({ rows: 3, cols: 3, headerRow: false });
+    setTableModalMode("insert");
+    setTableDraft({ rows: 3, cols: 3, headerRow: false, colWidthCm: "", rowHeightCm: "" });
     setShowTableModal(true);
   };
 
+  // Opens the same modal pre-filled with the currently selected table's
+  // dimensions, so rows/cols/width/height can be changed on an existing
+  // table instead of only at creation time.
+  const openResizeTable = () => {
+    if (!selectedTableEl) return;
+    const rows = selectedTableEl.rows.length;
+    const cols = rows > 0 ? selectedTableEl.rows[0].cells.length : 1;
+    setTableModalMode("resize");
+    setTableDraft({ rows, cols, headerRow: false, colWidthCm: "", rowHeightCm: "" });
+    setShowTableModal(true);
+  };
+
+  const addTableRow = () => {
+    if (!selectedTableEl) return;
+    const lastRow = selectedTableEl.rows[selectedTableEl.rows.length - 1];
+    const cols = lastRow ? lastRow.cells.length : 1;
+    const tr = document.createElement("tr");
+    for (let i = 0; i < cols; i++) {
+      const td = document.createElement("td");
+      td.setAttribute("style", TABLE_CELL_STYLE);
+      td.innerHTML = "&nbsp;";
+      tr.appendChild(td);
+    }
+    selectedTableEl.querySelector("tbody")?.appendChild(tr) || selectedTableEl.appendChild(tr);
+    setDirty(true);
+  };
+
+  const removeTableRow = () => {
+    if (!selectedTableEl || selectedTableEl.rows.length <= 1) return;
+    selectedTableEl.rows[selectedTableEl.rows.length - 1].remove();
+    setDirty(true);
+  };
+
+  const addTableColumn = () => {
+    if (!selectedTableEl) return;
+    Array.from(selectedTableEl.rows).forEach((row) => {
+      const td = document.createElement("td");
+      td.setAttribute("style", TABLE_CELL_STYLE);
+      td.innerHTML = "&nbsp;";
+      row.appendChild(td);
+    });
+    setDirty(true);
+  };
+
+  const removeTableColumn = () => {
+    if (!selectedTableEl) return;
+    const rows = Array.from(selectedTableEl.rows);
+    if (rows.some((r) => r.cells.length <= 1)) return;
+    rows.forEach((row) => row.cells[row.cells.length - 1].remove());
+    setDirty(true);
+  };
+
+  const deleteTable = () => {
+    if (!selectedTableEl) return;
+    selectedTableEl.remove();
+    setSelectedTableEl(null);
+    setDirty(true);
+  };
+
   const confirmInsertTable = () => {
+    const colWidth = parseFloat(tableDraft.colWidthCm);
+    const rowHeight = parseFloat(tableDraft.rowHeightCm);
+    const hasColWidth = !isNaN(colWidth) && colWidth > 0;
+    const hasRowHeight = !isNaN(rowHeight) && rowHeight > 0;
+
+    if (tableModalMode === "resize" && selectedTableEl) {
+      // Adjust row/column count first, then apply width/height to every
+      // cell uniformly — same behavior as at creation time, just applied
+      // to an already-inserted table.
+      const targetRows = Math.max(1, Math.min(30, tableDraft.rows || 1));
+      const targetCols = Math.max(1, Math.min(12, tableDraft.cols || 1));
+      while (selectedTableEl.rows.length < targetRows) addTableRow();
+      while (selectedTableEl.rows.length > targetRows) removeTableRow();
+      while ((selectedTableEl.rows[0]?.cells.length || 0) < targetCols) addTableColumn();
+      while ((selectedTableEl.rows[0]?.cells.length || 0) > targetCols) removeTableColumn();
+      if (hasColWidth || hasRowHeight) {
+        Array.from(selectedTableEl.querySelectorAll<HTMLElement>("td, th")).forEach((cell) => {
+          if (hasColWidth) { cell.style.removeProperty("min-width"); cell.style.width = `${colWidth}cm`; }
+          if (hasRowHeight) cell.style.height = `${rowHeight}cm`;
+        });
+        if (hasColWidth) {
+          selectedTableEl.style.width = `${(colWidth * targetCols).toFixed(2)}cm`;
+          selectedTableEl.style.tableLayout = "fixed";
+        }
+      }
+      setDirty(true);
+      setShowTableModal(false);
+      return;
+    }
+
     const rows = Math.max(1, Math.min(30, tableDraft.rows || 3));
     const cols = Math.max(1, Math.min(12, tableDraft.cols || 3));
     // Border is solid black, plain inline styles only (no resize/overflow
@@ -747,12 +996,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // table if a cell has overflow:auto (treats it as an unsupported
     // scrollable region), so this must stay minimal to survive every
     // export path (Word, print preview, PDF).
-    const cellStyle = "border:1px solid #000;padding:6px 8px;min-width:60px;vertical-align:top;";
+    const cellStyle = `border-width:1px;border-style:solid;border-color:#000;padding:6px 8px;${hasColWidth ? `width:${colWidth}cm;` : "min-width:60px;"}${hasRowHeight ? `height:${rowHeight}cm;` : ""}vertical-align:top;`;
     const headerCellStyle = cellStyle + "background:#eee;font-weight:bold;";
     const rowsHtml = Array.from({ length: rows }, (_, r) =>
       `<tr>${Array.from({ length: cols }, () => `<td style="${r === 0 && tableDraft.headerRow ? headerCellStyle : cellStyle}">&nbsp;</td>`).join("")}</tr>`
     ).join("");
-    const tableHtml = `<table style="border-collapse:collapse;width:100%;margin:12px 0;"><tbody>${rowsHtml}</tbody></table><p><br></p>`;
+    const tableWidthStyle = hasColWidth ? `width:${(colWidth * cols).toFixed(2)}cm;table-layout:fixed;` : "width:100%;";
+    const tableHtml = `<table style="border-collapse:collapse;${tableWidthStyle}margin:12px 0;"><tbody>${rowsHtml}</tbody></table><p><br></p>`;
     editorRef.current?.focus();
     const savedRange = tableInsertRangeRef.current;
     if (savedRange) {
@@ -895,11 +1145,17 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     return () => { if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current); };
   }, [dirty, autoSave, editMode]);
 
+  const getChaptersForExport = (): Chapter[] => {
+    if (!active || !editorRef.current) return chapters;
+    const liveHtml = editorRef.current.innerHTML.replace(/\s*data-num="[^"]*"/g, "");
+    return chapters.map((c) => (c.id === active.id ? { ...c, contentHtml: liveHtml } : c));
+  };
+
   const exportWord = async () => {
     try {
       const selected = chapters.filter((c) => selectedForPrint.has(c.id));
       if (selected.length === 0) { alert("Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej)."); return; }
-      const html = await buildWordExportHtml(deviceLabel, chapters, hfSettings, selectedForPrint);
+      const html = await buildWordExportHtml(deviceLabel, getChaptersForExport(), hfSettings, selectedForPrint);
       const blob = new Blob(["\ufeff", html], { type: "application/msword" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -932,7 +1188,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }
     const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
-    const numbered = numberHeadingsForExport(chapters, selectedForPrint);
+    const numbered = numberHeadingsForExport(getChaptersForExport(), selectedForPrint);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     return `<html><head><meta charset="utf-8"/><title>Podgląd wydruku</title>
       <style>
@@ -966,7 +1222,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     if (selected.length === 0) { alert("Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej)."); return; }
     // Numbering via numberHeadingsForExport (same as Word/print preview),
     // not CSS counters — see buildChapterPreviewHtml for why.
-    const numbered = numberHeadingsForExport(chapters, selectedForPrint);
+    const numbered = numberHeadingsForExport(getChaptersForExport(), selectedForPrint);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
@@ -1134,16 +1390,34 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     <button onClick={openPrintPreview} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
                       🖨 Podgląd wydruku
                     </button>
+                    <span className="w-px h-5 bg-[#ccc] mx-1" />
+                    <button
+                      onClick={() => setFitToScreen((v) => !v)}
+                      title="Dopasuj szerokość pola roboczego do szerokości ekranu"
+                      className={`text-xs px-3 py-1.5 rounded border ${fitToScreen ? "bg-cyan-600 text-white border-cyan-600" : "border-[#ccc]"}`}
+                    >
+                      🖥 Dopasuj do ekranu
+                    </button>
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} title="Pomniejsz" className="text-xs w-7 h-8 rounded border border-[#ccc]">－</button>
+                      <button onClick={() => setZoomLevel(100)} title="Resetuj powiększenie" className="text-xs px-1.5 h-8 rounded border border-[#ccc] min-w-[44px]">{zoomLevel}%</button>
+                      <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} title="Powiększ" className="text-xs w-7 h-8 rounded border border-[#ccc]">＋</button>
+                    </div>
                     {editMode && canEdit && (
                       <>
                         <span className="w-px h-5 bg-[#ccc] mx-1" />
                         <select
                           defaultValue=""
-                          onChange={(e) => { if (e.target.value) exec("formatBlock", e.target.value); e.target.value = ""; }}
+                          onChange={(e) => {
+                            if (e.target.value === "<h4>") applySectionStyle();
+                            else if (e.target.value) exec("formatBlock", e.target.value);
+                            e.target.value = "";
+                          }}
                           className="text-xs h-8 rounded border border-[#ccc] px-1"
                         >
                           <option value="" disabled>Styl</option>
                           <option value="<p>">Normal</option>
+                          <option value="<h4>">Sekcja (bez numeracji, nad rozdziałem)</option>
                           <option value="<h1>">Heading 1 — Rozdział</option>
                           <option value="<h2>">Heading 2 — Podrozdział</option>
                           <option value="<h3>">Heading 3 — Punkt</option>
@@ -1175,6 +1449,18 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         </button>
                         <button onClick={insertPageBreak} className="text-xs px-2 h-8 rounded border border-[#ccc]">⏎ Podział strony</button>
                         <button onClick={insertTable} className="text-xs px-2 h-8 rounded border border-[#ccc]">🔲 Tabela</button>
+                        <button onClick={addComment} className="text-xs px-2 h-8 rounded border border-[#ccc]">💬 Komentarz</button>
+                        {selectedTableEl && (
+                          <>
+                            <span className="w-px h-5 bg-[#ccc] mx-1" />
+                            <button onClick={addTableRow} className="text-xs px-2 h-8 rounded border border-[#ccc]">+Wiersz</button>
+                            <button onClick={removeTableRow} className="text-xs px-2 h-8 rounded border border-[#ccc]">-Wiersz</button>
+                            <button onClick={addTableColumn} className="text-xs px-2 h-8 rounded border border-[#ccc]">+Kolumna</button>
+                            <button onClick={removeTableColumn} className="text-xs px-2 h-8 rounded border border-[#ccc]">-Kolumna</button>
+                            <button onClick={openResizeTable} className="text-xs px-2 h-8 rounded border border-[#ccc]">📐 Rozmiar</button>
+                            <button onClick={deleteTable} className="text-xs px-2 h-8 rounded border border-[#ccc] text-red-600">🗑 Usuń tabelę</button>
+                          </>
+                        )}
                         <span className="text-[10px] text-[#999]">(albo przeciągnij plik na edytor)</span>
                         <span className="w-px h-5 bg-[#ccc] mx-1" />
                         <button
@@ -1187,10 +1473,18 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       </>
                     )}
                   </div>
-                  <div className="flex-1 relative overflow-auto bg-[var(--bg-page)] py-6">
+                  <div ref={commentAreaRef} className="flex-1 relative overflow-auto bg-[var(--bg-page)] py-6">
                     <div
                       className="mx-auto bg-[var(--bg-card)] text-[var(--text-primary)] shadow-lg relative"
-                      style={{ width: "210mm", minHeight: "297mm", boxSizing: "border-box", padding: "3.75cm 1.27cm 1.27cm 1.27cm" }}
+                      style={{
+                        width: fitToScreen ? "100%" : "210mm",
+                        maxWidth: fitToScreen ? "1600px" : "210mm",
+                        minHeight: "297mm",
+                        boxSizing: "border-box",
+                        padding: "3.75cm 1.27cm 1.27cm 1.27cm",
+                        transform: `scale(${zoomLevel / 100})`,
+                        transformOrigin: "top center",
+                      }}
                     >
                     <div
                       id="doc-editor-content"
@@ -1272,6 +1566,34 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         style={{ top: handlePos.top, left: handlePos.left }}
                       />
                     )}
+                    {commentPopup && (
+                      <>
+                        <div className="absolute h-px bg-amber-500 z-10 pointer-events-none" style={{ top: commentPopup.top, left: commentPopup.left, width: commentPopup.lineWidth }} />
+                        <div
+                          className="absolute z-20 rounded-lg shadow-xl p-3 border-2"
+                          style={{ top: Math.max(commentPopup.top - 20, 0), right: 12, width: 260, background: "#fff8e1", borderColor: "#e6b800" }}
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[10px] font-semibold text-amber-800">💬 Komentarz</span>
+                            <button onClick={() => { commentAnchorElRef.current = null; setCommentPopup(null); }} className="text-[11px] text-amber-800">✕</button>
+                          </div>
+                          <textarea
+                            value={commentPopup.draft}
+                            onChange={(e) => setCommentPopup((p) => (p ? { ...p, draft: e.target.value } : p))}
+                            onBlur={(e) => saveCommentDraft(e.target.value)}
+                            rows={3}
+                            disabled={!editMode || !canEdit}
+                            className="w-full text-xs p-1.5 rounded border border-amber-300 bg-white text-[#333]"
+                            placeholder="Wpisz komentarz…"
+                          />
+                          {editMode && canEdit && (
+                            <div className="flex justify-end gap-1 mt-1.5">
+                              <button onClick={deleteComment} className="text-[10px] px-2 py-1 rounded border border-red-300 text-red-500">Usuń komentarz</button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </>
               )}
@@ -1342,7 +1664,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       {showTableModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowTableModal(false)}>
           <div className="bg-white text-[#1a1a1a] rounded-lg p-5 w-full max-w-xs space-y-3" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-[#1a1a8c]">🔲 Wstaw tabelę</h3>
+            <h3 className="font-semibold text-[#1a1a8c]">🔲 {tableModalMode === "resize" ? "Zmień rozmiar tabeli" : "Wstaw tabelę"}</h3>
             <label className="block text-xs text-[#666]">
               Liczba wierszy
               <input
@@ -1369,9 +1691,40 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               />
               Pierwszy wiersz jako nagłówek (pogrubiony, wyszarzone tło)
             </label>
+            <label className="block text-xs text-[#666]">
+              Szerokość kolumny (cm, puste = auto)
+              <input
+                type="number" min={0} step={0.1}
+                value={tableDraft.colWidthCm}
+                onChange={(e) => setTableDraft((d) => ({ ...d, colWidthCm: e.target.value }))}
+                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                placeholder="np. 10"
+              />
+            </label>
+            <label className="block text-xs text-[#666]">
+              Wysokość wiersza (cm, puste = auto)
+              <input
+                type="number" min={0} step={0.1}
+                value={tableDraft.rowHeightCm}
+                onChange={(e) => setTableDraft((d) => ({ ...d, rowHeightCm: e.target.value }))}
+                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                placeholder="np. 1.5"
+              />
+            </label>
+            {(() => {
+              const w = parseFloat(tableDraft.colWidthCm);
+              if (isNaN(w) || w <= 0) return null;
+              const total = w * tableDraft.cols;
+              if (total <= A4_USABLE_WIDTH_CM) return null;
+              return (
+                <p className="text-xs text-red-600">
+                  ⚠️ Tabela za szeroka na A4: {total.toFixed(1)} cm (dostępne ~{A4_USABLE_WIDTH_CM} cm).
+                </p>
+              );
+            })()}
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setShowTableModal(false)} className="px-3 py-1.5 text-sm rounded border border-[#ccc]">Anuluj</button>
-              <button onClick={confirmInsertTable} className="px-3 py-1.5 text-sm rounded bg-cyan-600 hover:bg-cyan-500 text-white">Wstaw</button>
+              <button onClick={confirmInsertTable} className="px-3 py-1.5 text-sm rounded bg-cyan-600 hover:bg-cyan-500 text-white">{tableModalMode === "resize" ? "Zastosuj" : "Wstaw"}</button>
             </div>
           </div>
         </div>
