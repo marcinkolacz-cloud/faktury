@@ -34,7 +34,6 @@ const COUNTER_CSS = `
 #doc-editor-content img { max-width: 100%; height: auto; }
 #doc-editor-content .manual-page-break { border-top: 2px dashed #4fc3f7; text-align: center; color: #4fc3f7; font-size: 10px; margin: 16px 0; user-select: none; }
 #doc-editor-content .manual-page-break::before { content: attr(data-label); }
-#doc-editor-content td, #doc-editor-content th { resize: both; overflow: auto; }
 `;
 function applyLiveHeadingNumbers(container: HTMLElement, h1Start: number) {
   let h1 = h1Start;
@@ -67,11 +66,12 @@ function h1OffsetBefore(chapters: Chapter[], activeIndex: number): number {
 // Injects literal numbers into h1/h2/h3 (Word's HTML import doesn't reliably
 // render live CSS counters the way browsers do), continuing the count
 // across chapter boundaries — mirrors the live on-screen numbering exactly.
-function numberHeadingsForExport(chapters: Chapter[]): { html: string }[] {
+function numberHeadingsForExport(chapters: Chapter[], includeIds?: Set<number>): { html: string }[] {
   let h1 = 0;
   let h2 = 0;
   let h3 = 0;
-  return chapters.map((ch) => {
+  const result: { html: string }[] = [];
+  chapters.forEach((ch) => {
     const doc = new DOMParser().parseFromString(ch.contentHtml, "text/html");
     doc.body.querySelectorAll("h1, h2, h3").forEach((el) => {
       if (el.tagName === "H1") {
@@ -85,8 +85,14 @@ function numberHeadingsForExport(chapters: Chapter[]): { html: string }[] {
         el.innerHTML = `${h1}.${h2}.${h3}.\u00A0${el.innerHTML}`;
       }
     });
-    return { html: doc.body.innerHTML };
+    // Number every chapter so ordinals stay correct even when some
+    // chapters are unchecked for print — only OMIT the unchecked ones
+    // from the output, never renumber as if they didn't exist.
+    if (!includeIds || includeIds.has(ch.id)) {
+      result.push({ html: doc.body.innerHTML });
+    }
   });
+  return result;
 }
 
 const PAGE_BREAK_CLASS = "manual-page-break";
@@ -96,17 +102,18 @@ const PAGE_BREAK_CLASS = "manual-page-break";
 // actually produce (h1/h2/h3/p/ul-li/b/i/img + our manual page-break
 // marker) — this stays reliable rather than attempting to handle
 // arbitrary pasted HTML.
-function buildTocHtml(chapters: Chapter[]): string {
+function buildTocHtml(chapters: Chapter[], includeIds?: Set<number>): string {
   const rows: string[] = [];
   let h1 = 0, h2 = 0, h3 = 0;
   for (const ch of chapters) {
     const doc = new DOMParser().parseFromString(ch.contentHtml, "text/html");
+    const include = !includeIds || includeIds.has(ch.id);
     doc.body.querySelectorAll("h1, h2, h3").forEach((el, idx) => {
       const anchor = `toc_${rows.length}_${idx}`;
       el.setAttribute("id", anchor);
-      if (el.tagName === "H1") { h1 += 1; h2 = 0; h3 = 0; rows.push(`<p style="margin:2px 0;font-weight:bold;"><a href="#${anchor}">${h1}. ${el.textContent}</a></p>`); }
-      else if (el.tagName === "H2") { h2 += 1; h3 = 0; rows.push(`<p style="margin:2px 0 2px 18px;"><a href="#${anchor}">${h1}.${h2}. ${el.textContent}</a></p>`); }
-      else { h3 += 1; rows.push(`<p style="margin:2px 0 2px 36px;"><a href="#${anchor}">${h1}.${h2}.${h3}. ${el.textContent}</a></p>`); }
+      if (el.tagName === "H1") { h1 += 1; h2 = 0; h3 = 0; if (include) rows.push(`<p style="margin:2px 0;font-weight:bold;"><a href="#${anchor}">${h1}. ${el.textContent}</a></p>`); }
+      else if (el.tagName === "H2") { h2 += 1; h3 = 0; if (include) rows.push(`<p style="margin:2px 0 2px 18px;"><a href="#${anchor}">${h1}.${h2}. ${el.textContent}</a></p>`); }
+      else { h3 += 1; if (include) rows.push(`<p style="margin:2px 0 2px 36px;"><a href="#${anchor}">${h1}.${h2}.${h3}. ${el.textContent}</a></p>`); }
     });
   }
   return `<h1>Spis treści</h1>${rows.join("\n")}`;
@@ -156,9 +163,9 @@ async function fetchLogoDataUri(): Promise<string | null> {
 // HTML-saved documents in Web Layout, which doesn't paginate at all, so
 // repeating headers/footers only appear to show up once. They're stored
 // correctly either way; Print Layout is just what actually shows them.
-async function buildWordExportHtml(deviceLabel: string, chapters: Chapter[], settings: HeaderFooterSettings): Promise<string> {
-  const numbered = numberHeadingsForExport(chapters);
-  const toc = buildTocHtml(chapters);
+async function buildWordExportHtml(deviceLabel: string, chapters: Chapter[], settings: HeaderFooterSettings, includeIds?: Set<number>): Promise<string> {
+  const numbered = numberHeadingsForExport(chapters, includeIds);
+  const toc = buildTocHtml(chapters, includeIds);
   // Word's HTML-to-doc importer doesn't reliably honor generic CSS
   // page-break-before on a <div> (that only works in real browsers, e.g.
   // exportPdf/print preview) — the only trick Word's importer reliably
@@ -264,6 +271,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [lockedBy, setLockedBy] = useState<string | null>(null);
   const [lockBusyMsg, setLockBusyMsg] = useState("");
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showTableModal, setShowTableModal] = useState(false);
+  const [tableDraft, setTableDraft] = useState({ rows: 3, cols: 3, headerRow: false });
+  const tableInsertRangeRef = useRef<Range | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
   // all-selected so behavior matches the previous always-everything
@@ -675,6 +685,42 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     setDirty(true);
   };
 
+  // Pasted content (e.g. tables copied from Word/Excel) carries its own
+  // inline background-color styles from the source app. Word/Excel
+  // default table/cell backgrounds are white, which is invisible against
+  // our white print-preview/export page — so on paste we strip any
+  // white/near-white background so pasted tables stay visible everywhere
+  // they're rendered (editor, preview, PDF, Word export).
+  const sanitizePastedHtml = (html: string): string => {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const isWhiteish = (val: string) => {
+      const v = val.trim().toLowerCase();
+      if (!v) return false;
+      if (v === "white" || v === "#fff" || v === "#ffffff") return true;
+      const m = v.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+      if (m) return +m[1] >= 245 && +m[2] >= 245 && +m[3] >= 245;
+      return false;
+    };
+    doc.body.querySelectorAll<HTMLElement>("*").forEach((el) => {
+      if (el.style && el.style.backgroundColor && isWhiteish(el.style.backgroundColor)) {
+        el.style.removeProperty("background-color");
+        el.style.removeProperty("background");
+      }
+      if (el.hasAttribute("bgcolor") && isWhiteish(el.getAttribute("bgcolor") || "")) {
+        el.removeAttribute("bgcolor");
+      }
+    });
+    return doc.body.innerHTML;
+  };
+
+  const onEditorPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const html = e.clipboardData.getData("text/html");
+    if (!html) return; // let default plain-text paste behave normally
+    e.preventDefault();
+    document.execCommand("insertHTML", false, sanitizePastedHtml(html));
+    setDirty(true);
+  };
+
   // Plain <table><tr><td> with inline border styles (not an external
   // stylesheet class) — this way the table survives verbatim through
   // every export path (Word HTML import, print preview, PDF/print)
@@ -683,30 +729,32 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const insertTable = () => {
     // window.prompt() steals focus and can lose the editor selection —
     // same issue already solved for image insertion. Save the current
-    // Range BEFORE the prompts open, restore it right before inserting,
+    // Range BEFORE the modal opens, restore it right before inserting,
     // otherwise the table can render on-screen but land outside the
     // actual editor DOM node (looks fine visually, silently vanishes on
     // save/export since it was never really part of editorRef).
     const sel0 = window.getSelection();
-    const savedRange = sel0 && sel0.rangeCount > 0 ? sel0.getRangeAt(0).cloneRange() : null;
-    const rowsStr = window.prompt("Liczba wierszy:", "3");
-    if (rowsStr === null) return;
-    const colsStr = window.prompt("Liczba kolumn:", "3");
-    if (colsStr === null) return;
-    const rows = Math.max(1, Math.min(30, parseInt(rowsStr || "3", 10) || 3));
-    const cols = Math.max(1, Math.min(12, parseInt(colsStr || "3", 10) || 3));
-    // Resize handles are added via editor-only CSS (#doc-editor-content
-    // td), NOT inline here — Word's HTML-to-doc importer can silently
-    // drop an entire table if a cell has overflow:auto (it treats it as
-    // an unsupported scrollable region), so the inline style baked into
-    // every export must stay minimal/plain. Border is solid black per
-    // request (previous #999 grey was too faint to see).
+    tableInsertRangeRef.current = sel0 && sel0.rangeCount > 0 ? sel0.getRangeAt(0).cloneRange() : null;
+    setTableDraft({ rows: 3, cols: 3, headerRow: false });
+    setShowTableModal(true);
+  };
+
+  const confirmInsertTable = () => {
+    const rows = Math.max(1, Math.min(30, tableDraft.rows || 3));
+    const cols = Math.max(1, Math.min(12, tableDraft.cols || 3));
+    // Border is solid black, plain inline styles only (no resize/overflow
+    // tricks) — Word's HTML-to-doc importer can silently drop an entire
+    // table if a cell has overflow:auto (treats it as an unsupported
+    // scrollable region), so this must stay minimal to survive every
+    // export path (Word, print preview, PDF).
     const cellStyle = "border:1px solid #000;padding:6px 8px;min-width:60px;vertical-align:top;";
-    const rowsHtml = Array.from({ length: rows }, () =>
-      `<tr>${Array.from({ length: cols }, () => `<td style="${cellStyle}">&nbsp;</td>`).join("")}</tr>`
+    const headerCellStyle = cellStyle + "background:#eee;font-weight:bold;";
+    const rowsHtml = Array.from({ length: rows }, (_, r) =>
+      `<tr>${Array.from({ length: cols }, () => `<td style="${r === 0 && tableDraft.headerRow ? headerCellStyle : cellStyle}">&nbsp;</td>`).join("")}</tr>`
     ).join("");
     const tableHtml = `<table style="border-collapse:collapse;width:100%;margin:12px 0;"><tbody>${rowsHtml}</tbody></table><p><br></p>`;
     editorRef.current?.focus();
+    const savedRange = tableInsertRangeRef.current;
     if (savedRange) {
       const sel1 = window.getSelection();
       sel1?.removeAllRanges();
@@ -714,6 +762,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }
     document.execCommand("insertHTML", false, tableHtml);
     setDirty(true);
+    setShowTableModal(false);
   };
   const insertImage = () => imageInputRef.current?.click();
 
@@ -850,7 +899,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     try {
       const selected = chapters.filter((c) => selectedForPrint.has(c.id));
       if (selected.length === 0) { alert("Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej)."); return; }
-      const html = await buildWordExportHtml(deviceLabel, selected, hfSettings);
+      const html = await buildWordExportHtml(deviceLabel, chapters, hfSettings, selectedForPrint);
       const blob = new Blob(["\ufeff", html], { type: "application/msword" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -883,7 +932,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }
     const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
-    const numbered = numberHeadingsForExport(selected);
+    const numbered = numberHeadingsForExport(chapters, selectedForPrint);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     return `<html><head><meta charset="utf-8"/><title>Podgląd wydruku</title>
       <style>
@@ -917,7 +966,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     if (selected.length === 0) { alert("Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej)."); return; }
     // Numbering via numberHeadingsForExport (same as Word/print preview),
     // not CSS counters — see buildChapterPreviewHtml for why.
-    const numbered = numberHeadingsForExport(selected);
+    const numbered = numberHeadingsForExport(chapters, selectedForPrint);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
@@ -1166,6 +1215,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         if (editorRef.current) applyLiveHeadingNumbers(editorRef.current, h1Offset);
                       }}
                       onClick={onEditorClick}
+                      onPaste={onEditorPaste}
                       onDragStart={onEditorDragStart}
                       onDragEnd={onEditorDragEnd}
                       onDragOver={(e) => { if (editMode && canEdit) e.preventDefault(); }}
@@ -1284,6 +1334,44 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setShowSettings(false)} className="px-3 py-1.5 text-sm rounded border border-[#ccc]">Anuluj</button>
               <button onClick={saveSettings} className="px-3 py-1.5 text-sm rounded bg-cyan-600 hover:bg-cyan-500 text-white">Zapisz</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTableModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowTableModal(false)}>
+          <div className="bg-white text-[#1a1a1a] rounded-lg p-5 w-full max-w-xs space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-[#1a1a8c]">🔲 Wstaw tabelę</h3>
+            <label className="block text-xs text-[#666]">
+              Liczba wierszy
+              <input
+                type="number" min={1} max={30}
+                value={tableDraft.rows}
+                onChange={(e) => setTableDraft((d) => ({ ...d, rows: parseInt(e.target.value, 10) || 1 }))}
+                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+              />
+            </label>
+            <label className="block text-xs text-[#666]">
+              Liczba kolumn
+              <input
+                type="number" min={1} max={12}
+                value={tableDraft.cols}
+                onChange={(e) => setTableDraft((d) => ({ ...d, cols: parseInt(e.target.value, 10) || 1 }))}
+                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={tableDraft.headerRow}
+                onChange={(e) => setTableDraft((d) => ({ ...d, headerRow: e.target.checked }))}
+              />
+              Pierwszy wiersz jako nagłówek (pogrubiony, wyszarzone tło)
+            </label>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setShowTableModal(false)} className="px-3 py-1.5 text-sm rounded border border-[#ccc]">Anuluj</button>
+              <button onClick={confirmInsertTable} className="px-3 py-1.5 text-sm rounded bg-cyan-600 hover:bg-cyan-500 text-white">Wstaw</button>
             </div>
           </div>
         </div>
