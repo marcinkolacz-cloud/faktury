@@ -370,6 +370,13 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
                 </div>
               )}
             </div>
+
+            <button
+              onClick={() => onNavigate("documentation")}
+              className="mt-3 w-full text-sm px-3 py-2 rounded border border-[var(--border-color)] hover:border-cyan-400 text-cyan-600"
+            >
+              📖 Otwórz pełną dokumentację (osobny moduł, edytor pełnoekranowy)
+            </button>
           </div>
         </div>
       )}

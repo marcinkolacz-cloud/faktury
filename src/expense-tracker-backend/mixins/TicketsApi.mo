@@ -20,6 +20,7 @@ mixin (
   ticketSeenCounts : Map.Map<Nat, Nat>,
   recentClientReplyTimes : List.List<Int>,
   moduleAccess : Map.Map<Principal, [Text]>,
+  ticketsTrashed : Map.Map<Nat, Int>,
 ) {
   public shared func submitTicket(
     clientName : Text,
@@ -185,8 +186,51 @@ mixin (
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     var result = List.empty<Types.Ticket>();
-    for ((_, t) in tickets.entries()) {
-      result.add(t);
+    for ((id, t) in tickets.entries()) {
+      if (ticketsTrashed.get(id) == null) { result.add(t); };
+    };
+    result.toArray();
+  };
+
+  public shared ({ caller }) func trashTicket(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
+    switch (tickets.get(id)) {
+      case (?_) { ticketsTrashed.add(id, Time.now()); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func restoreTicket(id : Nat) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
+    switch (ticketsTrashed.get(id)) {
+      case (?_) { ticketsTrashed.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func permanentlyDeleteTicket(id : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can permanently delete"); };
+    ticketArchived.remove(id);
+    ticketSeenCounts.remove(id);
+    ticketExtras.remove(id);
+    ticketsTrashed.remove(id);
+    switch (tickets.get(id)) {
+      case (?_) { tickets.remove(id); true; };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func listTrashedTickets() : async [Types.Ticket] {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
+    var result = List.empty<Types.Ticket>();
+    for ((id, _) in ticketsTrashed.entries()) {
+      switch (tickets.get(id)) {
+        case (?t) { result.add(t); };
+        case null {};
+      };
     };
     result.toArray();
   };

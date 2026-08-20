@@ -22,10 +22,11 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
     { id: "drive", icon: "☁️", title: "Bartolini Drive", desc: "Pliki, zdjęcia, dokumenty (OneDrive)" },
     { id: "emailSubscribers", icon: "✉️", title: "Powiadomienia e-mail", desc: "Lista adresatów pilnych powiadomień" },
     { id: "devices", icon: "🛩️", title: "Rejestr urządzeń", desc: "Urządzenia klientów, gwarancje, support" },
+    { id: "documentation", icon: "📖", title: "Dokumentacja", desc: "Instrukcje obsługi urządzeń (pełnoekranowy edytor)" },
     { id: "agent", icon: "🤖", title: "Agent AI", desc: "Szablony budowy, harmonogramy, czat" },
   ];
 
-  const visibleTiles = allowedModules === null ? [] : tiles.filter((t) => allowedModules.includes(t.id));
+  const visibleTiles = allowedModules === null ? [] : tiles.filter((t) => allowedModules.includes(t.id === "documentation" ? "devices" : t.id));
   const allTiles = allowedModules === null
     ? []
     : [...visibleTiles, { id: "manual", icon: "📖", title: "Instrukcja", desc: "Jak korzystać z poszczególnych modułów" }];

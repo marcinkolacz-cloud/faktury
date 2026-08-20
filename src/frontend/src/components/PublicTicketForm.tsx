@@ -20,6 +20,7 @@ const translations = {
     thanksBody: "Twoje zgłoszenie zostało przyjęte. Skontaktujemy się wkrótce.",
     errorFill: "Wypełnij wszystkie pola.",
     errorSend: "Nie udało się wysłać zgłoszenia. Spróbuj ponownie.",
+    rememberMe: "Zapamiętaj moje dane na tym urządzeniu (dla kolejnych zgłoszeń)",
   },
   en: {
     title: "Report an Issue",
@@ -35,6 +36,7 @@ const translations = {
     thanksBody: "Your report has been received. We will contact you shortly.",
     errorFill: "Please fill in all fields.",
     errorSend: "Failed to send report. Please try again.",
+    rememberMe: "Remember my details on this device (for future reports)",
   },
 };
 
@@ -50,6 +52,22 @@ export function PublicTicketForm() {
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
   const [deviceNumber, setDeviceNumber] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+
+  const REMEMBER_KEY = "ticketFormSavedInfo";
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(REMEMBER_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved.name) setName(saved.name);
+        if (saved.email) setEmail(saved.email);
+        if (saved.company) setCompany(saved.company);
+        setRememberMe(true);
+      }
+    } catch { /* ignore corrupted/blocked storage */ }
+  }, []);
   const [files, setFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState("");
   const MAX_FILE_SIZE = 5_000_000;
@@ -73,6 +91,34 @@ export function PublicTicketForm() {
       const actor = await createPublicActor();
       const submitResult = await actor.submitTicket(name.trim(), email.trim(), subject.trim(), description.trim(), honeypot, company.trim(), deviceNumber.trim()) as [bigint, string];
       const [ticketId, token] = submitResult;
+
+      try {
+        if (rememberMe) {
+          localStorage.setItem("ticketFormSavedInfo", JSON.stringify({ name: name.trim(), email: email.trim(), company: company.trim() }));
+        } else {
+          localStorage.removeItem("ticketFormSavedInfo");
+        }
+      } catch { /* ignore storage errors — never block submission over this */ }
+
+      try {
+        const welcomeTokenResult = await actor.requestTicketWelcomeToken(ticketId) as [] | [string];
+        const welcomeToken = welcomeTokenResult.length ? welcomeTokenResult[0] : null;
+        if (welcomeToken) {
+          await fetch("https://bartolini-ticket-email.marcinkolacz.workers.dev", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + welcomeToken },
+            body: JSON.stringify({
+              to: email.trim(),
+              subject: "Potwierdzenie zgłoszenia #" + String(ticketId) + ": " + subject.trim(),
+              message: "Dziękujemy za zgłoszenie. Twój numer zgłoszenia to #" + String(ticketId) + ".",
+              ticketId: String(ticketId),
+              trackingToken: token,
+            }),
+          });
+        }
+      } catch {
+        // Welcome email failing should never block the ticket submission itself
+      }
       if (files.length > 0) {
         const driveTokenResult = await actor.requestTicketUploadDriveToken(token) as [] | [string];
         const driveToken = driveTokenResult.length ? driveTokenResult[0] : null;
@@ -177,6 +223,10 @@ export function PublicTicketForm() {
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t.name} className="w-full border border-[var(--border-color)] rounded px-3 py-2 text-sm" />
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t.email} type="email" className="w-full border border-[var(--border-color)] rounded px-3 py-2 text-sm" />
         <input value={company} onChange={(e) => setCompany(e.target.value)} placeholder={t.company} className="w-full border border-[var(--border-color)] rounded px-3 py-2 text-sm" />
+        <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+          <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+          {t.rememberMe}
+        </label>
         <input value={deviceNumber} onChange={(e) => setDeviceNumber(e.target.value)} placeholder={t.deviceNumber} className="w-full border border-[var(--border-color)] rounded px-3 py-2 text-sm" />
         <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t.subject} className="w-full border border-[var(--border-color)] rounded px-3 py-2 text-sm" />
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t.description} rows={5} className="w-full border border-[var(--border-color)] rounded px-3 py-2 text-sm" />

@@ -22,9 +22,11 @@ export function TrashView({ actor }: { actor: any }) {
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [calendarNotes, setCalendarNotes] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [ticketsTrashed, setTicketsTrashed] = useState<any[]>([]);
+  const [manualChapters, setManualChapters] = useState<any[]>([]);
 
   const reload = async () => {
-    const [e, p, a, w, s, ce, cn, pr] = await Promise.all([
+    const [e, p, a, w, s, ce, cn, pr, tk, mc] = await Promise.all([
       actor.listTrashedExpenses(),
       actor.listTrashedAdvancePayments(),
       actor.listTrashedTicketAttachments(),
@@ -33,6 +35,8 @@ export function TrashView({ actor }: { actor: any }) {
       actor.listTrashedCalendarEvents(),
       actor.listTrashedCalendarNotes(),
       actor.listTrashedProjects(),
+      actor.listTrashedTickets(),
+      actor.listTrashedDeviceManualChapters(),
     ]);
     setExpenses(e);
     setPayments(p);
@@ -42,6 +46,8 @@ export function TrashView({ actor }: { actor: any }) {
     setCalendarEvents(ce);
     setCalendarNotes(cn);
     setProjects(pr);
+    setTicketsTrashed(tk);
+    setManualChapters(mc);
     setLoading(false);
   };
 
@@ -115,6 +121,8 @@ export function TrashView({ actor }: { actor: any }) {
     { key: "calendarEvents", label: "Wydarzenia kalendarza", items: calendarEvents, getName: (i) => i.title, restoreFn: "restoreCalendarEvent", permDeleteFn: "permanentlyDeleteCalendarEvent" },
     { key: "calendarNotes", label: "Notatki kalendarza", items: calendarNotes, getName: (i) => i.title, restoreFn: "restoreCalendarNote", permDeleteFn: "permanentlyDeleteCalendarNote" },
     { key: "projects", label: "Projekty", items: projects, getName: (i) => i.name, restoreFn: "restoreProject", permDeleteFn: "permanentlyDeleteProject" },
+    { key: "tickets", label: "Zgłoszenia", items: ticketsTrashed, getName: (i) => i.subject + " — " + i.clientName, restoreFn: "restoreTicket", permDeleteFn: "permanentlyDeleteTicket" },
+    { key: "manualChapters", label: "Dokumentacja", items: manualChapters, getName: (i) => i.title, restoreFn: "restoreDeviceManualChapter", permDeleteFn: "permanentlyDeleteDeviceManualChapter" },
   ];
 
   const totalCount = categories.reduce((s, c) => s + c.items.length, 0);

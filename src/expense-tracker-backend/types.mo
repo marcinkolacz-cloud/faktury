@@ -427,4 +427,24 @@ module {
     addedBy : Principal;
     addedAt : Int;
   };
+
+  public type DeviceManualChapter = {
+    id : Nat;
+    deviceId : Nat;
+    title : Text;
+    contentHtml : Text;
+    order : Nat;
+    updatedBy : Text;
+    updatedAt : Int;
+  };
+
+  public type DocHeaderFooterSettings = {
+    headerText : Text;
+    footerText : Text;
+    logoDataUri : Text; // "" = brak własnego logo, użyj domyślnego /bartolini-logo.png
+    skipFirstPage : Bool;
+    showPageNumbers : Bool;
+    updatedBy : Text;
+    updatedAt : Int;
+  };
 };

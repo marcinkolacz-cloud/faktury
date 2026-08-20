@@ -30,6 +30,7 @@ import ContractsApi "mixins/ContractsApi";
 import KsefApi "mixins/KsefApi";
 import EmailSubscribersApi "mixins/EmailSubscribersApi";
 import DevicesApi "mixins/DevicesApi";
+import DeviceManualApi "mixins/DeviceManualApi";
 import AiAgentConfigApi "mixins/AiAgentConfigApi";
 import FlaggedActionsApi "mixins/FlaggedActionsApi";
 import ProjectTemplatesApi "mixins/ProjectTemplatesApi";
@@ -69,6 +70,7 @@ persistent actor {
   let ticketTokens = Map.empty<Text, Nat>();
   let ticketExtras = Map.empty<Nat, Types.TicketExtras>();
   let ticketArchived = Map.empty<Nat, Bool>();
+  let ticketsTrashed = Map.empty<Nat, Int>();
   let ticketAttachments = Map.empty<Nat, Types.TicketAttachmentMeta>();
   let ticketAttachmentChunks = Map.empty<Text, Blob>();
   let recentAttachmentTimes = List.empty<Int>();
@@ -86,6 +88,14 @@ persistent actor {
   let contractsTrashed = Map.empty<Nat, Int>();
   let emailSubscribers = Map.empty<Nat, Types.Subscriber>();
   let devices = Map.empty<Nat, Types.Device>();
+  let deviceManualChapters = Map.empty<Nat, Types.DeviceManualChapter>();
+  let deviceManualChaptersTrashed = Map.empty<Nat, Int>();
+  // Nietrwały (transient) zamek edycji per rozdział: (holder, acquiredAt, lastHeartbeatAt).
+  // Celowo NIE stabilny — blokada to stan tymczasowy i powinna się zerować
+  // przy restarcie/upgrade kanistra, więc unikamy tematu migracji.
+  transient let deviceManualEditLocks = Map.empty<Nat, (Principal, Int, Int)>();
+  let documentationEditors = Map.empty<Principal, Bool>();
+  let docHeaderFooterSettings = Map.empty<Text, Types.DocHeaderFooterSettings>();
   let devicesTrashed = Map.empty<Nat, Int>();
   let deviceServiceEntries = Map.empty<Nat, Types.DeviceServiceEntry>();
   let deviceServiceEntriesV2 = Map.empty<Nat, Types.DeviceServiceEntryV2>();
@@ -198,7 +208,7 @@ persistent actor {
   include AdvancePaymentsApi(advancePayments, accessRoles, advancePaymentsTrashed, moduleAccess);
   include ExpensesApi(expenses, accessRoles, expenseKsefSent, expensesTrashed, moduleAccess);
   include WarehouseApi(warehouseItems, stockMovements, accessRoles, warehouseItemsTrashed, stockMovementsTrashed, moduleAccess, stockMovementPerformer);
-  include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes, moduleAccess);
+  include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes, moduleAccess, ticketsTrashed);
   include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens, ticketAttachmentsTrashed, moduleAccess, ticketAttachmentUploader, ticketDriveAttachments);
   include FilesApi(files, fileChunks, folders, accessRoles, filesTrashed, foldersTrashed, moduleAccess);
   include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles, calendarEventsTrashed, calendarNotesTrashed, moduleAccess, calendarEventCreator);
@@ -207,6 +217,7 @@ persistent actor {
   include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
+  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, documentationEditors, docHeaderFooterSettings, accessRoles, moduleAccess);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 
   // Kwarantanna KSeF → Rejestr Faktur. Osobna, równoległa mapa
@@ -519,6 +530,59 @@ persistent actor {
   public query func validateStaffActionToken(token : Text) : async Bool {
     switch (staffActionTokens.get(token)) {
       case (?exp) { Time.now() < exp };
+      case null { false };
+    };
+  };
+
+  // Jednorazowy mail powitalny przy nowym zgłoszeniu klienta. Celowo
+  // anonimowe (klient wypełniający formularz nie ma żadnej roli), ale
+  // samoograniczające się do dokładnie jednego wysłania na zgłoszenie:
+  // ticketWelcomeSent jest ustawiane na true od razu przy mintowaniu
+  // tokenu (nie dopiero po realnym wysłaniu maila), więc nawet powtórne
+  // wywołanie po błędzie sieciowym nie da drugiego tokenu. Token żyje
+  // tylko 5 minut i jest jednorazowy (consumeTicketWelcomeToken go usuwa),
+  // więc nie da się nim wysłać więcej niż jednego maila.
+  let ticketWelcomeSent = Map.empty<Nat, Bool>();
+  let ticketWelcomeTokens = Map.empty<Text, Int>();
+
+  public shared func requestTicketWelcomeToken(ticketId : Nat) : async ?Text {
+    switch (ticketWelcomeSent.get(ticketId)) {
+      case (?true) { return null };
+      case _ {};
+    };
+    switch (tickets.get(ticketId)) {
+      case null { null };
+      case (?_) {
+        ticketWelcomeSent.add(ticketId, true);
+        let now = Time.now();
+        var expired = List.empty<Text>();
+        for ((t, exp) in ticketWelcomeTokens.entries()) {
+          if (exp < now) { expired.add(t); };
+        };
+        for (t in expired.values()) { ticketWelcomeTokens.remove(t); };
+        let rng = Random.crypto();
+        var token = "";
+        var i = 0;
+        while (i < 32) {
+          let idx = await* rng.natRange(0, 36);
+          token := token # driveTokenChars[idx].toText();
+          i += 1;
+        };
+        ticketWelcomeTokens.add(token, now + 300_000_000_000);
+        ?token;
+      };
+    };
+  };
+
+  // Wywoływane przez Worker (server-to-server) do sprawdzenia i
+  // skonsumowania tokenu — jednorazowe, więc nawet przechwycony token nic
+  // więcej nie zdziała.
+  public shared func consumeTicketWelcomeToken(token : Text) : async Bool {
+    switch (ticketWelcomeTokens.get(token)) {
+      case (?exp) {
+        ticketWelcomeTokens.remove(token);
+        Time.now() < exp;
+      };
       case null { false };
     };
   };

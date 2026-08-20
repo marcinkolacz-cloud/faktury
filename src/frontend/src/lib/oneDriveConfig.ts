@@ -104,11 +104,11 @@ export async function odCreateFolder(path: string, name: string) {
   return resp.json();
 }
 
-export async function odUploadSession(path: string, name: string) {
+export async function odUploadSession(path: string, name: string, conflictBehavior?: string) {
   const resp = await fetch(ONEDRIVE_WORKER_URL + "/uploadSession", {
     method: "POST",
     headers: await authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ path, name }),
+    body: JSON.stringify({ path, name, conflictBehavior }),
   });
   return resp.json();
 }
@@ -177,9 +177,9 @@ export async function odDelete(itemId: string) {
 
 const UPLOAD_CHUNK_SIZE = 10_485_760;
 
-export async function odUploadFile(path: string, file: File, onProgress?: (pct: number) => void) {
+export async function odUploadFile(path: string, file: File, onProgress?: (pct: number) => void, conflictBehavior?: string) {
   if (file.size === 0) return;
-  const session = await odUploadSession(path, file.name);
+  const session = await odUploadSession(path, file.name, conflictBehavior);
   if (!session.uploadUrl) throw new Error("upload_session_failed: " + JSON.stringify(session));
   const total = file.size;
   for (let start = 0; start < total; start += UPLOAD_CHUNK_SIZE) {

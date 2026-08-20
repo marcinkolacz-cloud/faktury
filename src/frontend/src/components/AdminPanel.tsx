@@ -19,6 +19,7 @@ function roleFromVariant(v: any): string {
 export function AdminPanel({ actor }: { actor: any }) {
   const [codes, setCodes] = useState<any[]>([]);
   const [access, setAccess] = useState<any[]>([]);
+  const [docEditors, setDocEditors] = useState<Set<string>>(new Set());
   const [newRole, setNewRole] = useState("write");
   const [lastCode, setLastCode] = useState("");
   const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
@@ -44,6 +45,22 @@ export function AdminPanel({ actor }: { actor: any }) {
     ]);
     setCodes(c);
     setAccess(a);
+    try {
+      const de = await actor.listDocumentationEditors();
+      setDocEditors(new Set(de.map(([p]: [any, boolean]) => p.toString())));
+    } catch {
+      // Non-critical — the doc-editor checkboxes just won't be
+      // pre-checked yet; never let this block the rest of the panel.
+    }
+  };
+
+  const toggleDocEditor = async (principal: any, allowed: boolean) => {
+    try {
+      await actor.setDocumentationEditor(principal, allowed);
+      reload();
+    } catch (e: any) {
+      alert("Błąd zapisu uprawnienia: " + (e?.message || String(e)));
+    }
   };
 
   useEffect(() => {
@@ -123,6 +140,7 @@ export function AdminPanel({ actor }: { actor: any }) {
                 <th className="p-1">Principal</th>
                 <th className="p-1">Rola</th>
                 <th className="p-1">Moduły</th>
+                <th className="p-1" title="Osobne, węższe prawo — nie wystarczy sama rola Zapis">📖 Edycja dokumentacji</th>
                 <th className="p-1"></th>
               </tr>
             </thead>
@@ -151,6 +169,13 @@ export function AdminPanel({ actor }: { actor: any }) {
                   </td>
                   <td className="p-1">
                     <ModuleCheckboxes principal={a.principal} actor={actor} />
+                  </td>
+                  <td className="p-1 text-center">
+                    <input
+                      type="checkbox"
+                      checked={docEditors.has(a.principal.toString())}
+                      onChange={(e) => toggleDocEditor(a.principal, e.target.checked)}
+                    />
                   </td>
                   <td className="p-1">
                     <button onClick={() => revoke(a.principal)} className="text-red-500 text-xs">
