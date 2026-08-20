@@ -38,6 +38,7 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
     { id: "emailSubscribers", label: "Powiadomienia" },
     { id: "devices", label: "Urządzenia" },
     { id: "documentation", label: "📖 Dokumentacja" },
+    { id: "logbook", label: "📘 Dziennik" },
     { id: "agent", label: "🤖 Agent AI" },
   ].filter((t) => allowedModules.includes(t.id === "documentation" ? "devices" : t.id));
   tabs.push({ id: "manual", label: "📖 Instrukcja" });

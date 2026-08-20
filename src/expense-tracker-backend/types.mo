@@ -447,4 +447,29 @@ module {
     updatedBy : Text;
     updatedAt : Int;
   };
+
+  public type LogbookActivityType = { #szkolenie; #komercyjne; #techniczne };
+
+  public type LogbookEntry = {
+    id : Nat;
+    dataText : Text;
+    instruktorEmail : Text;
+    instruktorName : Text;
+    szkoleni : Text;
+    rodzajAktywnosci : LogbookActivityType;
+    godzRozpoczecia : Text;
+    godzZakonczenia : Text;
+    licznikPoSesji : Text;
+    brakUsterek : Bool;
+    opisUsterki : Text;
+    createdAt : Int;
+  };
+
+  // Public-facing summary shown to admins — never includes pinHash/salt.
+  public type LogbookInstructorView = {
+    email : Text;
+    name : Text;
+    active : Bool;
+    createdAt : Int;
+  };
 };

@@ -1117,7 +1117,16 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // applyLiveHeadingNumbers), so saved content should stay clean of
     // them to avoid staleness and keep the stored HTML minimal.
     const html = editorRef.current.innerHTML.replace(/\s*data-num="[^"]*"/g, "");
-    await actor.updateDeviceManualChapter(active.id, active.title, html, "");
+    const CHUNK_SIZE = 1_000_000;
+    if (html.length > CHUNK_SIZE) {
+      await actor.beginChapterUpload(active.id);
+      for (let i = 0; i < html.length; i += CHUNK_SIZE) {
+        await actor.appendChapterChunk(active.id, html.slice(i, i + CHUNK_SIZE));
+      }
+      await actor.commitChapterUpload(active.id, active.title, "");
+    } else {
+      await actor.updateDeviceManualChapter(active.id, active.title, html, "");
+    }
     setDirty(false);
     setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: html } : c)));
     if (silent) {

@@ -12,6 +12,7 @@ const ALL_MODULES = [
   { id: "contracts", label: "Umowy" },
   { id: "emailSubscribers", label: "Powiadomienia e-mail" },
   { id: "devices", label: "Rejestr urządzeń" },
+  { id: "logbook", label: "Dziennik użytkowania" },
   { id: "agent", label: "Agent AI" },
 ];
 

@@ -19,6 +19,7 @@ mixin (
   deviceManualChapters : Map.Map<Nat, Types.DeviceManualChapter>,
   deviceManualChaptersTrashed : Map.Map<Nat, Int>,
   deviceManualEditLocks : Map.Map<Nat, (Principal, Int, Int)>,
+  deviceManualChapterUploadBuffers : Map.Map<Nat, Text>,
   documentationEditors : Map.Map<Principal, Bool>,
   docHeaderFooterSettings : Map.Map<Text, Types.DocHeaderFooterSettings>,
   accessRoles : Map.Map<Principal, Types.Role>,
@@ -204,6 +205,54 @@ mixin (
 
   public shared ({ caller }) func updateDeviceManualChapter(id : Nat, title : Text, contentHtml : Text, updatedBy : Text) : async Bool {
     requireManualWrite(caller);
+    switch (deviceManualEditLocks.get(id)) {
+      case (?entry) {
+        let (holder, _, _) = entry;
+        if (holder != caller and lockIsActive(entry)) {
+          Runtime.trap("Edit lock held by another user — refresh and re-acquire the lock before saving");
+        };
+      };
+      case null {};
+    };
+    switch (deviceManualChapters.get(id)) {
+      case (?ch) {
+        deviceManualChapters.add(id, { ch with title; contentHtml; updatedBy; updatedAt = Time.now() });
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  func requireManualLockOk(caller : Principal, id : Nat) {
+    requireManualWrite(caller);
+    switch (deviceManualEditLocks.get(id)) {
+      case (?entry) {
+        let (holder, _, _) = entry;
+        if (holder != caller and lockIsActive(entry)) {
+          Runtime.trap("Edit lock held by another user — refresh and re-acquire the lock before saving");
+        };
+      };
+      case null {};
+    };
+  };
+
+  public shared ({ caller }) func beginChapterUpload(id : Nat) : async Bool {
+    requireManualLockOk(caller, id);
+    deviceManualChapterUploadBuffers.add(id, "");
+    true;
+  };
+
+  public shared ({ caller }) func appendChapterChunk(id : Nat, chunk : Text) : async Bool {
+    requireManualLockOk(caller, id);
+    let prev = switch (deviceManualChapterUploadBuffers.get(id)) { case (?b) b; case null "" };
+    deviceManualChapterUploadBuffers.add(id, prev # chunk);
+    true;
+  };
+
+  public shared ({ caller }) func commitChapterUpload(id : Nat, title : Text, updatedBy : Text) : async Bool {
+    requireManualLockOk(caller, id);
+    let contentHtml = switch (deviceManualChapterUploadBuffers.get(id)) { case (?b) b; case null "" };
+    deviceManualChapterUploadBuffers.remove(id);
     switch (deviceManualChapters.get(id)) {
       case (?ch) {
         deviceManualChapters.add(id, { ch with title; contentHtml; updatedBy; updatedAt = Time.now() });

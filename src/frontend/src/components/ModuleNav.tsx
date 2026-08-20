@@ -15,6 +15,7 @@ export function ModuleNav({ current, onNavigate, actor }: { current: string; onN
     { id: "ksef", label: "KSeF" },
     { id: "emailSubscribers", label: "Powiadomienia" },
     { id: "devices", label: "Urządzenia" },
+    { id: "logbook", label: "Dziennik" },
   ].filter((t) => allowedModules.includes(t.id));
 
   return (

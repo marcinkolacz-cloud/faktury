@@ -24,9 +24,10 @@ export function TrashView({ actor }: { actor: any }) {
   const [projects, setProjects] = useState<any[]>([]);
   const [ticketsTrashed, setTicketsTrashed] = useState<any[]>([]);
   const [manualChapters, setManualChapters] = useState<any[]>([]);
+  const [logbookEntries, setLogbookEntries] = useState<any[]>([]);
 
   const reload = async () => {
-    const [e, p, a, w, s, ce, cn, pr, tk, mc] = await Promise.all([
+    const [e, p, a, w, s, ce, cn, pr, tk, mc, lb] = await Promise.all([
       actor.listTrashedExpenses(),
       actor.listTrashedAdvancePayments(),
       actor.listTrashedTicketAttachments(),
@@ -37,6 +38,7 @@ export function TrashView({ actor }: { actor: any }) {
       actor.listTrashedProjects(),
       actor.listTrashedTickets(),
       actor.listTrashedDeviceManualChapters(),
+      actor.listTrashedLogbookEntries(),
     ]);
     setExpenses(e);
     setPayments(p);
@@ -48,6 +50,7 @@ export function TrashView({ actor }: { actor: any }) {
     setProjects(pr);
     setTicketsTrashed(tk);
     setManualChapters(mc);
+    setLogbookEntries(lb);
     setLoading(false);
   };
 
@@ -123,6 +126,7 @@ export function TrashView({ actor }: { actor: any }) {
     { key: "projects", label: "Projekty", items: projects, getName: (i) => i.name, restoreFn: "restoreProject", permDeleteFn: "permanentlyDeleteProject" },
     { key: "tickets", label: "Zgłoszenia", items: ticketsTrashed, getName: (i) => i.subject + " — " + i.clientName, restoreFn: "restoreTicket", permDeleteFn: "permanentlyDeleteTicket" },
     { key: "manualChapters", label: "Dokumentacja", items: manualChapters, getName: (i) => i.title, restoreFn: "restoreDeviceManualChapter", permDeleteFn: "permanentlyDeleteDeviceManualChapter" },
+    { key: "logbookEntries", label: "Dziennik użytkowania", items: logbookEntries, getName: (i) => i.dataText + " — " + i.instruktorName, restoreFn: "restoreLogbookEntry", permDeleteFn: "permanentlyDeleteLogbookEntry" },
   ];
 
   const totalCount = categories.reduce((s, c) => s + c.items.length, 0);

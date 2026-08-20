@@ -10,6 +10,8 @@ import { CalendarModule } from "./components/CalendarModule";
 import { UploadProvider } from "./providers/UploadContext";
 import { PublicTicketForm } from "./components/PublicTicketForm";
 import { TicketStatusPage } from "./components/TicketStatusPage";
+import { LogbookPublicForm } from "./components/LogbookPublicForm";
+import { LogbookModule } from "./components/LogbookModule";
 import { TicketsModule } from "./components/TicketsModule";
 import { DriveModule } from "./components/DriveModule";
 import { OrdersModule } from "./components/OrdersModule";
@@ -199,6 +201,9 @@ function ModuleRouter() {
   if (baseModule === "documentation") {
     return <DocumentationModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
+  if (baseModule === "logbook") {
+    return <LogbookModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
+  }
   if (baseModule === "agent") {
     return <AgentModule onHome={() => setModule(null)} onNavigate={setModule} currentModule={baseModule} />;
   }
@@ -217,10 +222,18 @@ function ModuleRouter() {
 
 export default function App() {
   const isSupportSubdomain = window.location.hostname.startsWith("support.");
+  const isLogbookSubdomain = window.location.hostname.startsWith("logbook.") || window.location.hostname.startsWith("dziennik.");
   if (window.location.pathname === "/zgloszenie" || (isSupportSubdomain && window.location.pathname === "/")) {
     return (
       <ThemeProvider>
         <PublicTicketForm />
+      </ThemeProvider>
+    );
+  }
+  if (window.location.pathname === "/dziennik" || (isLogbookSubdomain && window.location.pathname === "/")) {
+    return (
+      <ThemeProvider>
+        <LogbookPublicForm />
       </ThemeProvider>
     );
   }

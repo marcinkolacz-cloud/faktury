@@ -38,6 +38,7 @@ import WelcomeSummaryApi "mixins/WelcomeSummaryApi";
 import ProjectBuildsApi "mixins/ProjectBuildsApi";
 import ChatArchiveApi "mixins/ChatArchiveApi";
 import AgentKnowledgeApi "mixins/AgentKnowledgeApi";
+import LogbookApi "mixins/LogbookApi";
 
 persistent actor {
   let projects = Map.empty<Nat, Types.Project>();
@@ -94,8 +95,25 @@ persistent actor {
   // Celowo NIE stabilny — blokada to stan tymczasowy i powinna się zerować
   // przy restarcie/upgrade kanistra, więc unikamy tematu migracji.
   transient let deviceManualEditLocks = Map.empty<Nat, (Principal, Int, Int)>();
+  // Nietrwały bufor chunkowanego zapisu treści rozdziału (omija limit ingress IC ~2MB).
+  transient let deviceManualChapterUploadBuffers = Map.empty<Nat, Text>();
   let documentationEditors = Map.empty<Principal, Bool>();
   let docHeaderFooterSettings = Map.empty<Text, Types.DocHeaderFooterSettings>();
+  // Dziennik użytkowania urządzeń — publiczny formularz z PIN-auth instruktorów
+  // (bez Internet Identity). PIN nigdy nie jest trzymany w plaintext, tylko
+  // hash + sól per instruktor.
+  let logbookEntries = Map.empty<Nat, Types.LogbookEntry>();
+  let logbookEntriesTrashed = Map.empty<Nat, Int>();
+  let logbookEntrySignatures = Map.empty<Nat, Text>();
+  let logbookEntryDeviceId = Map.empty<Nat, Nat>();
+  let logbookInstructorPinHash = Map.empty<Text, Blob>();
+  let logbookInstructorSalt = Map.empty<Text, Text>();
+  let logbookInstructorName = Map.empty<Text, Text>();
+  let logbookInstructorActive = Map.empty<Text, Bool>();
+  let logbookInstructorCreatedAt = Map.empty<Text, Int>();
+  let logbookSessions = Map.empty<Text, (Text, Int)>();
+  let logbookLoginAttempts = Map.empty<Text, (Nat, Int)>();
+  let recentLogbookSubmissions = List.empty<Int>();
   let devicesTrashed = Map.empty<Nat, Int>();
   let deviceServiceEntries = Map.empty<Nat, Types.DeviceServiceEntry>();
   let deviceServiceEntriesV2 = Map.empty<Nat, Types.DeviceServiceEntryV2>();
@@ -217,7 +235,8 @@ persistent actor {
   include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
-  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, documentationEditors, docHeaderFooterSettings, accessRoles, moduleAccess);
+  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, accessRoles, moduleAccess);
+  include LogbookApi(logbookEntries, logbookEntriesTrashed, logbookEntrySignatures, logbookEntryDeviceId, devices, logbookInstructorPinHash, logbookInstructorSalt, logbookInstructorName, logbookInstructorActive, logbookInstructorCreatedAt, logbookSessions, logbookLoginAttempts, recentLogbookSubmissions, accessRoles, moduleAccess);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 
   // Kwarantanna KSeF → Rejestr Faktur. Osobna, równoległa mapa
