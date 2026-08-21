@@ -1,0 +1,38 @@
+  const buildChapterPreviewHtml = async (): Promise<string> => {
+    const selected = chapters.filter((c) => selectedForPrint.has(c.id));
+    if (selected.length === 0) {
+      return `<html><body style="font-family:Arial,sans-serif;padding:24px;color:#888;">
+        Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej), żeby zobaczyć podgląd wydruku.
+      </body></html>`;
+    }
+    const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
+    const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
+    const numbered = numberHeadingsForExport(await getChaptersForExport(), selectedForPrint);
+    const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
+    return `<html><head><meta charset="utf-8"/><title>Podgląd wydruku</title>
+      <style>
+        @page { size: A4; margin: 0; }
+        body{font-family:Arial,sans-serif;padding:0;margin:0;background:#888;}
+        .sheet{width:210mm;min-height:297mm;margin:12px auto;background:#fff;box-shadow:0 0 8px rgba(0,0,0,0.4);box-sizing:border-box;}
+        .page-header{font-size:9pt;color:#555;border-bottom:1px solid #ccc;padding:6px 24px;height:3.75cm;box-sizing:border-box;display:flex;align-items:flex-end;}
+        .page-footer{font-size:9pt;color:#555;border-top:1px solid #ccc;padding:6px 24px;height:1.27cm;box-sizing:border-box;text-align:center;}
+        .page-content{padding:0 1.27cm;min-height:calc(297mm - 3.75cm - 1.27cm);}
+        .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
+        h1{color:#1a1a8c;}
+        img{max-width:100%;}
+      </style>
+      </head><body>
+      <div class="sheet">
+        ${hfSettings.skipFirstPage ? "" : `<div class="page-header">${headerHtml}</div>`}
+        <div class="page-content" id="doc">${body}</div>
+        <div class="page-footer">${footerHtml}</div>
+      </div>
+      </body></html>`;
+  };
+  const openPrintPreview = async () => {
+    setPreviewHtml(await buildChapterPreviewHtml());
+    setShowPrintPreview(true);
+  };
+  const refreshPrintPreview = async () => {
+    setPreviewHtml(await buildChapterPreviewHtml());
+  };

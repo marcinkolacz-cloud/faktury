@@ -1,0 +1,1 @@
+        .page-content{--text-secondary:#5c574d;--bg-hover:#efece3;}

@@ -1,0 +1,2 @@
+                        width: fitToScreen ? "100%" : "210mm",
+                        maxWidth: fitToScreen ? "1600px" : "210mm",

@@ -1,4 +1,4 @@
-import { odList, odCreateFolder, odUploadFile, odDelete, odDownloadUrl, odDownloadFileBlob } from "./oneDriveConfig";
+import { odList, odCreateFolder, odUploadFile, odDelete, odDownloadUrl, odDownloadFileBlob, odRename } from "./oneDriveConfig";
 
 const ROOT_FOLDER = "Dokumentacje";
 
@@ -55,6 +55,31 @@ export async function syncChapterToDrive(
   const blob = new Blob([contentHtml], { type: "text/html" });
   const file = new File([blob], fileName, { type: "text/html" });
   await odUploadFile(folderPath, file, undefined, "replace");
+}
+
+// Renames the chapter's Drive file WITHOUT touching its content - used by
+// confirmRename(), which (post-migration) never has the real contentHtml
+// available for a chapter that isn't the currently-open one (the sidebar
+// list only carries metadata; content lives in the editor / on Drive).
+// Calling syncChapterToDrive() for a plain rename would re-upload with an
+// empty/stale contentHtml and silently wipe the chapter's real content.
+export async function renameChapterOnDrive(
+  deviceLabel: string,
+  chapterId: number,
+  order: number,
+  title: string,
+): Promise<void> {
+  const deviceFolder = sanitizeName(deviceLabel);
+  const folderPath = `${ROOT_FOLDER}/${deviceFolder}`;
+  const idTag = `[${chapterId}]`;
+  const newFileName = `${String(order + 1).padStart(2, "0")} - ${sanitizeName(title)} ${idTag}.html`;
+
+  const listing = await odList(folderPath);
+  const items = listing.items || [];
+  const existing = items.find((i: any) => typeof i.name === "string" && i.name.includes(idTag));
+  if (!existing) return; // chapter never synced to Drive yet - nothing to rename
+  if (existing.name === newFileName) return;
+  await odRename(existing.id, newFileName);
 }
 
 async function nextImageNumber(imagesFolderPath: string): Promise<number> {

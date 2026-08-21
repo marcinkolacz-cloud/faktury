@@ -1,0 +1,7 @@
+        .page-content{padding:0 1.27cm;min-height:${CONTENT_H_MM}mm;flex:1;overflow:visible;}
+        .page-number{font-size:8pt;color:#999;text-align:center;padding:2px 0 6px;flex-shrink:0;}
+        .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
+        h1{color:#1a1a8c;}
+        img{max-width:100%;}
+        #measure{position:absolute;left:-99999px;top:0;width:${contentWidthPx}px;visibility:hidden;}
+      </style>

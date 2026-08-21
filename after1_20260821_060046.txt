@@ -1,0 +1,9 @@
+    const contentWidthPx = Math.round(CONTENT_W_MM * MM_TO_PX);
+    // The preview is a standalone iframe (no access to the app's own
+    // stylesheet), but chapter HTML relies on COUNTER_CSS's rules (font,
+    // default bold weight, table border/background via CSS vars, list
+    // styles, comment highlight) which live under "#doc-editor-content"
+    // in the real editor. Re-scope that same CSS onto ".page-content" and
+    // supply light-theme fallback values for the vars it references, so
+    // tables/lists/fonts/colors render the same as in the editor.
+    const previewCounterCss = COUNTER_CSS.replace(/#doc-editor-content/g, ".page-content");

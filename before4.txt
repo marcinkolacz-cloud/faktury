@@ -1,0 +1,5 @@
+        .sheet{width:210mm;min-height:297mm;margin:12px auto;background:#fff;box-shadow:0 0 8px rgba(0,0,0,0.4);box-sizing:border-box;display:flex;flex-direction:column;}
+        .page-header{font-size:9pt;color:#555;border-bottom:1px solid #ccc;padding:6px 24px;height:3.75cm;box-sizing:border-box;display:flex;align-items:flex-end;flex-shrink:0;}
+        .page-footer{font-size:9pt;color:#555;border-top:1px solid #ccc;padding:6px 24px;height:1.27cm;box-sizing:border-box;text-align:center;flex-shrink:0;}
+        .page-content{padding:0 1.27cm;min-height:${CONTENT_H_MM}mm;flex:1;overflow:visible;--text-secondary:#5c574d;--bg-hover:#efece3;}
+        .page-number{font-size:8pt;color:#999;text-align:center;padding:2px 0 6px;flex-shrink:0;}

@@ -1,0 +1,3 @@
+    try {
+      await syncChapterToDrive(deviceLabel, ch.id, ch.order, title, ch.contentHtml);
+    } catch { /* best-effort — the rename itself already succeeded */ }

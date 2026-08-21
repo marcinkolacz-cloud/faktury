@@ -3,6 +3,30 @@ import { useAuthContext } from "../providers/AuthProvider";
 import { useTheme } from "../providers/ThemeProvider";
 import { ImportExport } from "./ImportExport";
 
+const EXPANDED_W = 220;
+const COLLAPSED_W = 64;
+
+type Tab = { id: string; label: string; icon: string; group: string };
+
+const GROUPS = ["Główne", "Operacje", "Dokumenty", "Narzędzia"];
+
+const ALL_TABS: Tab[] = [
+  { id: "invoices", label: "Rejestr Faktur", icon: "🧾", group: "Główne" },
+  { id: "projects", label: "Projekty", icon: "📁", group: "Główne" },
+  { id: "calendar", label: "Kalendarz", icon: "📅", group: "Operacje" },
+  { id: "warehouse", label: "Magazyn", icon: "📦", group: "Operacje" },
+  { id: "tickets", label: "Zgłoszenia", icon: "🎫", group: "Operacje" },
+  { id: "orders", label: "Zamówienia", icon: "🛒", group: "Operacje" },
+  { id: "contracts", label: "Umowy", icon: "📄", group: "Operacje" },
+  { id: "ksef", label: "KSeF", icon: "🧮", group: "Operacje" },
+  { id: "drive", label: "Bartolini Drive", icon: "☁️", group: "Dokumenty" },
+  { id: "documentation", label: "Dokumentacja", icon: "📖", group: "Dokumenty" },
+  { id: "logbook", label: "Dziennik", icon: "📘", group: "Dokumenty" },
+  { id: "devices", label: "Urządzenia", icon: "🖥️", group: "Narzędzia" },
+  { id: "emailSubscribers", label: "Powiadomienia", icon: "🔔", group: "Narzędzia" },
+  { id: "agent", label: "Agent AI", icon: "🤖", group: "Narzędzia" },
+];
+
 export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, payments, projects, onDataChange }: {
   currentModule: string;
   onNavigate: (m: string) => void;
@@ -18,6 +42,7 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
   const { theme, toggleTheme } = useTheme();
   const [isAdmin, setIsAdmin] = useState(false);
   const [allowedModules, setAllowedModules] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "1");
 
   useEffect(() => {
     if (!actor) return;
@@ -25,78 +50,95 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
     actor.getMyModules().then(setAllowedModules);
   }, [actor]);
 
-  const tabs = [
-    { id: "invoices", label: "Rejestr Faktur" },
-    { id: "projects", label: "Projekty" },
-    { id: "calendar", label: "Kalendarz" },
-    { id: "warehouse", label: "Magazyn" },
-    { id: "tickets", label: "Zgłoszenia" },
-    { id: "orders", label: "Zamówienia" },
-    { id: "contracts", label: "Umowy" },
-    { id: "ksef", label: "KSeF" },
-    { id: "drive", label: "Bartolini Drive" },
-    { id: "emailSubscribers", label: "Powiadomienia" },
-    { id: "devices", label: "Urządzenia" },
-    { id: "documentation", label: "📖 Dokumentacja" },
-    { id: "logbook", label: "📘 Dziennik" },
-    { id: "agent", label: "🤖 Agent AI" },
-  ].filter((t) => allowedModules.includes(t.id === "documentation" ? "devices" : t.id));
-  tabs.push({ id: "manual", label: "📖 Instrukcja" });
+  useEffect(() => {
+    localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+    const w = collapsed ? COLLAPSED_W : EXPANDED_W;
+    document.body.style.paddingLeft = w + "px";
+    document.body.style.transition = "padding-left 0.15s ease";
+    return () => {
+      document.body.style.paddingLeft = "";
+    };
+  }, [collapsed]);
+
+  const tabs = ALL_TABS.filter((t) => allowedModules.includes(t.id === "documentation" ? "devices" : t.id));
+  tabs.push({ id: "manual", label: "Instrukcja", icon: "📚", group: "Narzędzia" });
+
+  const width = collapsed ? COLLAPSED_W : EXPANDED_W;
+
+  const NavBtn = ({ id, icon, label, onClick }: { id: string; icon: string; label: string; onClick: () => void }) => (
+    <button
+      key={id}
+      onClick={onClick}
+      title={collapsed ? label : undefined}
+      className={
+        "w-full flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors text-left " +
+        (currentModule === id ? "bg-cyan-600 text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]")
+      }
+    >
+      <span className="text-base leading-none shrink-0">{icon}</span>
+      {!collapsed && <span className="truncate">{label}</span>}
+    </button>
+  );
 
   return (
-    <div className="flex items-center justify-between flex-wrap gap-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-2 sm:p-3">
-      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-        {isAdmin && (
-          <button
-            onClick={() => onNavigate("admin")}
-            className={
-              "px-2.5 py-2 sm:px-3 sm:py-1.5 text-sm rounded font-medium transition-colors " +
-              (currentModule === "admin" ? "bg-cyan-600 text-white" : "border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]")
-            }
-          >
-            Admin
-          </button>
-        )}
-        <button onClick={onHome} className="px-2.5 py-2 sm:px-3 sm:py-1.5 text-sm border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]">
-          Menu główne
-        </button>
-        <div className="w-px h-6 bg-[var(--bg-hover)] mx-1 hidden sm:block" />
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => onNavigate(t.id)}
-            className={
-              "px-2.5 py-2 sm:px-3 sm:py-1.5 text-sm rounded font-medium transition-colors " +
-              (currentModule === t.id ? "bg-cyan-600 text-white" : "border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]")
-            }
-          >
-            {t.label}
-          </button>
-        ))}
+    <aside
+      className="fixed inset-y-0 left-0 z-40 flex flex-col bg-[var(--bg-card)] border-r border-[var(--border-color)] overflow-y-auto overflow-x-hidden"
+      style={{ width }}
+    >
+      <div className="flex items-center gap-2 px-3 py-3 border-b border-[var(--border-color)]">
+        <label className="flex items-center gap-2 cursor-pointer select-none" title="Zwiń/rozwiń menu">
+          <input
+            type="checkbox"
+            checked={!collapsed}
+            onChange={(e) => setCollapsed(!e.target.checked)}
+            className="w-4 h-4 accent-cyan-600 shrink-0"
+          />
+          {!collapsed && <span className="text-xs text-[var(--text-secondary)]">Menu</span>}
+        </label>
       </div>
-      <div className="flex items-center gap-1.5 sm:gap-2">
+
+      <div className="flex-1 flex flex-col gap-1 p-2">
+        <NavBtn id="home" icon="🏠" label="Menu główne" onClick={onHome} />
+        {isAdmin && <NavBtn id="admin" icon="🛡️" label="Admin" onClick={() => onNavigate("admin")} />}
+        <div className="h-px bg-[var(--border-color)] my-1" />
+        {GROUPS.map((g) => {
+          const groupTabs = tabs.filter((t) => t.group === g);
+          if (groupTabs.length === 0) return null;
+          return (
+            <div key={g} className="mt-1">
+              {!collapsed && (
+                <div className="px-3 pb-1 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{g}</div>
+              )}
+              <div className="flex flex-col gap-1">
+                {groupTabs.map((t) => (
+                  <NavBtn key={t.id} id={t.id} icon={t.icon} label={t.label} onClick={() => onNavigate(t.id)} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="p-2 border-t border-[var(--border-color)] flex flex-col gap-1">
         {expenses && payments && projects && onDataChange && (
-          <ImportExport expenses={expenses} payments={payments} projects={projects} actor={actor} onChange={onDataChange} />
+          <div className={collapsed ? "flex justify-center" : ""}>
+            <ImportExport expenses={expenses} payments={payments} projects={projects} actor={actor} onChange={onDataChange} />
+          </div>
         )}
-        <button
+        <NavBtn
+          id="help"
+          icon="❓"
+          label="Pomoc"
           onClick={() => onNavigate(currentModule && currentModule !== "manual" ? "manual#" + currentModule : "manual")}
-          title="Pomoc — instrukcja dla tego modułu"
-          className="px-2.5 py-2 sm:px-3 sm:py-1.5 text-sm border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]"
-        >
-          ❓
-        </button>
-        <button onClick={toggleTheme} className="px-2.5 py-2 sm:px-3 sm:py-1.5 text-sm border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]">
-          {theme === "dark" ? "☀️" : "🌙"}
-        </button>
-        {principalText && (
-          <span className="font-mono text-[10px] text-[var(--text-muted)] hidden sm:inline" title={principalText}>
+        />
+        <NavBtn id="theme" icon={theme === "dark" ? "☀️" : "🌙"} label={theme === "dark" ? "Jasny motyw" : "Ciemny motyw"} onClick={toggleTheme} />
+        {principalText && !collapsed && (
+          <span className="font-mono text-[10px] text-[var(--text-muted)] px-3" title={principalText}>
             {principalText.slice(0, 5)}...{principalText.slice(-3)}
           </span>
         )}
-        <button onClick={logout} className="px-2.5 py-2 sm:px-3 sm:py-1.5 text-sm border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]">
-          Wyloguj
-        </button>
+        <NavBtn id="logout" icon="🚪" label="Wyloguj" onClick={logout} />
       </div>
-    </div>
+    </aside>
   );
 }

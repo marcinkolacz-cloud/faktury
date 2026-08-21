@@ -1,0 +1,23 @@
+  const [fitToScreen, setFitToScreen] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(100);
+  // 210mm in CSS px at the standard 96dpi reference used everywhere else
+  // in this file (print preview, export) - must stay ONE authoritative
+  // width so "Dopasuj do ekranu" only zooms (transform:scale), never
+  // reflows text at a wider-than-A4 content width.
+  const A4_WIDTH_PX = (210 * 96) / 25.4;
+  useEffect(() => {
+    if (!fitToScreen) {
+      setZoomLevel(100);
+      return;
+    }
+    const container = commentAreaRef.current;
+    if (!container) return;
+    const recalc = () => {
+      const available = container.clientWidth - 48;
+      const pct = Math.min(200, Math.max(30, Math.floor((available / A4_WIDTH_PX) * 100)));
+      setZoomLevel(pct);
+    };
+    recalc();
+    window.addEventListener("resize", recalc);
+    return () => window.removeEventListener("resize", recalc);
+  }, [fitToScreen]);

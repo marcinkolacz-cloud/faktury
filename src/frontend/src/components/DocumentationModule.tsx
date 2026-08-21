@@ -3,7 +3,7 @@ import { useAuthContext } from "../providers/AuthProvider";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { setDriveActor } from "../lib/oneDriveConfig";
-import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive } from "../lib/documentationDriveSync";
+import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive } from "../lib/documentationDriveSync";
 import { convertDocxToHtml } from "../lib/docxImport";
 
 // SECURITY / DESIGN NOTE: the Agent AI chat (FloatingAgentChat.tsx) is
@@ -155,7 +155,48 @@ type HeaderFooterSettings = {
   logoDataUri: string;
   skipFirstPage: boolean;
   showPageNumbers: boolean;
+  // Extra fields below are stored client-side only (localStorage), not
+  // sent to the backend - adding them to the on-chain candid record would
+  // require a Motoko stable-storage migration, which isn't worth it for
+  // what's essentially display preferences. headerText/footerText above
+  // double as "odd page header" / "center footer" for backward compat.
+  headerTextEven: string;
+  footerTextLeft: string;
+  footerTextRight: string;
+  enableHeader: boolean;
+  enableFooter: boolean;
 };
+
+const HF_EXTRA_STORAGE_KEY = "faktury_doc_hf_extra_v1";
+
+function loadHfExtras(): Pick<HeaderFooterSettings, "headerTextEven" | "footerTextLeft" | "footerTextRight" | "enableHeader" | "enableFooter"> {
+  try {
+    const raw = localStorage.getItem(HF_EXTRA_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        headerTextEven: parsed.headerTextEven ?? "",
+        footerTextLeft: parsed.footerTextLeft ?? "",
+        footerTextRight: parsed.footerTextRight ?? "",
+        enableHeader: parsed.enableHeader ?? true,
+        enableFooter: parsed.enableFooter ?? true,
+      };
+    }
+  } catch { /* fall back to defaults below */ }
+  return { headerTextEven: "", footerTextLeft: "", footerTextRight: "", enableHeader: true, enableFooter: true };
+}
+
+function saveHfExtras(s: HeaderFooterSettings) {
+  try {
+    localStorage.setItem(HF_EXTRA_STORAGE_KEY, JSON.stringify({
+      headerTextEven: s.headerTextEven,
+      footerTextLeft: s.footerTextLeft,
+      footerTextRight: s.footerTextRight,
+      enableHeader: s.enableHeader,
+      enableFooter: s.enableFooter,
+    }));
+  } catch { /* localStorage unavailable - extras just won't persist */ }
+}
 
 const DEFAULT_HF_SETTINGS: HeaderFooterSettings = {
   headerText: "",
@@ -163,6 +204,11 @@ const DEFAULT_HF_SETTINGS: HeaderFooterSettings = {
   logoDataUri: "",
   skipFirstPage: true,
   showPageNumbers: true,
+  headerTextEven: "",
+  footerTextLeft: "",
+  footerTextRight: "",
+  enableHeader: true,
+  enableFooter: true,
 };
 
 async function fetchLogoDataUri(): Promise<string | null> {
@@ -283,7 +329,29 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [fitToScreen, setFitToScreen] = useState(false);
+  const [twoPageView, setTwoPageView] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
+  // 210mm in CSS px at the standard 96dpi reference used everywhere else
+  // in this file (print preview, export) - must stay ONE authoritative
+  // width so "Dopasuj do ekranu" only zooms (transform:scale), never
+  // reflows text at a wider-than-A4 content width.
+  const A4_WIDTH_PX = (210 * 96) / 25.4;
+  useEffect(() => {
+    if (!fitToScreen) {
+      setZoomLevel(100);
+      return;
+    }
+    const container = commentAreaRef.current;
+    if (!container) return;
+    const recalc = () => {
+      const available = container.clientWidth - 48;
+      const pct = Math.min(200, Math.max(30, Math.floor((available / A4_WIDTH_PX) * 100)));
+      setZoomLevel(pct);
+    };
+    recalc();
+    window.addEventListener("resize", recalc);
+    return () => window.removeEventListener("resize", recalc);
+  }, [fitToScreen]);
   const [dirty, setDirty] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [renamingId, setRenamingId] = useState<number | null>(null);
@@ -305,11 +373,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [lockedBy, setLockedBy] = useState<string | null>(null);
   const [lockBusyMsg, setLockBusyMsg] = useState("");
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const previewGridView = false;
   const [showTableModal, setShowTableModal] = useState(false);
   const [tableDraft, setTableDraft] = useState({ rows: 3, cols: 3, headerRow: false, colWidthCm: "", rowHeightCm: "" });
   const A4_USABLE_WIDTH_CM = 18.46; // 21cm - 1.27cm marginesy z każdej strony
   const tableInsertRangeRef = useRef<Range | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
   // all-selected so behavior matches the previous always-everything
   // export; only truly NEW chapter ids get auto-added as selected, so a
@@ -336,17 +406,50 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       return next;
     });
   };
-  const [previewPos, setPreviewPos] = useState({ x: 80, y: 60 });
-  const previewDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const onPreviewDragStart = (e: React.MouseEvent) => {
-    previewDragRef.current = { startX: e.clientX, startY: e.clientY, origX: previewPos.x, origY: previewPos.y };
+  // Floating, draggable + resizable editor window (opens near-fullscreen
+  // by default) - replaces the old fixed inset-0 fullscreen overlay so the
+  // person can shrink/move it instead of always being locked to 100%.
+  const [editWinRect, setEditWinRect] = useState(() => ({
+    x: Math.max(20, Math.round(window.innerWidth * 0.02)),
+    y: Math.max(20, Math.round(window.innerHeight * 0.03)),
+    width: Math.round(window.innerWidth * 0.96),
+    height: Math.round(window.innerHeight * 0.94),
+  }));
+  const editDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const onEditWinDragStart = (e: React.MouseEvent) => {
+    editDragRef.current = { startX: e.clientX, startY: e.clientY, origX: editWinRect.x, origY: editWinRect.y };
     const onMove = (ev: MouseEvent) => {
-      if (!previewDragRef.current) return;
-      const { startX, startY, origX, origY } = previewDragRef.current;
-      setPreviewPos({ x: origX + (ev.clientX - startX), y: origY + (ev.clientY - startY) });
+      if (!editDragRef.current) return;
+      const { startX, startY, origX, origY } = editDragRef.current;
+      setEditWinRect((r) => {
+        const nx = Math.min(Math.max(0, origX + (ev.clientX - startX)), window.innerWidth - 100);
+        const ny = Math.min(Math.max(0, origY + (ev.clientY - startY)), window.innerHeight - 60);
+        return { ...r, x: nx, y: ny };
+      });
     };
     const onUp = () => {
-      previewDragRef.current = null;
+      editDragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+  const editResizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number } | null>(null);
+  const onEditWinResizeStart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    editResizeRef.current = { startX: e.clientX, startY: e.clientY, origW: editWinRect.width, origH: editWinRect.height };
+    const onMove = (ev: MouseEvent) => {
+      if (!editResizeRef.current) return;
+      const { startX, startY, origW, origH } = editResizeRef.current;
+      setEditWinRect((r) => ({
+        ...r,
+        width: Math.max(400, origW + (ev.clientX - startX)),
+        height: Math.max(300, origH + (ev.clientY - startY)),
+      }));
+    };
+    const onUp = () => {
+      editResizeRef.current = null;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -358,6 +461,83 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [pollTicks, setPollTicks] = useState(0);
   const [pollError, setPollError] = useState<string>("");
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const [pageMarkers, setPageMarkers] = useState<number[]>([]);
+
+  // Visual guide only: shows roughly where a physical A4 page would end,
+  // using the same content-height budget as the print preview/PDF engine.
+  // Read-only measurement (getBoundingClientRect) - never mutates the
+  // editable DOM, unlike the preview's hoistPageBreaks (which is safe
+  // there only because it operates on a disposable, hidden clone).
+  const recomputePageMarkers = () => {
+    const content = editorRef.current;
+    if (!content || !editMode) { setPageMarkers([]); return; }
+    const outer = content.parentElement;
+    if (!outer) { setPageMarkers([]); return; }
+    const CONTENT_H_MM = 297 - 37.5 - 12.7;
+    const MM_TO_PX = 96 / 25.4;
+    const INNER_PAD_PX = 32;
+    const PAGE_H_BASE = Math.round(CONTENT_H_MM * MM_TO_PX) - INNER_PAD_PX * 2;
+    const scale = zoomLevel / 100;
+    const PAGE_H = PAGE_H_BASE * scale;
+    const outerTop = outer.getBoundingClientRect().top;
+    const markers: number[] = [];
+    let cumulative = 0;
+    // Word-pasted content is often deeply nested (div > div > div ...),
+    // so a single top-level child can span several physical pages.
+    // Recurse into any unit taller than one page until we reach pieces
+    // that fit, so breaks can land inside nested wrappers too.
+    const collectUnits = (el: HTMLElement): HTMLElement[] => {
+      if (el.classList.contains(PAGE_BREAK_CLASS)) return [el];
+      const h = el.getBoundingClientRect().height;
+      if (h <= PAGE_H || el.children.length === 0) return [el];
+      let units: HTMLElement[] = [];
+      Array.prototype.slice.call(el.children).forEach((k: HTMLElement) => {
+        units = units.concat(collectUnits(k));
+      });
+      return units.length ? units : [el];
+    };
+    let units: HTMLElement[] = [];
+    Array.prototype.slice.call(content.children).forEach((child: HTMLElement) => {
+      units = units.concat(collectUnits(child));
+    });
+    units.forEach((unit: HTMLElement) => {
+      const containsBreak = unit.classList.contains(PAGE_BREAK_CLASS) || !!unit.querySelector(`.${PAGE_BREAK_CLASS}`);
+      const h = unit.getBoundingClientRect().height;
+      if (cumulative > 0 && cumulative + h > PAGE_H) {
+        markers.push((unit.getBoundingClientRect().top - outerTop) / scale);
+        cumulative = 0;
+      }
+      if (containsBreak) {
+        const breakEls = unit.classList.contains(PAGE_BREAK_CLASS) ? [unit] : Array.prototype.slice.call(unit.querySelectorAll(`.${PAGE_BREAK_CLASS}`));
+        breakEls.forEach((b: HTMLElement) => {
+          markers.push((b.getBoundingClientRect().top - outerTop) / scale);
+        });
+        cumulative = 0;
+        return;
+      }
+      cumulative += h;
+    });
+    setPageMarkers(markers);
+  };
+
+  useEffect(() => {
+    const content = editorRef.current;
+    if (!content || !editMode) { setPageMarkers([]); return; }
+    let raf = 0;
+    const scheduleRecompute = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(recomputePageMarkers);
+    };
+    scheduleRecompute();
+    const observer = new MutationObserver(scheduleRecompute);
+    observer.observe(content, { childList: true, subtree: true, characterData: true, attributes: true });
+    content.addEventListener("input", scheduleRecompute);
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+      content.removeEventListener("input", scheduleRecompute);
+    };
+  }, [editMode, zoomLevel]);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const wordImportInputRef = useRef<HTMLInputElement | null>(null);
   const [wordImporting, setWordImporting] = useState(false);
@@ -389,6 +569,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }).catch(() => { /* not critical — falls back to raw principal text */ });
     actor.getDocHeaderFooterSettings().then((res: any) => {
       const s = res && res.length > 0 ? res[0] : null;
+      const extras = loadHfExtras();
       if (s) {
         const loaded: HeaderFooterSettings = {
           headerText: s.headerText,
@@ -396,8 +577,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           logoDataUri: s.logoDataUri,
           skipFirstPage: s.skipFirstPage,
           showPageNumbers: s.showPageNumbers,
+          ...extras,
         };
         setHfSettings(loaded);
+      } else {
+        setHfSettings((prev) => ({ ...prev, ...extras }));
       }
     }).catch(() => { /* fall back to defaults */ });
   }, [actor]);
@@ -594,7 +778,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     await actor.updateDeviceManualChapterMeta(ch.id, title, "");
     reload();
     try {
-      await syncChapterToDrive(deviceLabel, ch.id, ch.order, title, ch.contentHtml);
+      await renameChapterOnDrive(deviceLabel, ch.id, ch.order, title);
     } catch { /* best-effort — the rename itself already succeeded */ }
   };
 
@@ -835,6 +1019,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         hfDraft.showPageNumbers,
       );
       setHfSettings(hfDraft);
+      saveHfExtras(hfDraft);
       setShowSettings(false);
     } catch (e: any) {
       alert("Błąd zapisu ustawień: " + (e?.message || String(e)));
@@ -1279,7 +1464,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // to be an exact preview of what exportWord()/exportPdf() will
   // produce, so it must use the same chapter set and the same
   // numberHeadingsForExport() numbering as Word.
-  const buildChapterPreviewHtml = async (): Promise<string> => {
+  const buildChapterPreviewHtml = async (_forPrint: boolean = false, gridView: boolean = false): Promise<string> => {
     const selected = chapters.filter((c) => selectedForPrint.has(c.id));
     if (selected.length === 0) {
       return `<html><body style="font-family:Arial,sans-serif;padding:24px;color:#888;">
@@ -1287,36 +1472,168 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       </body></html>`;
     }
     const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
+    const headerHtmlEven = hfSettings.headerTextEven.trim() || headerHtml;
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
+    const footerLeftHtml = hfSettings.footerTextLeft.trim();
+    const footerRightHtml = hfSettings.footerTextRight.trim();
     const numbered = numberHeadingsForExport(await getChaptersForExport(), selectedForPrint);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
+    // A4 usable content box in mm (must match .page-header/.page-footer
+    // heights below): width 210 - 2*1.27cm margins, height 297 - header
+    // (3.75cm) - footer (1.27cm).
+    const CONTENT_W_MM = A4_USABLE_WIDTH_CM * 10;
+    const CONTENT_H_MM = 297 - 37.5 - 12.7;
+    const MM_TO_PX = 96 / 25.4;
+    const contentWidthPx = Math.round(CONTENT_W_MM * MM_TO_PX);
+    // #doc-editor-content itself adds Tailwind "p-8" (32px all sides) on
+    // top of the outer .sheet padding above - the actual usable width/
+    // height for content is the outer box minus this inner padding too.
+    const INNER_PAD_PX = 32;
+    const innerContentWidthPx = contentWidthPx - INNER_PAD_PX * 2;
+    // The preview is a standalone iframe (no access to the app's own
+    // stylesheet), but chapter HTML relies on COUNTER_CSS's rules (font,
+    // default bold weight, table border/background via CSS vars, list
+    // styles, comment highlight) which live under "#doc-editor-content"
+    // in the real editor. Re-scope that same CSS onto ".page-content" and
+    // supply light-theme fallback values for the vars it references, so
+    // tables/lists/fonts/colors render the same as in the editor.
+    const previewCounterCss = COUNTER_CSS.replace(/#doc-editor-content/g, ".page-content");
+    const contentHeightPx = Math.round(CONTENT_H_MM * MM_TO_PX) - INNER_PAD_PX * 2;
     return `<html><head><meta charset="utf-8"/><title>Podgląd wydruku</title>
       <style>
         @page { size: A4; margin: 0; }
         body{font-family:Arial,sans-serif;padding:0;margin:0;background:#888;}
-        .sheet{width:210mm;min-height:297mm;margin:12px auto;background:#fff;box-shadow:0 0 8px rgba(0,0,0,0.4);box-sizing:border-box;}
-        .page-header{font-size:9pt;color:#555;border-bottom:1px solid #ccc;padding:6px 24px;height:3.75cm;box-sizing:border-box;display:flex;align-items:flex-end;}
-        .page-footer{font-size:9pt;color:#555;border-top:1px solid #ccc;padding:6px 24px;height:1.27cm;box-sizing:border-box;text-align:center;}
-        .page-content{padding:0 1.27cm;min-height:calc(297mm - 3.75cm - 1.27cm);}
+        .sheet{width:210mm;min-height:297mm;margin:12px auto;background:#fff;box-shadow:0 0 8px rgba(0,0,0,0.4);box-sizing:border-box;padding:3.75cm 1.27cm 1.27cm 1.27cm;position:relative;}
+        #pages.pages-grid{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:center;gap:16px;}
+        #pages.pages-grid .sheet{margin:0;}
+        .page-header{position:absolute;top:0;left:1.27cm;right:1.27cm;height:3.75cm;box-sizing:border-box;padding:6px 0;font-size:9pt;color:#555;border-bottom:1px solid #ccc;display:flex;align-items:flex-end;}
+        .page-footer{position:absolute;left:1.27cm;right:1.27cm;bottom:0;box-sizing:border-box;padding:6px 0;font-size:9pt;color:#555;border-top:1px solid #ccc;display:flex;align-items:center;justify-content:space-between;}
+        .page-content{padding:32px;line-height:1.625;font-size:15px;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
+        .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:-16px;font-size:8pt;color:#999;text-align:center;}
         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
-        h1{color:#1a1a8c;}
         img{max-width:100%;}
+        #measure{position:absolute;left:-99999px;top:0;width:${innerContentWidthPx}px;padding:0;max-width:none;visibility:hidden;--text-secondary:#5c574d;--bg-hover:#efece3;}
+        ${previewCounterCss}
       </style>
       </head><body>
-      <div class="sheet">
-        ${hfSettings.skipFirstPage ? "" : `<div class="page-header">${headerHtml}</div>`}
-        <div class="page-content" id="doc">${body}</div>
-        <div class="page-footer">${footerHtml}</div>
-      </div>
+      <div id="measure" class="page-content">${body}</div>
+      <div id="pages" class="${gridView ? "pages-grid" : ""}"></div>
+      <script>
+      (function(){
+        var PAGE_H = ${contentHeightPx};
+        var measure = document.getElementById('measure');
+        var pagesEl = document.getElementById('pages');
+        var headerHtml = ${JSON.stringify(headerHtml)};
+        var headerHtmlEven = ${JSON.stringify(headerHtmlEven)};
+        var footerHtml = ${JSON.stringify(footerHtml)};
+        var footerLeftHtml = ${JSON.stringify(footerLeftHtml)};
+        var footerRightHtml = ${JSON.stringify(footerRightHtml)};
+        var skipFirst = ${hfSettings.skipFirstPage ? "true" : "false"};
+        var enableHeader = ${hfSettings.enableHeader ? "true" : "false"};
+        var enableFooter = ${hfSettings.enableFooter ? "true" : "false"};
+        var MIN_LEAD = 60; // px - avoid a lone heading stranded at page bottom
+
+        function hoistToTop(node, container){
+          while (node.parentNode !== container) {
+            var parent = node.parentNode;
+            var grandparent = parent.parentNode;
+            var afterClone = parent.cloneNode(false);
+            var sib = node.nextSibling;
+            while (sib) { var next = sib.nextSibling; afterClone.appendChild(sib); sib = next; }
+            grandparent.insertBefore(node, parent.nextSibling);
+            if (afterClone.childNodes.length) grandparent.insertBefore(afterClone, node.nextSibling);
+          }
+        }
+        function hoistPageBreaks(container){
+          var markers = Array.prototype.slice.call(container.querySelectorAll('.${PAGE_BREAK_CLASS}'));
+          markers.forEach(function(marker){ hoistToTop(marker, container); });
+        }
+        function paginate(){
+          hoistPageBreaks(measure);
+          function collectUnits(el){
+            if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) return [el];
+            var h = el.getBoundingClientRect().height;
+            if (h <= PAGE_H || el.children.length === 0) return [el];
+            var units = [];
+            Array.prototype.slice.call(el.children).forEach(function(k){
+              units = units.concat(collectUnits(k));
+            });
+            return units.length ? units : [el];
+          }
+          var units = [];
+          Array.prototype.slice.call(measure.children).forEach(function(el){
+            units = units.concat(collectUnits(el));
+          });
+          var pages = [];
+          var current = [];
+          var currentH = 0;
+          function flush(){
+            if (current.length) pages.push(current.map(function(el){ return el.outerHTML; }).join(''));
+            current = []; currentH = 0;
+          }
+          units.forEach(function(el){
+            if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) { flush(); return; }
+            var h = el.getBoundingClientRect().height;
+            var isHeading = /^H[1-4]$/.test(el.tagName);
+            if (currentH > 0 && currentH + h > PAGE_H) {
+              flush();
+            } else if (isHeading && currentH > 0 && (PAGE_H - currentH) < (h + MIN_LEAD)) {
+              flush();
+            }
+            current.push(el);
+            currentH += h;
+          });
+          flush();
+          if (pages.length === 0) pages = [''];
+          pagesEl.innerHTML = pages.map(function(html, i){
+            var isFirst = i === 0;
+            var isOdd = (i + 1) % 2 === 1;
+            var hideThisPage = isFirst && skipFirst;
+            var showHeader = enableHeader && !hideThisPage;
+            var showFooter = enableFooter && !hideThisPage;
+            var thisHeaderHtml = isOdd ? headerHtml : headerHtmlEven;
+            var footerRowHtml = '<span>' + footerLeftHtml + '</span><span>' + footerHtml + '</span><span>' + footerRightHtml + '</span>';
+            return '<div class="sheet">' +
+              (showHeader ? '<div class="page-header">' + thisHeaderHtml + '</div>' : '') +
+              '<div class="page-content">' + html + '</div>' +
+              (showFooter ? '<div class="page-footer">' + footerRowHtml + '</div>' : '') +
+              '<div class="page-number">Strona ' + (i + 1) + ' / ' + pages.length + '</div>' +
+            '</div>';
+          }).join('');
+          measure.remove();
+          try { parent.postMessage({ type: 'docPreviewPageCount', count: pages.length }, '*'); } catch (e) {}
+        }
+
+        function waitImagesThenPaginate(){
+          var imgs = Array.prototype.slice.call(measure.querySelectorAll('img'));
+          if (imgs.length === 0) { requestAnimationFrame(paginate); return; }
+          var remaining = imgs.length;
+          imgs.forEach(function(img){
+            if (img.complete) { remaining--; if (remaining === 0) requestAnimationFrame(paginate); }
+            else { img.onload = img.onerror = function(){ remaining--; if (remaining === 0) requestAnimationFrame(paginate); }; }
+          });
+        }
+        waitImagesThenPaginate();
+      })();
+      </script>
       </body></html>`;
   };
   const openPrintPreview = async () => {
-    setPreviewHtml(await buildChapterPreviewHtml());
+    setPreviewPageCount(null);
+    setPreviewHtml(await buildChapterPreviewHtml(false, previewGridView));
     setShowPrintPreview(true);
   };
   const refreshPrintPreview = async () => {
-    setPreviewHtml(await buildChapterPreviewHtml());
+    setPreviewPageCount(null);
+    setPreviewHtml(await buildChapterPreviewHtml(false, previewGridView));
   };
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data && e.data.type === "docPreviewPageCount") setPreviewPageCount(e.data.count);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
   const exportPdf = async () => {
     const selected = chapters.filter((c) => selectedForPrint.has(c.id));
     if (selected.length === 0) { alert("Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej)."); return; }
@@ -1395,11 +1712,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           {driveSyncFlash && <span className="text-xs text-cyan-400">☁️ Zsynchronizowano z Bartolini Drive</span>}
           {driveSyncError && <span className="text-xs text-amber-400">{driveSyncError}</span>}
           <div className="ml-auto flex gap-2">
-            {canEdit && (
-              <button onClick={openSettings} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600">
-                ⚙️ Nagłówek/stopka
-              </button>
-            )}
             <button onClick={exportPdf} disabled={chapters.length === 0} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600 disabled:opacity-40">
               🖨 Eksportuj PDF
             </button>
@@ -1412,7 +1724,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         {loading ? (
           <div className="text-sm text-[var(--text-muted)] p-6">Wczytywanie…</div>
         ) : (
-          <div className="flex bg-[var(--bg-card)] rounded-b-lg overflow-hidden" style={{ height: "calc(100vh - 220px)" }}>
+          <div className="flex bg-[var(--bg-card)] rounded-b-lg overflow-hidden" style={{ height: "calc(100vh - 150px)" }}>
             <div className="w-72 shrink-0 border-r border-[var(--border-color)] bg-[var(--bg-page)] p-3 space-y-1 overflow-auto">
               {chapters.map((ch) => (
                 <div
@@ -1470,7 +1782,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               </p>
             </div>
 
-            <div className="flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)]">
+            <div
+              className={editMode ? "fixed inset-0 z-[200] flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] overflow-hidden" : "flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] relative"}
+            >
               <style>{COUNTER_CSS}</style>
               <input ref={imageInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={onImageSelected} />
               <input ref={wordImportInputRef} type="file" accept=".docx" className="hidden" onChange={onWordFileSelected} />
@@ -1480,7 +1794,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-color)] flex-wrap bg-[var(--bg-hover)]">
+                  <div
+                    className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-color)] flex-wrap bg-[var(--bg-hover)]"
+                    onMouseDown={editMode ? onEditWinDragStart : undefined}
+                    style={editMode ? { cursor: "move" } : undefined}
+                  >
                     {canEdit ? (
                       <button onClick={() => (editMode ? exitEditMode() : tryEnterEditMode())} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
                         {editMode ? "✏ Edytuję" : "✏ Edytuj"}
@@ -1491,6 +1809,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     <button onClick={openPrintPreview} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
                       🖨 Podgląd wydruku
                     </button>
+                    {canEdit && (
+                      <button onClick={openSettings} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
+                        ⚙️ Nagłówek/stopka
+                      </button>
+                    )}
                     <span className="w-px h-5 bg-[#ccc] mx-1" />
                     <button
                       onClick={() => setFitToScreen((v) => !v)}
@@ -1499,6 +1822,15 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     >
                       🖥 Dopasuj do ekranu
                     </button>
+                    {editMode && canEdit && (
+                      <button
+                        onClick={() => setTwoPageView((v) => !v)}
+                        title="Widok dwoch stron obok siebie (jak w Word) - przyblizony, tresc balansuje miedzy kolumnami"
+                        className={`text-xs px-3 py-1.5 rounded border ${twoPageView ? "bg-cyan-600 text-white border-cyan-600" : "border-[#ccc]"}`}
+                      >
+                        📖 2 strony obok
+                      </button>
+                    )}
                     <div className="flex items-center gap-0.5">
                       <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} title="Pomniejsz" className="text-xs w-7 h-8 rounded border border-[#ccc]">－</button>
                       <button onClick={() => setZoomLevel(100)} title="Resetuj powiększenie" className="text-xs px-1.5 h-8 rounded border border-[#ccc] min-w-[44px]">{zoomLevel}%</button>
@@ -1581,8 +1913,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     <div
                       className="mx-auto bg-[var(--bg-card)] text-[var(--text-primary)] shadow-lg relative"
                       style={{
-                        width: fitToScreen ? "100%" : "210mm",
-                        maxWidth: fitToScreen ? "1600px" : "210mm",
+                        width: (twoPageView && editMode) ? "436mm" : "210mm",
+                        maxWidth: (twoPageView && editMode) ? "1700px" : "210mm",
                         minHeight: "297mm",
                         boxSizing: "border-box",
                         padding: "3.75cm 1.27cm 1.27cm 1.27cm",
@@ -1590,6 +1922,24 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         transformOrigin: "top center",
                       }}
                     >
+                    {hfSettings.enableHeader && (
+                      <div
+                        className="absolute top-0 left-[1.27cm] right-[1.27cm] h-[3.75cm] box-border pointer-events-none select-none flex items-end pb-1.5 text-[9pt] text-[#888] border-b border-[#ccc]"
+                        title="Nagłówek — edytuj przez ⚙️ Nagłówek/stopka"
+                      >
+                        {hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`}
+                      </div>
+                    )}
+                    {hfSettings.enableFooter && (
+                      <div
+                        className="absolute bottom-0 left-[1.27cm] right-[1.27cm] box-border pointer-events-none select-none flex items-center justify-between pt-1.5 text-[9pt] text-[#888] border-t border-[#ccc]"
+                        title="Stopka — edytuj przez ⚙️ Nagłówek/stopka"
+                      >
+                        <span>{hfSettings.footerTextLeft}</span>
+                        <span>{hfSettings.footerText || "Bartolini Air Simulation"}</span>
+                        <span>{hfSettings.footerTextRight}</span>
+                      </div>
+                    )}
                     <div
                       id="doc-editor-content"
                       ref={editorRef}
@@ -1643,8 +1993,16 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       }}
                       suppressContentEditableWarning
                       className="p-8 text-[15px] leading-relaxed outline-none"
-                      style={{ maxWidth: 900, margin: "0 auto", width: "100%", ["--h1-offset" as any]: h1Offset }}
+                      style={{ maxWidth: 900, margin: "0 auto", width: "100%", ["--h1-offset" as any]: h1Offset, ...((twoPageView && editMode) ? { columnCount: 2, columnGap: "10mm", columnFill: "balance" } as any : {}) }}
                     />
+                    {pageMarkers.map((y, i) => (
+                      <div
+                        key={i}
+                        className="absolute left-0 right-0 h-[5px] bg-[#888] pointer-events-none select-none"
+                        style={{ top: y }}
+                        title="Koniec fizycznej strony A4"
+                      />
+                    ))}
                     </div>
                     {selectedImg && imgToolbarPos && editMode && canEdit && (
                       <div
@@ -1701,36 +2059,79 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   </div>
                 </>
               )}
+              {editMode && (
+                <div
+                  onMouseDown={onEditWinResizeStart}
+                  title="Przeciągnij, żeby zmienić rozmiar okna"
+                  className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize opacity-60 hover:opacity-100"
+                  style={{ background: "linear-gradient(135deg, transparent 50%, var(--text-secondary) 50%)" }}
+                />
+              )}
             </div>
           </div>
         )}
       </div>
 
       {showSettings && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowSettings(false)}>
-          <div className="bg-white text-[#1a1a1a] rounded-lg p-5 w-full max-w-md space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setShowSettings(false)}>
+          <div className="bg-white text-[#1a1a1a] rounded-lg p-5 w-full max-w-xl space-y-3" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold text-[#1a1a8c]">⚙️ Nagłówek i stopka dokumentu</h3>
             <p className="text-xs text-[#666]">Te ustawienia są wspólne dla wszystkich eksportowanych instrukcji (Word i PDF).</p>
 
-            <label className="block text-xs text-[#666]">
-              Tekst nagłówka (pusty = domyślnie nazwa urządzenia)
-              <input
-                value={hfDraft.headerText}
-                onChange={(e) => setHfDraft((d) => ({ ...d, headerText: e.target.value }))}
-                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
-                placeholder="np. Bartolini Air Simulation — Dokumentacja techniczna"
-              />
-            </label>
+            <div>
+              <div className="text-xs text-[#666] mb-1">Tekst nagłówka (pusty = domyślnie nazwa urządzenia)</div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-xs text-[#666]">
+                  Strony nieparzyste
+                  <input
+                    value={hfDraft.headerText}
+                    onChange={(e) => setHfDraft((d) => ({ ...d, headerText: e.target.value }))}
+                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    placeholder="np. Bartolini Air Simulation"
+                  />
+                </label>
+                <label className="block text-xs text-[#666]">
+                  Strony parzyste
+                  <input
+                    value={hfDraft.headerTextEven}
+                    onChange={(e) => setHfDraft((d) => ({ ...d, headerTextEven: e.target.value }))}
+                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    placeholder="puste = jak nieparzyste"
+                  />
+                </label>
+              </div>
+            </div>
 
-            <label className="block text-xs text-[#666]">
-              Tekst stopki
-              <input
-                value={hfDraft.footerText}
-                onChange={(e) => setHfDraft((d) => ({ ...d, footerText: e.target.value }))}
-                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
-                placeholder="Bartolini Air Simulation"
-              />
-            </label>
+            <div>
+              <div className="text-xs text-[#666] mb-1">Tekst stopki</div>
+              <div className="grid grid-cols-3 gap-2">
+                <label className="block text-xs text-[#666]">
+                  Lewo
+                  <input
+                    value={hfDraft.footerTextLeft}
+                    onChange={(e) => setHfDraft((d) => ({ ...d, footerTextLeft: e.target.value }))}
+                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                  />
+                </label>
+                <label className="block text-xs text-[#666]">
+                  Środek
+                  <input
+                    value={hfDraft.footerText}
+                    onChange={(e) => setHfDraft((d) => ({ ...d, footerText: e.target.value }))}
+                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    placeholder="Bartolini Air Simulation"
+                  />
+                </label>
+                <label className="block text-xs text-[#666]">
+                  Prawo
+                  <input
+                    value={hfDraft.footerTextRight}
+                    onChange={(e) => setHfDraft((d) => ({ ...d, footerTextRight: e.target.value }))}
+                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                  />
+                </label>
+              </div>
+            </div>
 
             <div className="text-xs text-[#666]">
               Logo w nagłówku
@@ -1749,6 +2150,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             </div>
 
             <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={hfDraft.enableHeader} onChange={(e) => setHfDraft((d) => ({ ...d, enableHeader: e.target.checked }))} />
+              Pokaż nagłówek
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={hfDraft.enableFooter} onChange={(e) => setHfDraft((d) => ({ ...d, enableFooter: e.target.checked }))} />
+              Pokaż stopkę
+            </label>
+            <label className="flex items-center gap-2 text-xs">
               <input type="checkbox" checked={hfDraft.skipFirstPage} onChange={(e) => setHfDraft((d) => ({ ...d, skipFirstPage: e.target.checked }))} />
               Bez nagłówka/stopki na pierwszej stronie (stronie tytułowej)
             </label>
@@ -1766,7 +2175,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       )}
 
       {showTableModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowTableModal(false)}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setShowTableModal(false)}>
           <div className="bg-white text-[#1a1a1a] rounded-lg p-5 w-full max-w-xs space-y-3" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold text-[#1a1a8c]">🔲 {tableModalMode === "resize" ? "Zmień rozmiar tabeli" : "Wstaw tabelę"}</h3>
             <label className="block text-xs text-[#666]">
@@ -1835,21 +2244,29 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       )}
 
       {showPrintPreview && (
-        // Floating, draggable window instead of a centered blocking
-        // overlay — no backdrop, so the editor underneath stays usable
-        // while this is pinned open (e.g. dragged to a second monitor).
+        <div className="fixed inset-0 z-[300] bg-black/50 flex items-center justify-center">
         <div
-          className="fixed z-50 bg-[var(--bg-card)] rounded-lg shadow-2xl border border-[var(--border-color)] w-[900px] max-w-[95vw] h-[85vh] flex flex-col overflow-hidden"
-          style={{ left: previewPos.x, top: previewPos.y }}
+          className="bg-[var(--bg-card)] rounded-lg shadow-2xl border border-[var(--border-color)] w-[900px] max-w-[95vw] h-[85vh] flex flex-col overflow-hidden"
         >
           <div
-            onMouseDown={onPreviewDragStart}
-            className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] flex-wrap gap-2 cursor-move select-none"
+            className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] flex-wrap gap-2 select-none"
           >
-            <h2 className="text-sm font-bold text-[#4fc3f7]">Podglad wydruku - zaznaczone rozdzialy: {selectedForPrint.size}</h2>
+            <h2 className="text-sm font-bold text-[#4fc3f7]">
+              Podglad wydruku - rozdzialy: {selectedForPrint.size}{previewPageCount != null ? ` — stron: ${previewPageCount}` : ""}
+            </h2>
             <div className="flex items-center gap-2">
               <button onClick={refreshPrintPreview} className="text-xs px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white">
                 Odswiez
+              </button>
+              <button
+                onClick={() => {
+                  const w = window.open("", "_blank", "width=1000,height=900");
+                  if (w) { w.document.write(previewHtml); w.document.close(); }
+                }}
+                className="text-xs px-3 py-1.5 rounded border border-[#666] text-[#e0e0e0]"
+                title="Otwiera podglad w osobnym oknie przegladarki - mozna je przeciagnac poza glowne okno, np. na drugi monitor"
+              >
+                ⇱ Otworz w oknie
               </button>
               <button onClick={() => setShowPrintPreview(false)} className="text-xs px-3 py-1.5 rounded border border-[#666] text-[#e0e0e0]">
                 Zamknij
@@ -1862,6 +2279,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             className="flex-1 w-full bg-[#888]"
             style={{ border: "none" }}
           />
+        </div>
         </div>
       )}
       {deleteTarget && (

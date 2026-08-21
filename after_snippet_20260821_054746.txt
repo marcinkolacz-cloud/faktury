@@ -1,0 +1,113 @@
+  const buildChapterPreviewHtml = async (): Promise<string> => {
+    const selected = chapters.filter((c) => selectedForPrint.has(c.id));
+    if (selected.length === 0) {
+      return `<html><body style="font-family:Arial,sans-serif;padding:24px;color:#888;">
+        Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej), żeby zobaczyć podgląd wydruku.
+      </body></html>`;
+    }
+    const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
+    const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
+    const numbered = numberHeadingsForExport(await getChaptersForExport(), selectedForPrint);
+    const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
+    // A4 usable content box in mm (must match .page-header/.page-footer
+    // heights below): width 210 - 2*1.27cm margins, height 297 - header
+    // (3.75cm) - footer (1.27cm).
+    const CONTENT_W_MM = A4_USABLE_WIDTH_CM * 10;
+    const CONTENT_H_MM = 297 - 37.5 - 12.7;
+    const MM_TO_PX = 96 / 25.4;
+    const contentWidthPx = Math.round(CONTENT_W_MM * MM_TO_PX);
+    const contentHeightPx = Math.round(CONTENT_H_MM * MM_TO_PX);
+    return `<html><head><meta charset="utf-8"/><title>Podgląd wydruku</title>
+      <style>
+        @page { size: A4; margin: 0; }
+        body{font-family:Arial,sans-serif;padding:0;margin:0;background:#888;}
+        .sheet{width:210mm;min-height:297mm;margin:12px auto;background:#fff;box-shadow:0 0 8px rgba(0,0,0,0.4);box-sizing:border-box;display:flex;flex-direction:column;}
+        .page-header{font-size:9pt;color:#555;border-bottom:1px solid #ccc;padding:6px 24px;height:3.75cm;box-sizing:border-box;display:flex;align-items:flex-end;flex-shrink:0;}
+        .page-footer{font-size:9pt;color:#555;border-top:1px solid #ccc;padding:6px 24px;height:1.27cm;box-sizing:border-box;text-align:center;flex-shrink:0;}
+        .page-content{padding:0 1.27cm;min-height:${CONTENT_H_MM}mm;flex:1;overflow:visible;}
+        .page-number{font-size:8pt;color:#999;text-align:center;padding:2px 0 6px;flex-shrink:0;}
+        .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
+        h1{color:#1a1a8c;}
+        img{max-width:100%;}
+        #measure{position:absolute;left:-99999px;top:0;width:${contentWidthPx}px;visibility:hidden;}
+      </style>
+      </head><body>
+      <div id="measure">${body}</div>
+      <div id="pages"></div>
+      <script>
+      (function(){
+        var PAGE_H = ${contentHeightPx};
+        var measure = document.getElementById('measure');
+        var pagesEl = document.getElementById('pages');
+        var headerHtml = ${JSON.stringify(headerHtml)};
+        var footerHtml = ${JSON.stringify(footerHtml)};
+        var skipFirst = ${hfSettings.skipFirstPage ? "true" : "false"};
+        var MIN_LEAD = 60; // px - avoid a lone heading stranded at page bottom
+
+        function paginate(){
+          var children = Array.prototype.slice.call(measure.children);
+          var pages = [];
+          var current = [];
+          var currentH = 0;
+          function flush(){
+            if (current.length) pages.push(current.map(function(el){ return el.outerHTML; }).join(''));
+            current = []; currentH = 0;
+          }
+          children.forEach(function(el){
+            if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) { flush(); return; }
+            var h = el.getBoundingClientRect().height;
+            var isHeading = /^H[1-4]$/.test(el.tagName);
+            if (currentH > 0 && currentH + h > PAGE_H) {
+              flush();
+            } else if (isHeading && currentH > 0 && (PAGE_H - currentH) < (h + MIN_LEAD)) {
+              flush();
+            }
+            current.push(el);
+            currentH += h;
+          });
+          flush();
+          if (pages.length === 0) pages = [''];
+          pagesEl.innerHTML = pages.map(function(html, i){
+            var isFirst = i === 0;
+            var showHF = !(isFirst && skipFirst);
+            return '<div class="sheet">' +
+              (showHF ? '<div class="page-header">' + headerHtml + '</div>' : '<div class="page-header" style="visibility:hidden"></div>') +
+              '<div class="page-content">' + html + '</div>' +
+              (showHF ? '<div class="page-footer">' + footerHtml + '</div>' : '<div class="page-footer" style="visibility:hidden"></div>') +
+              '<div class="page-number">Strona ' + (i + 1) + ' / ' + pages.length + '</div>' +
+            '</div>';
+          }).join('');
+          measure.remove();
+          try { parent.postMessage({ type: 'docPreviewPageCount', count: pages.length }, '*'); } catch (e) {}
+        }
+
+        function waitImagesThenPaginate(){
+          var imgs = Array.prototype.slice.call(measure.querySelectorAll('img'));
+          if (imgs.length === 0) { requestAnimationFrame(paginate); return; }
+          var remaining = imgs.length;
+          imgs.forEach(function(img){
+            if (img.complete) { remaining--; if (remaining === 0) requestAnimationFrame(paginate); }
+            else { img.onload = img.onerror = function(){ remaining--; if (remaining === 0) requestAnimationFrame(paginate); }; }
+          });
+        }
+        waitImagesThenPaginate();
+      })();
+      </script>
+      </body></html>`;
+  };
+  const openPrintPreview = async () => {
+    setPreviewPageCount(null);
+    setPreviewHtml(await buildChapterPreviewHtml());
+    setShowPrintPreview(true);
+  };
+  const refreshPrintPreview = async () => {
+    setPreviewPageCount(null);
+    setPreviewHtml(await buildChapterPreviewHtml());
+  };
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data && e.data.type === "docPreviewPageCount") setPreviewPageCount(e.data.count);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);

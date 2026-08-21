@@ -1,0 +1,3 @@
+    try {
+      await renameChapterOnDrive(deviceLabel, ch.id, ch.order, title);
+    } catch { /* best-effort — the rename itself already succeeded */ }

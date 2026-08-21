@@ -1,0 +1,1 @@
+    const contentHeightPx = Math.round(CONTENT_H_MM * MM_TO_PX) - INNER_PAD_PX * 2;

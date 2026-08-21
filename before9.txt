@@ -1,0 +1,2 @@
+  const [fitToScreen, setFitToScreen] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(100);

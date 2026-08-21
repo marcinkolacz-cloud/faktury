@@ -1,0 +1,6 @@
+    const contentWidthPx = Math.round(CONTENT_W_MM * MM_TO_PX);
+    // #doc-editor-content itself adds Tailwind "p-8" (32px all sides) on
+    // top of the outer .sheet padding above - the actual usable width/
+    // height for content is the outer box minus this inner padding too.
+    const INNER_PAD_PX = 32;
+    const innerContentWidthPx = contentWidthPx - INNER_PAD_PX * 2;

@@ -1,0 +1,5 @@
+        .sheet{width:210mm;min-height:297mm;margin:12px auto;background:#fff;box-shadow:0 0 8px rgba(0,0,0,0.4);box-sizing:border-box;padding:3.75cm 1.27cm 1.27cm 1.27cm;position:relative;}
+        .page-header{position:absolute;top:0;left:1.27cm;right:1.27cm;height:3.75cm;box-sizing:border-box;padding:6px 0;font-size:9pt;color:#555;border-bottom:1px solid #ccc;display:flex;align-items:flex-end;}
+        .page-footer{position:absolute;left:1.27cm;right:1.27cm;bottom:0;box-sizing:border-box;padding:6px 0;font-size:9pt;color:#555;border-top:1px solid #ccc;text-align:center;}
+        .page-content{--text-secondary:#5c574d;--bg-hover:#efece3;}
+        .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:-16px;font-size:8pt;color:#999;text-align:center;}
