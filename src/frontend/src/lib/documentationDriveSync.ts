@@ -1,4 +1,4 @@
-import { odList, odCreateFolder, odUploadFile, odDelete, odDownloadUrl } from "./oneDriveConfig";
+import { odList, odCreateFolder, odUploadFile, odDelete, odDownloadUrl, odDownloadFileBlob } from "./oneDriveConfig";
 
 const ROOT_FOLDER = "Dokumentacje";
 
@@ -18,6 +18,18 @@ async function ensureFolder(parentPath: string, name: string): Promise<void> {
 // the editor. The "[id]" suffix is a stable tag (chapter id never
 // changes) used to find and replace the OLD file when the title or order
 // changes, so renaming never leaves an orphaned duplicate behind.
+export async function loadChapterContentFromDrive(deviceLabel: string, chapterId: number): Promise<string> {
+  const deviceFolder = sanitizeName(deviceLabel);
+  const folderPath = `${ROOT_FOLDER}/${deviceFolder}`;
+  const idTag = `[${chapterId}]`;
+  const listing = await odList(folderPath);
+  const items = listing.items || [];
+  const match = items.find((i: any) => typeof i.name === "string" && i.name.includes(idTag));
+  if (!match) return "";
+  const blob = await odDownloadFileBlob(match.id);
+  return await blob.text();
+}
+
 export async function syncChapterToDrive(
   deviceLabel: string,
   chapterId: number,

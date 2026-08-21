@@ -181,6 +181,67 @@ mixin (
     sorted;
   };
 
+  public query ({ caller }) func listDeviceManualChaptersMeta(deviceId : Nat) : async [Types.DeviceManualChapter] {
+    requireManualRead(caller);
+    var result = List.empty<Types.DeviceManualChapter>();
+    for ((_, ch) in deviceManualChapters.entries()) {
+      if (ch.deviceId == deviceId and deviceManualChaptersTrashed.get(ch.id) == null) {
+        result.add({ ch with contentHtml = "" });
+      };
+    };
+    let arr = result.toArray();
+    let n = arr.size();
+    var sorted = arr;
+    var i = 0;
+    while (i < n) {
+      var minIdx = i;
+      var j = i + 1;
+      while (j < n) {
+        if (sorted[j].order < sorted[minIdx].order) { minIdx := j; };
+        j += 1;
+      };
+      if (minIdx != i) {
+        let tmp = sorted[i];
+        sorted := Array.tabulate<Types.DeviceManualChapter>(n, func(k) {
+          if (k == i) { sorted[minIdx] } else if (k == minIdx) { tmp } else { sorted[k] };
+        });
+      };
+      i += 1;
+    };
+    sorted;
+  };
+
+  public query ({ caller }) func getDeviceManualChapterContent(id : Nat) : async ?Text {
+    requireManualRead(caller);
+    switch (deviceManualChapters.get(id)) {
+      case (?ch) { ?ch.contentHtml };
+      case null { null };
+    };
+  };
+
+  public query ({ caller }) func getDeviceManualChapterContentLength(id : Nat) : async ?Nat {
+    requireManualRead(caller);
+    switch (deviceManualChapters.get(id)) {
+      case (?ch) { ?Text.size(ch.contentHtml) };
+      case null { null };
+    };
+  };
+
+  public query ({ caller }) func getDeviceManualChapterContentChunk(id : Nat, start : Nat, len : Nat) : async ?Text {
+    requireManualRead(caller);
+    switch (deviceManualChapters.get(id)) {
+      case (?ch) {
+        let chars = Text.toArray(ch.contentHtml);
+        let n = chars.size();
+        if (start >= n) { return ?"" };
+        let endIdx = if (start + len > n) n else start + len;
+        let slice = Array.tabulate<Char>(endIdx - start, func(i : Nat) : Char { chars[start + i] });
+        ?Text.fromArray(slice);
+      };
+      case null { null };
+    };
+  };
+
   public shared ({ caller }) func createDeviceManualChapter(deviceId : Nat, title : Text) : async Nat {
     requireManualWrite(caller);
     var maxId = 0;
@@ -256,6 +317,17 @@ mixin (
     switch (deviceManualChapters.get(id)) {
       case (?ch) {
         deviceManualChapters.add(id, { ch with title; contentHtml; updatedBy; updatedAt = Time.now() });
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func updateDeviceManualChapterMeta(id : Nat, title : Text, updatedBy : Text) : async Bool {
+    requireManualLockOk(caller, id);
+    switch (deviceManualChapters.get(id)) {
+      case (?ch) {
+        deviceManualChapters.add(id, { ch with title; contentHtml = ""; updatedBy; updatedAt = Time.now() });
         true;
       };
       case null { false };

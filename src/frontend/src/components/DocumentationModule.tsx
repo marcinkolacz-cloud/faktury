@@ -3,7 +3,8 @@ import { useAuthContext } from "../providers/AuthProvider";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { setDriveActor } from "../lib/oneDriveConfig";
-import { syncChapterToDrive, uploadChapterImage } from "../lib/documentationDriveSync";
+import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive } from "../lib/documentationDriveSync";
+import { convertDocxToHtml } from "../lib/docxImport";
 
 // SECURITY / DESIGN NOTE: the Agent AI chat (FloatingAgentChat.tsx) is
 // intentionally never given any tool referencing device manual/documentation
@@ -61,6 +62,10 @@ function applyLiveHeadingNumbers(container: HTMLElement, h1Start: number) {
   let h2 = 0;
   let h3 = 0;
   container.querySelectorAll("h1, h2, h3").forEach((el) => {
+    if (/^table of contents$|^spis tre[śs]ci$/i.test((el.textContent || "").trim())) {
+      el.removeAttribute("data-num");
+      return;
+    }
     if (el.tagName === "H1") {
       h1 += 1; h2 = 0; h3 = 0;
       el.setAttribute("data-num", `${h1}. `);
@@ -96,6 +101,9 @@ function numberHeadingsForExport(chapters: Chapter[], includeIds?: Set<number>):
     const doc = new DOMParser().parseFromString(ch.contentHtml, "text/html");
     repairTableBorders(doc.body);
     doc.body.querySelectorAll("h1, h2, h3").forEach((el) => {
+      if (/^table of contents$|^spis tre[śs]ci$/i.test((el.textContent || "").trim())) {
+        return;
+      }
       if (el.tagName === "H1") {
         h1 += 1; h2 = 0; h3 = 0;
         el.innerHTML = `${h1}.\u00A0${el.innerHTML}`;
@@ -270,6 +278,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [deviceId, setDeviceId] = useState<number | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const activeIdRef = useRef<number | null>(null);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   const [loading, setLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [fitToScreen, setFitToScreen] = useState(false);
@@ -349,7 +359,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [pollError, setPollError] = useState<string>("");
   const editorRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const wordImportInputRef = useRef<HTMLInputElement | null>(null);
+  const [wordImporting, setWordImporting] = useState(false);
   const autoSaveTimer = useRef<number | null>(null);
+  const savingRef = useRef(false);
   const [selectedImg, setSelectedImg] = useState<HTMLImageElement | null>(null);
   const [selectedTableEl, setSelectedTableEl] = useState<HTMLTableElement | null>(null);
   const [tableModalMode, setTableModalMode] = useState<"insert" | "resize">("insert");
@@ -389,40 +402,79 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }).catch(() => { /* fall back to defaults */ });
   }, [actor]);
 
+  const fetchChapterContent = async (id: number): Promise<string> => {
+    try {
+      const fromDrive = await loadChapterContentFromDrive(deviceLabel, id);
+      if (fromDrive) return fromDrive;
+    } catch { /* Drive niedostepny lub plik nie istnieje - fallback nizej */ }
+    const lenRes: any = await actor.getDeviceManualChapterContentLength(id);
+    const total = lenRes && lenRes.length ? Number(lenRes[0]) : 0;
+    if (total === 0) return "";
+    const CHUNK = 1_000_000;
+    let result = "";
+    for (let start = 0; start < total; start += CHUNK) {
+      const chunkRes: any = await actor.getDeviceManualChapterContentChunk(id, start, CHUNK);
+      result += chunkRes && chunkRes.length ? chunkRes[0] : "";
+    }
+    return result;
+  };
+
   const reload = async () => {
     if (deviceId === null) return;
     setLoading(true);
-    const rows = await actor.listDeviceManualChapters(deviceId);
+    const rows = await actor.listDeviceManualChaptersMeta(deviceId);
     const mapped: Chapter[] = rows.map((r: any) => ({ id: Number(r.id), title: r.title, contentHtml: r.contentHtml, order: Number(r.order) }));
     setChapters(mapped);
-    setActiveId((prev) => (mapped.find((c) => c.id === prev) ? prev : mapped.length ? mapped[0].id : null));
+    const nextActive = mapped.find((c: any) => c.id === activeIdRef.current) ? activeIdRef.current : (mapped.length ? mapped[0].id : null);
+    setActiveId(nextActive);
+    if (nextActive !== null) {
+      const content = await fetchChapterContent(nextActive);
+      setChapters((prev) => prev.map((c) => (c.id === nextActive ? { ...c, contentHtml: content } : c)));
+    }
     setLoading(false);
   };
-
-  // Silent variant used by the background poll: fetches the same data but
-  // never touches `loading`, so it doesn't flash/hide the currently
-  // rendered content the way the initial reload() does.
   const silentReload = async () => {
     setPollTicks((n) => n + 1);
     if (deviceId === null) return;
     try {
-      const rows = await actor.listDeviceManualChapters(deviceId);
-      const mapped: Chapter[] = rows.map((r: any) => ({ id: Number(r.id), title: r.title, contentHtml: r.contentHtml, order: Number(r.order) }));
-      setChapters(mapped);
-      setActiveId((prev) => (mapped.find((c) => c.id === prev) ? prev : mapped.length ? mapped[0].id : null));
+      const rows = await actor.listDeviceManualChaptersMeta(deviceId);
+      setChapters((prev) => rows.map((r: any) => {
+        const prevCh = prev.find((c) => c.id === Number(r.id));
+        return { id: Number(r.id), title: r.title, contentHtml: prevCh ? prevCh.contentHtml : r.contentHtml, order: Number(r.order) };
+      }));
+      const mapped = rows.map((r: any) => ({ id: Number(r.id), title: r.title, order: Number(r.order) }));
+      const nextActive = mapped.find((c: any) => c.id === activeIdRef.current) ? activeIdRef.current : (mapped.length ? mapped[0].id : null);
+      setActiveId(nextActive);
+      if (nextActive !== null && !editMode) {
+        const content = await fetchChapterContent(nextActive);
+        setChapters((prev) => prev.map((c) => (c.id === nextActive ? { ...c, contentHtml: content } : c)));
+      }
       setLastPolled(new Date());
       setPollError("");
     } catch (e: any) {
       setPollError(String(e?.message || e));
     }
-    if (activeId !== null && !editMode) {
+    if (activeIdRef.current !== null && !editMode) {
       try {
-        const lock = await actor.getEditLock(activeId);
+        const lock = await actor.getEditLock(activeIdRef.current);
         setLockedBy(lock && lock.length > 0 ? lock[0].toText() : null);
       } catch { /* non-critical */ }
     }
   };
   useEffect(() => { reload(); }, [actor, deviceId]);
+  // Fetch full content on-demand when switching chapters (e.g. clicking
+  // another chapter in the list) — chapters state only holds metadata
+  // (title/order), contentHtml is loaded lazily per-chapter to avoid a
+  // single oversized query call across a large documentation set.
+  useEffect(() => {
+    if (!actor || activeId === null) return;
+    let cancelled = false;
+    fetchChapterContent(activeId).then((content) => {
+      if (cancelled) return;
+      setChapters((prev) => prev.map((c) => (c.id === activeId ? { ...c, contentHtml: content } : c)));
+    });
+    return () => { cancelled = true; };
+  }, [activeId, actor]);
   // Poll for changes made by other staff members so they show up without
   // requiring a manual F5. Cheap: listDeviceManualChapters is a query call
   // (no consensus round, no HTTP outcalls). Skipped while actively editing
@@ -536,7 +588,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const confirmRename = async (ch: Chapter) => {
     const title = renameValue.trim() || ch.title;
     setRenamingId(null);
-    await actor.updateDeviceManualChapter(ch.id, title, ch.contentHtml, "");
+    // Metadata-only write (title/order/timestamp) — never sends contentHtml
+    // over ingress, which for large chapters (content now lives on Drive)
+    // exceeds the IC message size limit and silently fails.
+    await actor.updateDeviceManualChapterMeta(ch.id, title, "");
     reload();
     try {
       await syncChapterToDrive(deviceLabel, ch.id, ch.order, title, ch.contentHtml);
@@ -836,6 +891,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // solid black border every editor-inserted table uses, so pasted
     // tables stay visible everywhere (editor, print preview, PDF, Word
     // export) regardless of the source app's styling.
+    doc.body.innerHTML = doc.body.innerHTML.replace(/\t/g, "\u00A0\u00A0\u00A0\u00A0");
     doc.body.querySelectorAll<HTMLElement>("td, th").forEach((el) => {
       el.style.borderWidth = "1px";
       el.style.borderStyle = "solid";
@@ -1015,6 +1071,37 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     setShowTableModal(false);
   };
   const insertImage = () => imageInputRef.current?.click();
+  const insertWordDoc = () => wordImportInputRef.current?.click();
+  const onWordFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!/\.docx$/i.test(file.name)) {
+      alert("Tylko pliki .docx (nie stare .doc).");
+      return;
+    }
+    setWordImporting(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const html = await convertDocxToHtml(arrayBuffer);
+      const sanitized = sanitizePastedHtml(html);
+      const sel0 = window.getSelection();
+      const anchorEl = sel0 && sel0.anchorNode
+        ? (sel0.anchorNode.nodeType === 1 ? (sel0.anchorNode as HTMLElement) : sel0.anchorNode.parentElement)
+        : null;
+      if (anchorEl && anchorEl.closest("table") && editorRef.current?.contains(anchorEl)) {
+        alert("Ustaw kursor poza tabelą i spróbuj ponownie.");
+        return;
+      }
+      editorRef.current?.focus();
+      document.execCommand("insertHTML", false, sanitized);
+      setDirty(true);
+    } catch (err: any) {
+      alert("Nie udało się zaimportować pliku: " + String(err?.message || err));
+    } finally {
+      setWordImporting(false);
+    }
+  };
 
   const placeCaretAtPoint = (x: number, y: number) => {
     const anyDoc = document as any;
@@ -1112,37 +1199,32 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
 
   const saveChapter = async (silent = false) => {
     if (!active || !editorRef.current) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try {
     // Strip the live-preview data-num attributes before persisting —
     // they're recomputed fresh on every load/render (see
     // applyLiveHeadingNumbers), so saved content should stay clean of
     // them to avoid staleness and keep the stored HTML minimal.
     const html = editorRef.current.innerHTML.replace(/\s*data-num="[^"]*"/g, "");
-    const CHUNK_SIZE = 1_000_000;
-    if (html.length > CHUNK_SIZE) {
-      await actor.beginChapterUpload(active.id);
-      for (let i = 0; i < html.length; i += CHUNK_SIZE) {
-        await actor.appendChapterChunk(active.id, html.slice(i, i + CHUNK_SIZE));
-      }
-      await actor.commitChapterUpload(active.id, active.title, "");
-    } else {
-      await actor.updateDeviceManualChapter(active.id, active.title, html, "");
+    try {
+      await syncChapterToDrive(deviceLabel, active.id, active.order, active.title, html);
+    } catch (e: any) {
+      setDriveSyncError("Nie udalo sie zapisac na Bartolini Drive: " + (e?.message || String(e)));
+      setTimeout(() => setDriveSyncError(""), 5000);
+      return;
     }
+    await actor.updateDeviceManualChapterMeta(active.id, active.title, "");
     setDirty(false);
     setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: html } : c)));
-    if (silent) {
-      setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 1200);
-    } else {
-      // Manual "💾 Zapisz" click only — the silent 3s auto-save doesn't
-      // push to Drive on every keystroke pause, just the canister.
-      try {
-        await syncChapterToDrive(deviceLabel, active.id, active.order, active.title, html);
-        setDriveSyncFlash(true);
-        setTimeout(() => setDriveSyncFlash(false), 1500);
-      } catch (e: any) {
-        setDriveSyncError("Nie udało się zsynchronizować z Bartolini Drive: " + (e?.message || String(e)));
-        setTimeout(() => setDriveSyncError(""), 5000);
-      }
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1200);
+    if (!silent) {
+      setDriveSyncFlash(true);
+      setTimeout(() => setDriveSyncFlash(false), 1500);
+    }
+    } finally {
+      savingRef.current = false;
     }
   };
 
@@ -1154,17 +1236,26 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     return () => { if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current); };
   }, [dirty, autoSave, editMode]);
 
-  const getChaptersForExport = (): Chapter[] => {
-    if (!active || !editorRef.current) return chapters;
-    const liveHtml = editorRef.current.innerHTML.replace(/\s*data-num="[^"]*"/g, "");
-    return chapters.map((c) => (c.id === active.id ? { ...c, contentHtml: liveHtml } : c));
+  const getChaptersForExport = async (): Promise<Chapter[]> => {
+    const liveHtml = active && editorRef.current ? editorRef.current.innerHTML.replace(/\s*data-num="[^"]*"/g, "") : null;
+    let merged = chapters.map((c) => (active && liveHtml !== null && c.id === active.id ? { ...c, contentHtml: liveHtml } : c));
+    const missing = merged.filter((c) => selectedForPrint.has(c.id) && !c.contentHtml);
+    if (missing.length > 0) {
+      const fetched = await Promise.all(missing.map((c) => fetchChapterContent(c.id)));
+      merged = merged.map((c) => {
+        const idx = missing.findIndex((m) => m.id === c.id);
+        return idx >= 0 ? { ...c, contentHtml: fetched[idx] } : c;
+      });
+      setChapters(merged);
+    }
+    return merged;
   };
 
   const exportWord = async () => {
     try {
       const selected = chapters.filter((c) => selectedForPrint.has(c.id));
       if (selected.length === 0) { alert("Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej)."); return; }
-      const html = await buildWordExportHtml(deviceLabel, getChaptersForExport(), hfSettings, selectedForPrint);
+      const html = await buildWordExportHtml(deviceLabel, await getChaptersForExport(), hfSettings, selectedForPrint);
       const blob = new Blob(["\ufeff", html], { type: "application/msword" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1188,7 +1279,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // to be an exact preview of what exportWord()/exportPdf() will
   // produce, so it must use the same chapter set and the same
   // numberHeadingsForExport() numbering as Word.
-  const buildChapterPreviewHtml = (): string => {
+  const buildChapterPreviewHtml = async (): Promise<string> => {
     const selected = chapters.filter((c) => selectedForPrint.has(c.id));
     if (selected.length === 0) {
       return `<html><body style="font-family:Arial,sans-serif;padding:24px;color:#888;">
@@ -1197,7 +1288,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }
     const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
-    const numbered = numberHeadingsForExport(getChaptersForExport(), selectedForPrint);
+    const numbered = numberHeadingsForExport(await getChaptersForExport(), selectedForPrint);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     return `<html><head><meta charset="utf-8"/><title>Podgląd wydruku</title>
       <style>
@@ -1219,19 +1310,19 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       </div>
       </body></html>`;
   };
-  const openPrintPreview = () => {
-    setPreviewHtml(buildChapterPreviewHtml());
+  const openPrintPreview = async () => {
+    setPreviewHtml(await buildChapterPreviewHtml());
     setShowPrintPreview(true);
   };
-  const refreshPrintPreview = () => {
-    setPreviewHtml(buildChapterPreviewHtml());
+  const refreshPrintPreview = async () => {
+    setPreviewHtml(await buildChapterPreviewHtml());
   };
-  const exportPdf = () => {
+  const exportPdf = async () => {
     const selected = chapters.filter((c) => selectedForPrint.has(c.id));
     if (selected.length === 0) { alert("Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej)."); return; }
     // Numbering via numberHeadingsForExport (same as Word/print preview),
     // not CSS counters — see buildChapterPreviewHtml for why.
-    const numbered = numberHeadingsForExport(getChaptersForExport(), selectedForPrint);
+    const numbered = numberHeadingsForExport(await getChaptersForExport(), selectedForPrint);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
@@ -1382,6 +1473,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             <div className="flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)]">
               <style>{COUNTER_CSS}</style>
               <input ref={imageInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={onImageSelected} />
+              <input ref={wordImportInputRef} type="file" accept=".docx" className="hidden" onChange={onWordFileSelected} />
               {!active ? (
                 <div className="p-8 text-sm text-[var(--text-muted)]">
                   {chapters.length === 0 ? "Brak rozdziałów — dodaj pierwszy w panelu po lewej." : "Wybierz rozdział z listy."}
@@ -1458,6 +1550,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         </button>
                         <button onClick={insertPageBreak} className="text-xs px-2 h-8 rounded border border-[#ccc]">⏎ Podział strony</button>
                         <button onClick={insertTable} className="text-xs px-2 h-8 rounded border border-[#ccc]">🔲 Tabela</button>
+                        <button onClick={insertWordDoc} disabled={wordImporting} className="text-xs px-2 h-8 rounded border border-[#ccc] disabled:opacity-50">
+                          {wordImporting ? "Importuję…" : "📄 Import z Worda"}
+                        </button>
                         <button onClick={addComment} className="text-xs px-2 h-8 rounded border border-[#ccc]">💬 Komentarz</button>
                         {selectedTableEl && (
                           <>
