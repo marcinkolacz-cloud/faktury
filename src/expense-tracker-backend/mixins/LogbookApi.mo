@@ -320,7 +320,20 @@ mixin (
           case null { null };
         };
       };
-      case null { null };
+      case null {
+        // Brak wcześniejszych wpisów w dzienniku dla tego urządzenia — użyj
+        // liczników "flightHours"/"flightMinutes" z karty urządzenia (Moduł
+        // Urządzenia) jako liczbę bazową, żeby nie zaczynać od zera dla
+        // sprzętu, który już wcześniej latał.
+        switch (devices.get(deviceId)) {
+          case (?d) {
+            if (d.flightHours == 0 and d.flightMinutes == 0) { null } else {
+              ?(Nat.toText(d.flightHours) # ":" # (if (d.flightMinutes < 10) { "0" # Nat.toText(d.flightMinutes) } else { Nat.toText(d.flightMinutes) }));
+            };
+          };
+          case null { null };
+        };
+      };
     };
   };
 

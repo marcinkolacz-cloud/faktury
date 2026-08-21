@@ -53,6 +53,37 @@ function formatCounter(totalMinutes: number): string {
 // Podpis odręczny — canvas z obsługą pointer events (działa z piórem/rysikiem
 // na tablecie, dotykiem i myszą). Eksportowany jako PNG data URL dopiero przy
 // zapisie (submit), żeby nie generować base64 przy każdym pociągnięciu.
+// Native <input type="time"> renders with AM/PM on some OS/browser locale
+// settings, which is confusing for logging session start/end across
+// midnight. Two plain <select> elements guarantee a 24h HH:MM value
+// regardless of the device's locale.
+const HOURS_24 = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES_60 = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+function TimeSelect24({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [h, m] = value.includes(":") ? value.split(":") : ["", ""];
+  return (
+    <div className="flex items-center gap-1">
+      <select
+        value={h}
+        onChange={(e) => onChange(`${e.target.value}:${m || "00"}`)}
+        className="border-0 outline-none bg-transparent text-sm text-[#111] px-1 py-1.5"
+      >
+        <option value="">--</option>
+        {HOURS_24.map((v) => <option key={v} value={v}>{v}</option>)}
+      </select>
+      <span className="text-[#111]">:</span>
+      <select
+        value={m}
+        onChange={(e) => onChange(`${h || "00"}:${e.target.value}`)}
+        className="border-0 outline-none bg-transparent text-sm text-[#111] px-1 py-1.5"
+      >
+        <option value="">--</option>
+        {MINUTES_60.map((v) => <option key={v} value={v}>{v}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function SignaturePad({ onDirtyChange, padRef }: { onDirtyChange: (dirty: boolean) => void; padRef: React.RefObject<HTMLCanvasElement | null> }) {
   const drawing = useRef(false);
   const dirty = useRef(false);
@@ -528,10 +559,10 @@ export function LogbookPublicForm() {
                 </div>
               </td>
               <td className={td}>
-                <input type="time" value={entry.godzRozpoczecia} onChange={(e) => setEntry({ ...entry, godzRozpoczecia: e.target.value })} className={cellInput} />
+                <TimeSelect24 value={entry.godzRozpoczecia} onChange={(v) => setEntry({ ...entry, godzRozpoczecia: v })} />
               </td>
               <td className={td}>
-                <input type="time" value={entry.godzZakonczenia} onChange={(e) => setEntry({ ...entry, godzZakonczenia: e.target.value })} className={cellInput} />
+                <TimeSelect24 value={entry.godzZakonczenia} onChange={(v) => setEntry({ ...entry, godzZakonczenia: v })} />
               </td>
               <td className={td + " px-2 py-1.5 text-sm text-center text-gray-700"}>{czasSesji(entry.godzRozpoczecia, entry.godzZakonczenia)}</td>
               <td className={td}>
