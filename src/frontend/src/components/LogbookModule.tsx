@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import * as XLSX from "xlsx";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 
@@ -37,6 +38,9 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
   const [addError, setAddError] = useState("");
   const [revealedPin, setRevealedPin] = useState<{ email: string; pin: string } | null>(null);
   const [zoomedSignature, setZoomedSignature] = useState<string | null>(null);
+  const [filterName, setFilterName] = useState("");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
 
   const reload = async () => {
     if (!actor) return;
@@ -88,6 +92,37 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
     reload();
   };
 
+  const filteredEntries = entries.filter((e) => {
+    if (filterName.trim()) {
+      const q = filterName.trim().toLowerCase();
+      const hay = (e.instruktorName + " " + (e.szkoleni || "")).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (filterFrom && e.dataText < filterFrom) return false;
+    if (filterTo && e.dataText > filterTo) return false;
+    return true;
+  });
+
+  const exportEntriesToExcel = () => {
+    const rows = filteredEntries.map((e) => ({
+      Data: e.dataText,
+      Urządzenie: entryDevices[String(e.id)] || "",
+      Instruktor: e.instruktorName,
+      "E-mail": e.instruktorEmail,
+      Szkoleni: e.szkoleni,
+      Rodzaj: activityLabel(e.rodzajAktywnosci),
+      "Godz. rozpoczęcia": e.godzRozpoczecia,
+      "Godz. zakończenia": e.godzZakonczenia,
+      "Czas sesji": czasSesji(e.godzRozpoczecia, e.godzZakonczenia),
+      Licznik: e.licznikPoSesji,
+      Usterki: e.brakUsterek ? "Brak" : e.opisUsterki,
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Dziennik");
+    const range = (filterFrom || filterTo) ? `_${filterFrom || "poczatek"}_${filterTo || "koniec"}` : "";
+    XLSX.writeFile(wb, `dziennik-uzytkowania${range}.xlsx`);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[var(--bg-page)] flex items-center justify-center">
@@ -118,7 +153,34 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
         </div>
 
         {tab === "entries" && (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto space-y-3">
+            <div className="flex flex-wrap items-end gap-2 text-sm">
+              <label className="flex flex-col text-xs text-[var(--text-muted)]">
+                Szukaj (imię/nazwisko)
+                <input
+                  value={filterName}
+                  onChange={(e) => setFilterName(e.target.value)}
+                  placeholder="np. Kowalski"
+                  className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm bg-[var(--bg-page)] text-[var(--text-primary)]"
+                />
+              </label>
+              <label className="flex flex-col text-xs text-[var(--text-muted)]">
+                Od
+                <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm bg-[var(--bg-page)] text-[var(--text-primary)]" />
+              </label>
+              <label className="flex flex-col text-xs text-[var(--text-muted)]">
+                Do
+                <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm bg-[var(--bg-page)] text-[var(--text-primary)]" />
+              </label>
+              {(filterName || filterFrom || filterTo) && (
+                <button onClick={() => { setFilterName(""); setFilterFrom(""); setFilterTo(""); }} className="text-xs text-cyan-600 hover:underline mb-1.5">
+                  Wyczyść filtry
+                </button>
+              )}
+              <button onClick={exportEntriesToExcel} className="ml-auto px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm font-medium mb-0">
+                📊 Eksportuj do Excel ({filteredEntries.length})
+              </button>
+            </div>
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-color)]">
@@ -135,7 +197,7 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e) => (
+                {filteredEntries.map((e) => (
                   <tr key={String(e.id)} className="border-b border-[var(--border-color)]/50">
                     <td className="py-2 pr-3 whitespace-nowrap">{e.dataText}</td>
                     <td className="py-2 pr-3">{entryDevices[String(e.id)] || "—"}</td>
@@ -172,8 +234,8 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                     </td>
                   </tr>
                 ))}
-                {entries.length === 0 && (
-                  <tr><td colSpan={11} className="py-6 text-center text-[var(--text-muted)]">Brak wpisów.</td></tr>
+                {filteredEntries.length === 0 && (
+                  <tr><td colSpan={11} className="py-6 text-center text-[var(--text-muted)]">Brak wpisów spełniających filtry.</td></tr>
                 )}
               </tbody>
             </table>

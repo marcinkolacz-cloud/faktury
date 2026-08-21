@@ -338,6 +338,30 @@ mixin (
     result.toArray();
   };
 
+  // Historia własnych wpisów zalogowanego instruktora (sesja PIN-owa, nie
+  // accessRoles) — zwraca tylko wpisy powiązane z jego adresem e-mail z
+  // sesji, więc jeden instruktor nie zobaczy wpisów innych. Dołącza etykietę
+  // urządzenia, żeby frontend nie musiał robić osobnego wywołania.
+  public query func listMyLogbookEntries(sessionToken : Text) : async [(Types.LogbookEntry, Text)] {
+    let email = requireValidSessionQuery(sessionToken);
+    var result = List.empty<(Types.LogbookEntry, Text)>();
+    for ((id, e) in logbookEntries.entries()) {
+      if (e.instruktorEmail == email and logbookEntriesTrashed.get(id) == null) {
+        let devLabel = switch (logbookEntryDeviceId.get(id)) {
+          case (?devId) {
+            switch (devices.get(devId)) {
+              case (?d) { d.symbol # " — " # d.name };
+              case null { "?" };
+            };
+          };
+          case null { "?" };
+        };
+        result.add((e, devLabel));
+      };
+    };
+    result.toArray();
+  };
+
   // --- Admin: przegląd / kosz wpisów (spójne z resztą apki) ---
 
   public query ({ caller }) func listLogbookEntries() : async [Types.LogbookEntry] {

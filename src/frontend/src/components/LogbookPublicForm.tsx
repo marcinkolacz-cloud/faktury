@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { createPublicActor } from "../lib/publicActor";
 import { useTheme } from "../providers/ThemeProvider";
 
@@ -126,6 +127,11 @@ export function LogbookPublicForm() {
   const [loggingIn, setLoggingIn] = useState(false);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [instructorEmail, setInstructorEmail] = useState("");
+  const [view, setView] = useState<"form" | "history">("form");
+  const [myHistory, setMyHistory] = useState<{ entry: any; device: string }[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyFrom, setHistoryFrom] = useState("");
+  const [historyTo, setHistoryTo] = useState("");
 
   const login = async () => {
     if (!email.trim() || pin.trim().length !== 6) {
@@ -190,6 +196,45 @@ export function LogbookPublicForm() {
     setEntry((prev) => ({ ...prev, licznikPoSesji: formatCounter(baseMin + durMin) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [counterBaseline, entry.godzRozpoczecia, entry.godzZakonczenia]);
+
+  const loadHistory = async () => {
+    if (!sessionToken) return;
+    setHistoryLoading(true);
+    const actor = await createPublicActor();
+    const rows = (await actor.listMyLogbookEntries(sessionToken)) as [any, string][];
+    setMyHistory(rows.map(([entry, device]) => ({ entry, device })));
+    setHistoryLoading(false);
+  };
+
+  useEffect(() => {
+    if (view === "history") loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, sessionToken]);
+
+  const filteredHistory = myHistory.filter(({ entry: e }) => {
+    if (historyFrom && e.dataText < historyFrom) return false;
+    if (historyTo && e.dataText > historyTo) return false;
+    return true;
+  }).sort((a, b) => (a.entry.dataText < b.entry.dataText ? 1 : -1));
+
+  const exportMyHistory = () => {
+    const rows = filteredHistory.map(({ entry: e, device }) => ({
+      Data: e.dataText,
+      Urządzenie: device,
+      Szkoleni: e.szkoleni,
+      Rodzaj: Object.keys(e.rodzajAktywnosci || {})[0] || "",
+      "Godz. rozpoczęcia": e.godzRozpoczecia,
+      "Godz. zakończenia": e.godzZakonczenia,
+      "Czas sesji": czasSesji(e.godzRozpoczecia, e.godzZakonczenia),
+      Licznik: e.licznikPoSesji,
+      Usterki: e.brakUsterek ? "Brak" : e.opisUsterki,
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Moje wpisy");
+    const range = (historyFrom || historyTo) ? `_${historyFrom || "poczatek"}_${historyTo || "koniec"}` : "";
+    XLSX.writeFile(wb, `moj-dziennik${range}.xlsx`);
+  };
+
 
   // --- Podpis i wysyłka ---
   const [sigDirty, setSigDirty] = useState(false);
@@ -279,6 +324,7 @@ export function LogbookPublicForm() {
     setEntry(emptyEntry);
     setCounterBaseline(null);
     setDeviceOptions([]);
+    setView("form");
     clearSignature();
   };
 
@@ -335,6 +381,83 @@ export function LogbookPublicForm() {
           DZIENNIK UŻYTKOWANIA URZĄDZENIA
         </h1>
 
+        <div className="flex gap-2 border-b border-gray-300">
+          <button
+            onClick={() => setView("form")}
+            className={"px-3 py-1.5 text-sm " + (view === "form" ? "border-b-2 border-cyan-600 text-cyan-600 font-medium" : "text-gray-500")}
+          >
+            Nowy wpis
+          </button>
+          <button
+            onClick={() => setView("history")}
+            className={"px-3 py-1.5 text-sm " + (view === "history" ? "border-b-2 border-cyan-600 text-cyan-600 font-medium" : "text-gray-500")}
+          >
+            Moja historia
+          </button>
+        </div>
+
+        {view === "history" && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-end gap-2 text-sm">
+              <label className="flex flex-col text-xs text-gray-600">
+                Od
+                <input type="date" value={historyFrom} onChange={(e) => setHistoryFrom(e.target.value)} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
+              </label>
+              <label className="flex flex-col text-xs text-gray-600">
+                Do
+                <input type="date" value={historyTo} onChange={(e) => setHistoryTo(e.target.value)} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
+              </label>
+              {(historyFrom || historyTo) && (
+                <button onClick={() => { setHistoryFrom(""); setHistoryTo(""); }} className="text-xs text-cyan-600 hover:underline mb-1.5">
+                  Wyczyść filtry
+                </button>
+              )}
+              <button onClick={exportMyHistory} className="ml-auto px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm font-medium">
+                📊 Eksportuj do Excel ({filteredHistory.length})
+              </button>
+            </div>
+            {historyLoading ? (
+              <p className="text-sm text-gray-500 text-center py-6">Ładowanie...</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b border-gray-300">
+                      <th className="py-2 pr-3">Data</th>
+                      <th className="py-2 pr-3">Urządzenie</th>
+                      <th className="py-2 pr-3">Szkoleni</th>
+                      <th className="py-2 pr-3">Godz.</th>
+                      <th className="py-2 pr-3">Czas</th>
+                      <th className="py-2 pr-3">Licznik</th>
+                      <th className="py-2 pr-3">Usterki</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredHistory.map(({ entry: e, device }) => (
+                      <tr key={String(e.id)} className="border-b border-gray-200">
+                        <td className="py-2 pr-3 whitespace-nowrap">{e.dataText}</td>
+                        <td className="py-2 pr-3">{device}</td>
+                        <td className="py-2 pr-3">{e.szkoleni || "—"}</td>
+                        <td className="py-2 pr-3 whitespace-nowrap">{e.godzRozpoczecia}–{e.godzZakonczenia}</td>
+                        <td className="py-2 pr-3 whitespace-nowrap">{czasSesji(e.godzRozpoczecia, e.godzZakonczenia)}</td>
+                        <td className="py-2 pr-3">{e.licznikPoSesji || "—"}</td>
+                        <td className="py-2 pr-3">
+                          {e.brakUsterek ? <span className="text-green-600">Brak</span> : <span className="text-amber-600">⚠ {e.opisUsterki}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredHistory.length === 0 && (
+                      <tr><td colSpan={7} className="py-6 text-center text-gray-500">Brak wpisów.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {view === "form" && (
+        <>
         <label className="block text-xs text-gray-600">
           Urządzenie
           <select
@@ -467,6 +590,8 @@ export function LogbookPublicForm() {
         <button onClick={submitEntry} disabled={submitting} className="w-full px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-semibold disabled:opacity-50">
           {submitting ? "Zapisywanie..." : "✔ Zatwierdź wpis"}
         </button>
+        </>
+        )}
       </div>
     </div>
   );
