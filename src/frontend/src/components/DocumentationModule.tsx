@@ -330,6 +330,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [editMode, setEditMode] = useState(false);
   const [fitToScreen, setFitToScreen] = useState(false);
   const [twoPageView, setTwoPageView] = useState(false);
+  const [twoPageHtml, setTwoPageHtml] = useState("");
+  const [twoPageTick, setTwoPageTick] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
   // 210mm in CSS px at the standard 96dpi reference used everywhere else
   // in this file (print preview, export) - must stay ONE authoritative
@@ -1464,8 +1466,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // to be an exact preview of what exportWord()/exportPdf() will
   // produce, so it must use the same chapter set and the same
   // numberHeadingsForExport() numbering as Word.
-  const buildChapterPreviewHtml = async (_forPrint: boolean = false, gridView: boolean = false): Promise<string> => {
-    const selected = chapters.filter((c) => selectedForPrint.has(c.id));
+  const buildChapterPreviewHtml = async (_forPrint: boolean = false, gridView: boolean = false, selectedOverride?: Set<number>): Promise<string> => {
+    const selectedSet = selectedOverride || selectedForPrint;
+    const selected = chapters.filter((c) => selectedSet.has(c.id));
     if (selected.length === 0) {
       return `<html><body style="font-family:Arial,sans-serif;padding:24px;color:#888;">
         Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej), żeby zobaczyć podgląd wydruku.
@@ -1476,7 +1479,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
     const footerLeftHtml = hfSettings.footerTextLeft.trim();
     const footerRightHtml = hfSettings.footerTextRight.trim();
-    const numbered = numberHeadingsForExport(await getChaptersForExport(), selectedForPrint);
+    const numbered = numberHeadingsForExport(await getChaptersForExport(), selectedSet);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     // A4 usable content box in mm (must match .page-header/.page-footer
     // heights below): width 210 - 2*1.27cm margins, height 297 - header
@@ -1627,6 +1630,23 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     setPreviewPageCount(null);
     setPreviewHtml(await buildChapterPreviewHtml(false, previewGridView));
   };
+  // Real, JS-measured live "2 pages side by side" view - reuses the exact
+  // same pagination engine as Podgląd wydruku/eksport (accurate margins,
+  // header/footer per page, hard A4 page boundaries), refreshed with a
+  // short debounce while typing. Read-only (typing still happens in the
+  // single contentEditable box above) - real per-page splitting across a
+  // live contentEditable region is not feasible without risking caret/undo
+  // breakage, so this renders alongside it instead of replacing it.
+  useEffect(() => {
+    if (!twoPageView || !editMode || !active) { setTwoPageHtml(""); return; }
+    let cancelled = false;
+    const run = async () => {
+      const html = await buildChapterPreviewHtml(false, true, new Set([active.id]));
+      if (!cancelled) setTwoPageHtml(html);
+    };
+    const t = setTimeout(run, 500);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [twoPageView, editMode, active, twoPageTick]);
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.data && e.data.type === "docPreviewPageCount") setPreviewPageCount(e.data.count);
@@ -1825,7 +1845,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     {editMode && canEdit && (
                       <button
                         onClick={() => setTwoPageView((v) => !v)}
-                        title="Widok dwoch stron obok siebie (jak w Word) - przyblizony, tresc balansuje miedzy kolumnami"
+                        title="Pokazuje żywy podgląd paginacji obok edytora (ten sam silnik co Podgląd wydruku - realne strony A4, marginesy, nagłówek/stopka)"
                         className={`text-xs px-3 py-1.5 rounded border ${twoPageView ? "bg-cyan-600 text-white border-cyan-600" : "border-[#ccc]"}`}
                       >
                         📖 2 strony obok
@@ -1909,12 +1929,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       </>
                     )}
                   </div>
-                  <div ref={commentAreaRef} className="flex-1 relative overflow-auto bg-[var(--bg-page)] py-6">
+                  <div className="flex-1 flex overflow-hidden">
+                  <div ref={commentAreaRef} className={"relative overflow-auto bg-[var(--bg-page)] py-6 " + ((twoPageView && editMode) ? "w-1/2 shrink-0 border-r border-[var(--border-color)]" : "flex-1")}>
                     <div
                       className="mx-auto bg-[var(--bg-card)] text-[var(--text-primary)] shadow-lg relative"
                       style={{
-                        width: (twoPageView && editMode) ? "436mm" : "210mm",
-                        maxWidth: (twoPageView && editMode) ? "1700px" : "210mm",
+                        width: "210mm",
+                        maxWidth: "210mm",
                         minHeight: "297mm",
                         boxSizing: "border-box",
                         padding: "3.75cm 1.27cm 1.27cm 1.27cm",
@@ -1961,6 +1982,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       onInput={() => {
                         setDirty(true);
                         if (editorRef.current) applyLiveHeadingNumbers(editorRef.current, h1Offset);
+                        if (twoPageView) setTwoPageTick((t) => t + 1);
                       }}
                       onClick={onEditorClick}
                       onPaste={onEditorPaste}
@@ -1993,7 +2015,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       }}
                       suppressContentEditableWarning
                       className="p-8 text-[15px] leading-relaxed outline-none"
-                      style={{ maxWidth: 900, margin: "0 auto", width: "100%", ["--h1-offset" as any]: h1Offset, ...((twoPageView && editMode) ? { columnCount: 2, columnGap: "10mm", columnFill: "balance" } as any : {}) }}
+                      style={{ maxWidth: 900, margin: "0 auto", width: "100%", ["--h1-offset" as any]: h1Offset }}
                     />
                     {pageMarkers.map((y, i) => (
                       <div
@@ -2056,6 +2078,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         </div>
                       </>
                     )}
+                  </div>
+                  {twoPageView && editMode && (
+                    <div className="w-1/2 shrink-0 overflow-auto bg-[#888] flex flex-col">
+                      <div className="text-[10px] text-white bg-[#555] px-3 py-1.5">📖 Podgląd stron na żywo (jak w Podglądzie wydruku, odśwież. co 0,5s po edycji)</div>
+                      <iframe title="Podgląd stron" srcDoc={twoPageHtml} className="flex-1 w-full" style={{ border: "none" }} />
+                    </div>
+                  )}
                   </div>
                 </>
               )}
