@@ -126,6 +126,9 @@ function numberHeadingsForExport(chapters: Chapter[], includeIds?: Set<number>):
 }
 
 const PAGE_BREAK_CLASS = "manual-page-break";
+// Same content-height budget as recomputePageMarkers/print engine - reused
+// for the "2 karty do edycji" live column layout (2 cards side by side).
+const TWO_CARD_PAGE_H_PX = Math.round((297 - 37.5 - 12.7) * (96 / 25.4)) - 32 * 2;
 
 // Walks a chapter's DOM (already heading-numbered) and produces docx
 // elements. Deliberately supports only what the editor's toolbar can
@@ -332,6 +335,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [twoPageView, setTwoPageView] = useState(false);
   const [twoPageHtml, setTwoPageHtml] = useState("");
   const [twoPageTick, setTwoPageTick] = useState(0);
+  const [twoCardEdit, setTwoCardEdit] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
   // 210mm in CSS px at the standard 96dpi reference used everywhere else
   // in this file (print preview, export) - must stay ONE authoritative
@@ -1844,11 +1848,20 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     </button>
                     {editMode && canEdit && (
                       <button
-                        onClick={() => setTwoPageView((v) => !v)}
+                        onClick={() => { setTwoPageView((v) => !v); setTwoCardEdit(false); }}
                         title="Pokazuje żywy podgląd paginacji obok edytora (ten sam silnik co Podgląd wydruku - realne strony A4, marginesy, nagłówek/stopka)"
                         className={`text-xs px-3 py-1.5 rounded border ${twoPageView ? "bg-cyan-600 text-white border-cyan-600" : "border-[#ccc]"}`}
                       >
                         📖 2 strony obok
+                      </button>
+                    )}
+                    {editMode && canEdit && (
+                      <button
+                        onClick={() => { setTwoCardEdit((v) => { const nv = !v; setTwoPageView(nv); return nv; }); }}
+                        title="Pełny edytor rozłożony na dwie karty A4 obok siebie (przybliżone marginesy, bez nagłówka/stopki w tym widoku)"
+                        className={`text-xs px-3 py-1.5 rounded border ${twoCardEdit ? "bg-cyan-600 text-white border-cyan-600" : "border-[#ccc]"}`}
+                      >
+                        📑 2 karty do edycji
                       </button>
                     )}
                     <div className="flex items-center gap-0.5">
@@ -1932,18 +1945,19 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   <div className="flex-1 flex overflow-hidden">
                   <div ref={commentAreaRef} className={"relative overflow-auto bg-[var(--bg-page)] py-6 " + ((twoPageView && editMode) ? "w-1/2 shrink-0 border-r border-[var(--border-color)]" : "flex-1")}>
                     <div
-                      className="mx-auto bg-[var(--bg-card)] text-[var(--text-primary)] shadow-lg relative"
+                      className="mx-auto text-[var(--text-primary)] shadow-lg relative"
                       style={{
-                        width: "210mm",
-                        maxWidth: "210mm",
+                        width: (twoCardEdit && editMode) ? "max-content" : "210mm",
+                        maxWidth: (twoCardEdit && editMode) ? "none" : "210mm",
                         minHeight: "297mm",
+                        background: (twoCardEdit && editMode) ? "var(--bg-page)" : "var(--bg-card)",
                         boxSizing: "border-box",
-                        padding: "3.75cm 1.27cm 1.27cm 1.27cm",
+                        padding: (twoCardEdit && editMode) ? "3.75cm 0 1.27cm 0" : "3.75cm 1.27cm 1.27cm 1.27cm",
                         transform: `scale(${zoomLevel / 100})`,
                         transformOrigin: "top center",
                       }}
                     >
-                    {hfSettings.enableHeader && (
+                    {hfSettings.enableHeader && !twoCardEdit && (
                       <div
                         className="absolute top-0 left-[1.27cm] right-[1.27cm] h-[3.75cm] box-border pointer-events-none select-none flex items-end pb-1.5 text-[9pt] text-[#888] border-b border-[#ccc]"
                         title="Nagłówek — edytuj przez ⚙️ Nagłówek/stopka"
@@ -1951,7 +1965,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         {hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`}
                       </div>
                     )}
-                    {hfSettings.enableFooter && (
+                    {hfSettings.enableFooter && !twoCardEdit && (
                       <div
                         className="absolute bottom-0 left-[1.27cm] right-[1.27cm] box-border pointer-events-none select-none flex items-center justify-between pt-1.5 text-[9pt] text-[#888] border-t border-[#ccc]"
                         title="Stopka — edytuj przez ⚙️ Nagłówek/stopka"
@@ -2015,9 +2029,21 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       }}
                       suppressContentEditableWarning
                       className="p-8 text-[15px] leading-relaxed outline-none"
-                      style={{ maxWidth: 900, margin: "0 auto", width: "100%", ["--h1-offset" as any]: h1Offset }}
+                      style={{
+                        maxWidth: 900, margin: "0 auto", width: "100%", ["--h1-offset" as any]: h1Offset,
+                        ...((twoCardEdit && editMode) ? {
+                          height: `${TWO_CARD_PAGE_H_PX}px`,
+                          columnWidth: "210mm",
+                          columnGap: "2.54cm",
+                          columnFill: "auto",
+                          backgroundImage: `repeating-linear-gradient(to right, var(--bg-card) 0, var(--bg-card) 210mm, var(--bg-page) 210mm, var(--bg-page) calc(210mm + 2.54cm))`,
+                          backgroundSize: "calc(210mm + 2.54cm) 100%",
+                          padding: "32px 1.27cm",
+                          maxWidth: "none",
+                        } as any : {}),
+                      }}
                     />
-                    {pageMarkers.map((y, i) => (
+                    {!twoCardEdit && pageMarkers.map((y, i) => (
                       <div
                         key={i}
                         className="absolute left-0 right-0 h-[5px] bg-[#888] pointer-events-none select-none"
