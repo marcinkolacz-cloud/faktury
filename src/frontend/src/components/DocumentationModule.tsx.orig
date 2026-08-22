@@ -2077,7 +2077,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         maxWidth: "210mm",
                         minHeight: "297mm",
                         boxSizing: "border-box",
-                        padding: `${hfSettings.headerHeightCm}cm 1.27cm ${hfSettings.footerHeightCm}cm 1.27cm`,
+                        padding: "3.75cm 1.27cm 1.27cm 1.27cm",
                         transform: `scale(${zoomLevel / 100})`,
                         transformOrigin: "top center",
                       }}
@@ -2089,19 +2089,15 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     )}
                     {hfSettings.enableHeader && (
                       <div
-                        className="absolute top-0 left-[1.27cm] right-[1.27cm] box-border pointer-events-none select-none flex items-end justify-between pb-1.5 text-[#888] border-b border-[#ccc]"
-                        style={{ height: `${hfSettings.headerHeightCm}cm`, fontSize: `${hfSettings.headerFontSize}pt` }}
+                        className="absolute top-0 left-[1.27cm] right-[1.27cm] h-[3.75cm] box-border pointer-events-none select-none flex items-end pb-1.5 text-[9pt] text-[#888] border-b border-[#ccc]"
                         title="Nagłówek — edytuj przez ⚙️ Nagłówek/stopka"
                       >
-                        <span>{hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`}</span>
-                        <span>{hfSettings.headerTextCenter}</span>
-                        <span>{hfSettings.headerTextRight}</span>
+                        {hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`}
                       </div>
                     )}
                     {hfSettings.enableFooter && (
                       <div
-                        className="absolute bottom-0 left-[1.27cm] right-[1.27cm] box-border pointer-events-none select-none flex items-center justify-between pt-1.5 text-[#888] border-t border-[#ccc]"
-                        style={{ height: `${hfSettings.footerHeightCm}cm`, fontSize: `${hfSettings.footerFontSize}pt` }}
+                        className="absolute bottom-0 left-[1.27cm] right-[1.27cm] box-border pointer-events-none select-none flex items-center justify-between pt-1.5 text-[9pt] text-[#888] border-t border-[#ccc]"
                         title="Stopka — edytuj przez ⚙️ Nagłówek/stopka"
                       >
                         <span>{hfSettings.footerTextLeft}</span>

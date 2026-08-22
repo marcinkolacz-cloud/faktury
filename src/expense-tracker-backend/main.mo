@@ -99,6 +99,8 @@ persistent actor {
   transient let deviceManualChapterUploadBuffers = Map.empty<Nat, Text>();
   let documentationEditors = Map.empty<Principal, Bool>();
   let docHeaderFooterSettings = Map.empty<Text, Types.DocHeaderFooterSettings>();
+  let deviceManualVariables = Map.empty<Nat, [Types.ManualVariable]>();
+  let deviceManualChapterBackupEnabled = Map.empty<Nat, Bool>();
   // Dziennik użytkowania urządzeń — publiczny formularz z PIN-auth instruktorów
   // (bez Internet Identity). PIN nigdy nie jest trzymany w plaintext, tylko
   // hash + sól per instruktor.
@@ -235,7 +237,7 @@ persistent actor {
   include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
-  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, accessRoles, moduleAccess);
+  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, deviceManualVariables, deviceManualChapterBackupEnabled, accessRoles, moduleAccess);
   include LogbookApi(logbookEntries, logbookEntriesTrashed, logbookEntrySignatures, logbookEntryDeviceId, devices, logbookInstructorPinHash, logbookInstructorSalt, logbookInstructorName, logbookInstructorActive, logbookInstructorCreatedAt, logbookSessions, logbookLoginAttempts, recentLogbookSubmissions, accessRoles, moduleAccess);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 

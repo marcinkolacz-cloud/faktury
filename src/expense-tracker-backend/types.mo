@@ -438,6 +438,20 @@ module {
     updatedAt : Int;
   };
 
+  public type ManualVariable = {
+    key : Text;
+    fieldLabel : Text;
+    currentValue : Text;
+  };
+
+  public type ManualVariableMatch = {
+    chapterId : Nat;
+    chapterTitle : Text;
+    contextSnippet : Text;
+    occurrenceIndex : Nat;
+    matchedLength : Nat;
+  };
+
   public type DocHeaderFooterSettings = {
     headerText : Text;
     footerText : Text;

@@ -22,6 +22,8 @@ mixin (
   deviceManualChapterUploadBuffers : Map.Map<Nat, Text>,
   documentationEditors : Map.Map<Principal, Bool>,
   docHeaderFooterSettings : Map.Map<Text, Types.DocHeaderFooterSettings>,
+  deviceManualVariables : Map.Map<Nat, [Types.ManualVariable]>,
+  deviceManualChapterBackupEnabled : Map.Map<Nat, Bool>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
 ) {
@@ -421,5 +423,287 @@ mixin (
       };
     };
     result.toArray();
+  };
+
+  // === Zmienne referencyjne per urządzenie (panel "Wstaw do dokumentu") ===
+  // Panel to osobne narzędzie — nie jest częścią treści, nie jest drukowane,
+  // nie ma podglądu. Tabela referencji zawsze odzwierciedla aktualny stan
+  // dokumentu (currentValue = to co faktycznie jest wpisane w treści).
+  // Wyszukiwanie działa WYŁĄCZNIE na rozdziałach z aktywną kopią backend
+  // (deviceManualChapterBackupEnabled), bo tylko tam backend ma treść.
+
+  public query ({ caller }) func getDeviceManualVariables(deviceId : Nat) : async [Types.ManualVariable] {
+    requireManualRead(caller);
+    switch (deviceManualVariables.get(deviceId)) {
+      case (?vars) { vars };
+      case null { [] };
+    };
+  };
+
+  public shared ({ caller }) func setDeviceManualVariables(deviceId : Nat, vars : [Types.ManualVariable]) : async () {
+    requireManualWrite(caller);
+    deviceManualVariables.add(deviceId, vars);
+  };
+
+  // Checkbox "Zarchiwizuj na backend" — sam checkbox tylko oznacza intencję;
+  // faktyczna treść trafia do backendu dopiero przez saveChapterBackup,
+  // wywoływane na żądanie (nigdy automatycznie w trakcie pisania).
+  public shared ({ caller }) func setChapterBackupEnabled(chapterId : Nat, enabled : Bool) : async Bool {
+    requireManualWrite(caller);
+    switch (deviceManualChapters.get(chapterId)) {
+      case (?_) {
+        deviceManualChapterBackupEnabled.add(chapterId, enabled);
+        if (not enabled) {
+          // Wyłączenie kopii = kasujemy zawartość backupu, żeby nie zalegały śmieci
+          switch (deviceManualChapters.get(chapterId)) {
+            case (?ch) { deviceManualChapters.add(chapterId, { ch with contentHtml = "" }); };
+            case null {};
+          };
+        };
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func getChapterBackupEnabled(chapterId : Nat) : async Bool {
+    requireManualRead(caller);
+    deviceManualChapterBackupEnabled.get(chapterId) == ?true;
+  };
+
+  // Nadpisuje kopię on-chain rozdziału jedną, aktualną wersją (bez historii).
+  // Wymaga wcześniejszego setChapterBackupEnabled(id, true).
+  public shared ({ caller }) func saveChapterBackup(chapterId : Nat, contentHtml : Text) : async Bool {
+    requireManualLockOk(caller, chapterId);
+    if (deviceManualChapterBackupEnabled.get(chapterId) != ?true) {
+      Runtime.trap("Backup nie jest włączony dla tego rozdziału — zaznacz checkbox przed zapisem");
+    };
+    switch (deviceManualChapters.get(chapterId)) {
+      case (?ch) {
+        deviceManualChapters.add(chapterId, { ch with contentHtml; updatedAt = Time.now() });
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  // Buduje znormalizowaną wersję tekstu do PORÓWNANIA (dekoduje literalne "&nbsp;"
+  // jako spację, zwija ciągi białych znaków do pojedynczej spacji) razem z mapą
+  // norm-index -> raw-index, żeby dopasowanie działało mimo niełamliwych spacji
+  // wstawianych przez edytor WYSIWYG, a podmiana i tak operowała na surowym HTML.
+  func normalizeForSearch(raw : Text) : (Text, [Nat]) {
+    let rChars = Text.toArray(raw);
+    let n = rChars.size();
+    var normChars = List.empty<Char>();
+    var mapping = List.empty<Nat>();
+    var lastWasSpace = false;
+    var i = 0;
+    while (i < n) {
+      if (rChars[i] == '<') {
+        // Pomijamy cały znacznik HTML (do najbliższego '>') — formatowanie
+        // w środku frazy (np. pogrubione jedno słowo) nie przerywa dopasowania.
+        var k = i + 1;
+        while (k < n and rChars[k] != '>') { k += 1; };
+        i := if (k < n) { k + 1 } else { n };
+      } else if (i + 6 <= n and rChars[i] == '&' and rChars[i + 1] == 'n' and rChars[i + 2] == 'b' and rChars[i + 3] == 's' and rChars[i + 4] == 'p' and rChars[i + 5] == ';') {
+        if (not lastWasSpace) { normChars.add(' '); mapping.add(i); lastWasSpace := true; };
+        i += 6;
+      } else {
+        let c = rChars[i];
+        let isSpace = (c == ' ' or c == '\t' or c == '\n' or c == '\r');
+        if (isSpace) {
+          if (not lastWasSpace) { normChars.add(' '); mapping.add(i); lastWasSpace := true; };
+        } else {
+          normChars.add(c);
+          mapping.add(i);
+          lastWasSpace := false;
+        };
+        i += 1;
+      };
+    };
+    (Text.fromArray(normChars.toArray()), mapping.toArray());
+  };
+
+  // Zwraca listę (rawStart, rawLen) — pozycję i rzeczywistą długość dopasowania
+  // w SUROWYM html (może być dłuższa niż szukany tekst, jeśli w środku była
+  // encja &nbsp; albo kilka spacji zwiniętych do jednej przy porównaniu).
+  func findAllOccurrences(haystackRaw : Text, needleRaw : Text) : [(Nat, Nat)] {
+    let (normHay, mapping) = normalizeForSearch(haystackRaw);
+    let (normNeedle, _) = normalizeForSearch(needleRaw);
+    let hChars = Text.toArray(normHay);
+    let nChars = Text.toArray(normNeedle);
+    let hLen = hChars.size();
+    let nLen = nChars.size();
+    let rawLen = Text.size(haystackRaw);
+    var result = List.empty<(Nat, Nat)>();
+    if (nLen == 0 or nLen > hLen) { return result.toArray(); };
+    var i = 0;
+    while (i <= hLen - nLen) {
+      var matched = true;
+      var j = 0;
+      while (j < nLen) {
+        if (hChars[i + j] != nChars[j]) { matched := false; };
+        j += 1;
+      };
+      if (matched) {
+        let rawStart = mapping[i];
+        let rawEnd = if (i + nLen < mapping.size()) { mapping[i + nLen] } else { rawLen };
+        result.add((rawStart, rawEnd - rawStart));
+      };
+      i += 1;
+    };
+    result.toArray();
+  };
+
+  func extractContext(haystack : Text, idx : Nat, matchLen : Nat) : Text {
+    let hChars = Text.toArray(haystack);
+    let hLen = hChars.size();
+    let ctxLen = 40;
+    let start = if (idx > ctxLen) { idx - ctxLen } else { 0 };
+    let endIdx = if (idx + matchLen + ctxLen > hLen) { hLen } else { idx + matchLen + ctxLen };
+    let slice = Array.tabulate<Char>(endIdx - start, func(k : Nat) : Char { hChars[start + k] });
+    Text.fromArray(slice);
+  };
+
+  func replaceAt(haystack : Text, idx : Nat, oldLen : Nat, newValue : Text) : Text {
+    let hChars = Text.toArray(haystack);
+    let hLen = hChars.size();
+    let newChars = Text.toArray(newValue);
+    let newLen = newChars.size();
+    let afterStart = idx + oldLen;
+    let afterLen : Nat = if (hLen > afterStart) { hLen - afterStart } else { 0 };
+    let totalLen = idx + newLen + afterLen;
+    let result = Array.tabulate<Char>(totalLen, func(k : Nat) : Char {
+      if (k < idx) { hChars[k] }
+      else if (k < idx + newLen) { newChars[k - idx] }
+      else { hChars[afterStart + (k - idx - newLen)] };
+    });
+    Text.fromArray(result);
+  };
+
+  // Szuka searchText we wszystkich rozdziałach urządzenia z aktywnym backupem.
+  // 0 trafień / 1 trafienie / wiele trafień — rozstrzyga o tym frontend
+  // (auto-podmiana vs modal wyboru), backend tylko zwraca listę z kontekstem.
+  public query ({ caller }) func findManualVariableOccurrences(deviceId : Nat, searchText : Text) : async [Types.ManualVariableMatch] {
+    requireManualRead(caller);
+    var result = List.empty<Types.ManualVariableMatch>();
+    if (Text.size(searchText) == 0) { return result.toArray(); };
+    for ((id, ch) in deviceManualChapters.entries()) {
+      if (ch.deviceId == deviceId and deviceManualChapterBackupEnabled.get(id) == ?true and deviceManualChaptersTrashed.get(id) == null) {
+        let positions = findAllOccurrences(ch.contentHtml, searchText);
+        for ((pos, len) in positions.vals()) {
+          result.add({
+            chapterId = id;
+            chapterTitle = ch.title;
+            contextSnippet = extractContext(ch.contentHtml, pos, len);
+            occurrenceIndex = pos;
+            matchedLength = len;
+          });
+        };
+      };
+    };
+    result.toArray();
+  };
+
+  // Zbiorczy odczyt statusu backupu dla wszystkich rozdziałów urządzenia —
+  // jedno wywołanie zamiast N zapytań (jedno per rozdział).
+  public query ({ caller }) func getDeviceManualChapterBackupFlags(deviceId : Nat) : async [(Nat, Bool)] {
+    requireManualRead(caller);
+    var result = List.empty<(Nat, Bool)>();
+    for ((id, ch) in deviceManualChapters.entries()) {
+      if (ch.deviceId == deviceId and deviceManualChaptersTrashed.get(id) == null) {
+        result.add((id, deviceManualChapterBackupEnabled.get(id) == ?true));
+      };
+    };
+    result.toArray();
+  };
+
+  // Podmienia searchText -> newValue tylko we wskazanych (przez operatora)
+  // wystąpieniach, aktualizuje referencję (currentValue) dla danego klucza.
+  // Podmiana idzie od najwyższego occurrenceIndex w danym rozdziale, żeby
+  // wcześniejsze podmiany nie przesuwały indeksów kolejnych. Długość podmiany
+  // bierzemy z matchedLength (nie z długości searchText) — mogą się różnić,
+  // gdy trafienie objęło &nbsp; albo kilka spacji zwiniętych przy wyszukiwaniu.
+  public shared ({ caller }) func applyManualVariableReplace(
+    deviceId : Nat,
+    key : Text,
+    searchText : Text,
+    newValue : Text,
+    matches : [Types.ManualVariableMatch],
+  ) : async Bool {
+    requireManualWrite(caller);
+    var byChapter = Map.empty<Nat, [(Nat, Nat)]>();
+    for (m in matches.vals()) {
+      let prev = switch (byChapter.get(m.chapterId)) { case (?p) p; case null [] };
+      byChapter.add(m.chapterId, Array.concat(prev, [(m.occurrenceIndex, m.matchedLength)]));
+    };
+    for ((chapterId, indices) in byChapter.entries()) {
+      switch (deviceManualChapters.get(chapterId)) {
+        case (?ch) {
+          if (ch.deviceId == deviceId) {
+            var sortedDesc = indices;
+            let n = sortedDesc.size();
+            var i = 0;
+            while (i < n) {
+              var maxIdx = i;
+              var j = i + 1;
+              while (j < n) {
+                if (sortedDesc[j].0 > sortedDesc[maxIdx].0) { maxIdx := j; };
+                j += 1;
+              };
+              if (maxIdx != i) {
+                let tmp = sortedDesc[i];
+                sortedDesc := Array.tabulate<(Nat, Nat)>(n, func(k) {
+                  if (k == i) { sortedDesc[maxIdx] } else if (k == maxIdx) { tmp } else { sortedDesc[k] };
+                });
+              };
+              i += 1;
+            };
+            var content = ch.contentHtml;
+            for ((idx, len) in sortedDesc.vals()) {
+              content := replaceAt(content, idx, len, newValue);
+            };
+            deviceManualChapters.add(chapterId, { ch with contentHtml = content; updatedAt = Time.now() });
+          };
+        };
+        case null {};
+      };
+    };
+    // Referencja = aktualny stan dokumentu -> nadpisz currentValue dla klucza
+    let vars = switch (deviceManualVariables.get(deviceId)) { case (?v) v; case null [] };
+    let updated = Array.map<Types.ManualVariable, Types.ManualVariable>(vars, func(v) {
+      if (v.key == key) { { v with currentValue = newValue } } else { v };
+    });
+    deviceManualVariables.add(deviceId, updated);
+    true;
+  };
+
+  // Zapisuje gotowe (przygotowane przez frontend przy użyciu prawdziwego DOM
+  // przeglądarki) nowe treści rozdziałów po podmianie referencji. Zastępuje
+  // ręczne stripowanie HTML w Motoko, które nie radziło sobie ze wszystkimi
+  // przypadkami (zagnieżdżone tagi, encje) — przeglądarka robi to poprawnie.
+  public shared ({ caller }) func applyManualVariableReplaceContents(
+    deviceId : Nat,
+    key : Text,
+    newValue : Text,
+    updatedChapters : [(Nat, Text)],
+  ) : async Bool {
+    requireManualWrite(caller);
+    for ((chapterId, newHtml) in updatedChapters.vals()) {
+      switch (deviceManualChapters.get(chapterId)) {
+        case (?ch) {
+          if (ch.deviceId == deviceId) {
+            deviceManualChapters.add(chapterId, { ch with contentHtml = newHtml; updatedAt = Time.now() });
+          };
+        };
+        case null {};
+      };
+    };
+    let vars2 = switch (deviceManualVariables.get(deviceId)) { case (?v) v; case null [] };
+    let updated2 = Array.map<Types.ManualVariable, Types.ManualVariable>(vars2, func(v) {
+      if (v.key == key) { { v with currentValue = newValue } } else { v };
+    });
+    deviceManualVariables.add(deviceId, updated2);
+    true;
   };
 };

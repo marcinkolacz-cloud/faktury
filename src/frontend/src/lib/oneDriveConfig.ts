@@ -8,6 +8,15 @@ export function setDriveActor(actor: any) {
   registeredActor = actor;
 }
 
+// Rozgrzewa token z wyprzedzeniem (fire-and-forget) — pobranie tokena to
+// HTTP outcall przez backend (IC konsensus, z natury kilka sekund przy
+// pierwszym użyciu w sesji), więc wołamy to możliwie wcześnie (np. zaraz
+// po wejściu do modułu), żeby zdążyło się zakończyć w tle zanim faktycznie
+// potrzebujemy odczytać/zapisać coś na Drive.
+export function warmDriveToken(): void {
+  getDriveToken().catch(() => { /* błąd i tak zostanie złapany przy realnym użyciu */ });
+}
+
 let pendingTokenPromise: Promise<string> | null = null;
 
 async function getDriveToken(): Promise<string> {
