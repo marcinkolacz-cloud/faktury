@@ -222,9 +222,12 @@ export function LogbookPublicForm() {
   useEffect(() => {
     if (counterBaseline === null) return; // brak wcześniejszych wpisów dla urządzenia — licznik wpisujemy ręcznie
     const baseMin = parseCounter(counterBaseline);
+    if (baseMin === null) return;
     const durMin = sessionDurationMinutes(entry.godzRozpoczecia, entry.godzZakonczenia);
-    if (baseMin === null || durMin === null) return;
-    setEntry((prev) => ({ ...prev, licznikPoSesji: formatCounter(baseMin + durMin) }));
+    // Pokaż od razu bazowy licznik urządzenia zaraz po jego wyborze (zanim
+    // podane są obie godziny) - potem, gdy obie godziny są uzupełnione,
+    // dolicz czas sesji do tej bazy.
+    setEntry((prev) => ({ ...prev, licznikPoSesji: formatCounter(baseMin + (durMin ?? 0)) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [counterBaseline, entry.godzRozpoczecia, entry.godzZakonczenia]);
 
@@ -399,7 +402,7 @@ export function LogbookPublicForm() {
   // --- Formularz wpisu — siatka jak w papierowym dzienniku ---
   return (
     <div className="min-h-screen bg-[var(--bg-page)] flex items-center justify-center p-4">
-      <div className="max-w-3xl w-full bg-white rounded-lg shadow-lg p-4 space-y-3">
+      <div className="max-w-5xl w-full bg-white rounded-lg shadow-lg p-3 sm:p-6 space-y-3">
         <div className="flex justify-between items-center">
           <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-8" />
           <div className="flex items-center gap-3">
@@ -513,7 +516,8 @@ export function LogbookPublicForm() {
           </div>
         )}
 
-        <table className="w-full border-collapse text-black">
+        <div className="overflow-x-auto -mx-3 sm:mx-0">
+        <table className="w-full min-w-[720px] sm:min-w-0 border-collapse text-black">
           <thead>
             <tr>
               <th className={th}>Data</th>
@@ -576,6 +580,7 @@ export function LogbookPublicForm() {
             </tr>
           </tbody>
         </table>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="border border-black/70 rounded-sm p-2 space-y-2">

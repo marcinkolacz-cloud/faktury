@@ -1466,7 +1466,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // to be an exact preview of what exportWord()/exportPdf() will
   // produce, so it must use the same chapter set and the same
   // numberHeadingsForExport() numbering as Word.
-  const buildChapterPreviewHtml = async (_forPrint: boolean = false, gridView: boolean = false, selectedOverride?: Set<number>): Promise<string> => {
+  const buildChapterPreviewHtml = async (forPrint: boolean = false, gridView: boolean = false, selectedOverride?: Set<number>): Promise<string> => {
     const selectedSet = selectedOverride || selectedForPrint;
     const selected = chapters.filter((c) => selectedSet.has(c.id));
     if (selected.length === 0) {
@@ -1514,6 +1514,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         .page-content{padding:32px;line-height:1.625;font-size:15px;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
         .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:-16px;font-size:8pt;color:#999;text-align:center;}
         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
+        ${forPrint ? "@page{size:A4;margin:0;} body{background:#fff;} .sheet{box-shadow:none;margin:0;} .sheet + .sheet{page-break-before:always;} .page-number{display:none;}" : ""}
         img{max-width:100%;}
         #measure{position:absolute;left:-99999px;top:0;width:${innerContentWidthPx}px;padding:0;max-width:none;visibility:hidden;--text-secondary:#5c574d;--bg-hover:#efece3;}
         ${previewCounterCss}
@@ -1523,6 +1524,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       <div id="pages" class="${gridView ? "pages-grid" : ""}"></div>
       <script>
       (function(){
+        // Small safety buffer (print mode only): without it, a page whose
+        // JS-measured height lands within a fraction of a mm of the true
+        // 297mm boundary can render a hair taller during Puppeteer's actual
+        // print pass (sub-pixel/font-hinting rounding differs from the
+        // screen measurement pass) - Chrome's print engine then silently
+        // inserts an extra physical page instead of respecting the single
+        // .sheet box. A few px of headroom prevents that ghost page.
         var PAGE_H = ${contentHeightPx};
         var measure = document.getElementById('measure');
         var pagesEl = document.getElementById('pages');
@@ -1616,7 +1624,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             else { img.onload = img.onerror = function(){ remaining--; if (remaining === 0) requestAnimationFrame(paginate); }; }
           });
         }
-        waitImagesThenPaginate();
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(waitImagesThenPaginate);
+        } else {
+          waitImagesThenPaginate();
+        }
       })();
       </script>
       </body></html>`;
@@ -1654,45 +1666,29 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
   }, []);
-  const exportPdf = async () => {
+  const PDF_WORKER_URL = "https://bartolini-pdf-export.marcinkolacz.workers.dev";
+  const exportPdfV2 = async () => {
     const selected = chapters.filter((c) => selectedForPrint.has(c.id));
     if (selected.length === 0) { alert("Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej)."); return; }
-    // Numbering via numberHeadingsForExport (same as Word/print preview),
-    // not CSS counters — see buildChapterPreviewHtml for why.
-    const numbered = numberHeadingsForExport(await getChaptersForExport(), selectedForPrint);
-    const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
-    const headerHtml = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
-    const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.write(`<html><head><title>Instrukcja — ${deviceLabel}</title>
-      <style>
-        body{font-family:Arial,sans-serif;padding:0;}
-        .page-header{font-size:9pt;color:#555;border-bottom:1px solid #ccc;padding:6px 24px;}
-        .page-footer{font-size:9pt;color:#555;border-top:1px solid #ccc;padding:6px 24px;text-align:center;}
-        .page-content{padding:0 24px;}
-        #doc h1{color:#1a1a8c;}
-        img{max-width:100%;}
-        .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
-        @media print { .no-print { display:none; } }
-      </style>
-      </head><body>
-      ${hfSettings.skipFirstPage ? "" : `<div class="page-header">${headerHtml}</div>`}
-      <div class="page-content"><h1 style="text-align:center;">Instrukcja obsługi — ${deviceLabel}</h1></div>
-      ${hfSettings.skipFirstPage ? "" : `<div class="page-footer">${footerHtml}</div>`}
-      <div class="${PAGE_BREAK_CLASS}"></div>
-      <div class="page-header">${headerHtml}</div>
-      <div class="page-content" id="doc">${body}</div>
-      <div class="page-footer">${footerHtml}</div>
-      <p class="no-print" style="padding:16px;color:#888;font-size:11px;">
-        Wskazówka: w oknie drukowania włącz „Nagłówki i stopki” żeby przeglądarka dodała numerację stron.
-      </p>
-      </body></html>`);
-    w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 300);
+    const html = await buildChapterPreviewHtml(true, false);
+    try {
+      const res = await fetch(PDF_WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ html }),
+      });
+      if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Instrukcja - ${deviceLabel}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(`Błąd generowania PDF: ${e}`);
+    }
   };
-
   return (
     <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text-primary)]">
       <div className="max-w-[1600px] mx-auto p-4 space-y-4">
@@ -1732,7 +1728,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           {driveSyncFlash && <span className="text-xs text-cyan-400">☁️ Zsynchronizowano z Bartolini Drive</span>}
           {driveSyncError && <span className="text-xs text-amber-400">{driveSyncError}</span>}
           <div className="ml-auto flex gap-2">
-            <button onClick={exportPdf} disabled={chapters.length === 0} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600 disabled:opacity-40">
+            <button onClick={exportPdfV2} disabled={chapters.length === 0} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600 disabled:opacity-40">
               🖨 Eksportuj PDF
             </button>
             <button onClick={exportWord} disabled={chapters.length === 0} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600 disabled:opacity-40">

@@ -307,9 +307,19 @@ mixin (
     var bestId : ?Nat = null;
     for ((id, devId) in logbookEntryDeviceId.entries()) {
       if (devId == deviceId and logbookEntriesTrashed.get(id) == null) {
-        switch (bestId) {
-          case (?b) { if (id > b) { bestId := ?id; }; };
-          case null { bestId := ?id; };
+        // Skip entries with an empty/unset counter (e.g. an old test entry
+        // filled in before the device's flightHours were known) — they're
+        // not usable as a baseline, so look further back instead of
+        // silently returning nothing.
+        let hasUsableCounter = switch (logbookEntries.get(id)) {
+          case (?e) { Text.size(Text.trim(e.licznikPoSesji, #char ' ')) > 0 };
+          case null { false };
+        };
+        if (hasUsableCounter) {
+          switch (bestId) {
+            case (?b) { if (id > b) { bestId := ?id; }; };
+            case null { bestId := ?id; };
+          };
         };
       };
     };
@@ -321,7 +331,7 @@ mixin (
         };
       };
       case null {
-        // Brak wcześniejszych wpisów w dzienniku dla tego urządzenia — użyj
+        // Brak wcześniejszych wpisów z użytecznym licznikiem — użyj
         // liczników "flightHours"/"flightMinutes" z karty urządzenia (Moduł
         // Urządzenia) jako liczbę bazową, żeby nie zaczynać od zera dla
         // sprzętu, który już wcześniej latał.
