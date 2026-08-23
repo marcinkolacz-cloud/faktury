@@ -24,6 +24,7 @@ mixin (
   docHeaderFooterSettings : Map.Map<Text, Types.DocHeaderFooterSettings>,
   deviceManualVariables : Map.Map<Nat, [Types.ManualVariable]>,
   deviceManualChapterBackupEnabled : Map.Map<Nat, Bool>,
+  docFolders : Map.Map<Nat, (Text, Principal, Int)>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
 ) {
@@ -116,6 +117,34 @@ mixin (
   public query ({ caller }) func amIDocumentationEditor() : async Bool {
     requireManualRead(caller);
     documentationEditors.get(caller) == ?true;
+  };
+
+  // Własny folder dokumentacji, niepowiązany z urządzeniem/projektem —
+  // dostępny dla każdego z dostępem do modułu devices (jak reszta odczytu
+  // dokumentacji). Rozdziały w takim folderze działają identycznie jak dla
+  // urządzenia (deviceId jest tu numerem folderu, oznaczonym z dużym
+  // przesunięciem żeby nie kolidował z prawdziwymi id urządzeń).
+  public shared ({ caller }) func addDocFolder(name : Text) : async Nat {
+    requireManualRead(caller);
+    if (Text.size(Text.trim(name, #char ' ')) == 0) { Runtime.trap("Nazwa folderu jest wymagana"); };
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in docFolders.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
+    docFolders.add(newId, (Text.trim(name, #char ' '), caller, Time.now()));
+    newId;
+  };
+
+  public query ({ caller }) func listDocFolders() : async [(Nat, Text, Principal, Int)] {
+    requireManualRead(caller);
+    let result = List.empty<(Nat, Text, Principal, Int)>();
+    for ((id, entry) in docFolders.entries()) {
+      let (name, owner, createdAt) = entry;
+      result.add((id, name, owner, createdAt));
+    };
+    List.toArray(result);
   };
 
   public query ({ caller }) func listDocumentationEditors() : async [(Principal, Bool)] {

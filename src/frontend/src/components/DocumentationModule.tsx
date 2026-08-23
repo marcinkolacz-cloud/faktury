@@ -677,7 +677,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     if (!actor) return;
     setDriveActor(actor);
     warmDriveToken();
-    actor.listDevices().then((rows: any[]) => {
+    Promise.all([actor.listDevices(), actor.listDocFolders()]).then(([devRows, folderRows]: [any[], any[]]) => {
+      const folderAsDevices = (folderRows || []).map((f: any) => ({
+        id: 1000000000 + Number(f[0]),
+        symbol: "📁 Folder",
+        name: f[1],
+        isFolder: true,
+      }));
+      const rows = [...devRows, ...folderAsDevices];
       setDevices(rows);
       if (rows.length && deviceId === null) setDeviceId(Number(rows[0].id));
     });
@@ -1831,6 +1838,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
 
         <div className="flex items-center gap-3 bg-[var(--bg-card)] border-b-2 border-cyan-600 px-4 py-3 rounded-t-lg flex-wrap">
           <h1 className="text-lg font-bold text-cyan-600">📖 Dokumentacja</h1>
+          <button
+            onClick={() => onNavigate("manual#documentation")}
+            className="text-xs px-2 py-1 rounded border border-cyan-600 text-cyan-600 hover:bg-cyan-600 hover:text-white"
+          >
+            ❓ Pomoc
+          </button>
           <span className="text-[10px] text-[#f0c040]">
             DEBUG poll#{pollTicks} deviceId={String(deviceId)} editMode={String(editMode)}
             {lastPolled ? ` ostatni sukces: ${lastPolled.toLocaleTimeString()}` : " (brak sukcesu)"}
@@ -1855,6 +1868,19 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               <option key={String(d.id)} value={Number(d.id)}>{d.symbol} — {d.name}</option>
             ))}
           </select>
+          <button
+            onClick={async () => {
+              const name = prompt("Nazwa nowego folderu:");
+              if (!name || !name.trim() || !actor) return;
+              const newId = await actor.addDocFolder(name.trim());
+              const rows = [...devices, { id: 1000000000 + Number(newId), symbol: "📁 Folder", name: name.trim(), isFolder: true }];
+              setDevices(rows);
+              setDeviceId(1000000000 + Number(newId));
+            }}
+            className="ml-2 text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600"
+          >
+            + Nowy folder
+          </button>
           <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] ml-2">
             <input type="checkbox" checked={autoSave} onChange={(e) => setAutoSave(e.target.checked)} />
             Auto-zapis (3s)
@@ -1964,12 +1990,20 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       🖨 Podgląd wydruku
                     </button>
                     {canEdit && (
-                      <button onClick={() => setShowVarsPanel(true)} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
+                      <button
+                        onClick={() => setShowVarsPanel(true)}
+                        title="Zmienne referencyjne"
+                        className="text-xs px-3 py-1.5 rounded border border-[#ccc]"
+                      >
                         🔗 Zmienne referencyjne
                       </button>
                     )}
                     {canEdit && (
-                      <button onClick={openSettings} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
+                      <button
+                        onClick={openSettings}
+                        title="Nagłówek i stopka"
+                        className="text-xs px-3 py-1.5 rounded border border-[#ccc]"
+                      >
                         ⚙️ Nagłówek/stopka
                       </button>
                     )}
@@ -2179,13 +2213,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         className="absolute flex items-center gap-1 bg-[#1a1a2e] rounded shadow-lg px-1.5 py-1 z-10"
                         style={{ top: Math.max(imgToolbarPos.top, 0), left: imgToolbarPos.left }}
                       >
-                        <button onClick={() => alignImage("left")} title="Wyrównaj do lewej, tekst opływa z prawej" className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[#e0e0e0]">⬅</button>
-                        <button onClick={() => alignImage("center")} title="Wyśrodkuj" className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[#e0e0e0]">⬛</button>
-                        <button onClick={() => alignImage("right")} title="Wyrównaj do prawej, tekst opływa z lewej" className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[#e0e0e0]">➡</button>
+                        <button onClick={() => alignImage("left")} title="Wyrównaj do lewej, tekst opływa z prawej" className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">⬅</button>
+                        <button onClick={() => alignImage("center")} title="Wyśrodkuj" className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">⬛</button>
+                        <button onClick={() => alignImage("right")} title="Wyrównaj do prawej, tekst opływa z lewej" className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">➡</button>
                         <span className="w-px h-4 bg-[#555] mx-0.5" />
-                        <button onClick={() => resizeImage(25)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[#e0e0e0]">25%</button>
-                        <button onClick={() => resizeImage(50)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[#e0e0e0]">50%</button>
-                        <button onClick={() => resizeImage(100)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[#e0e0e0]">100%</button>
+                        <button onClick={() => resizeImage(25)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">25%</button>
+                        <button onClick={() => resizeImage(50)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">50%</button>
+                        <button onClick={() => resizeImage(100)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">100%</button>
                         <span className="w-px h-4 bg-[#555] mx-0.5" />
                         <button onClick={removeSelectedImage} title="Usuń obraz" className="text-[10px] px-1.5 py-0.5 rounded border border-red-400 text-red-400">✕</button>
                       </div>
@@ -2264,7 +2298,17 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               <button onClick={() => setShowSettings(false)} className="text-xs px-2 py-1 rounded border border-[#ccc]">✕</button>
             </div>
             <div className="p-5 space-y-3 overflow-y-auto flex-1">
-            <p className="text-xs text-[#666]">Te ustawienia są wspólne dla wszystkich eksportowanych instrukcji (Word i PDF).</p>
+            <div className="rounded-md border border-cyan-300 bg-cyan-50 p-2.5 text-xs text-[#333] leading-relaxed">
+              <p className="font-semibold text-cyan-800 mb-1">ⓘ Jak to działa</p>
+              <p className="mb-1">
+                Te ustawienia są wspólne dla <b>całej instrukcji tego urządzenia</b> (nie per rozdział) i identyczne w podglądzie wydruku,
+                eksporcie PDF i eksporcie Word.
+              </p>
+              <p>
+                Nagłówek ma osobne pola <b>Lewo / Środek / Prawo</b> dla stron <b>nieparzystych</b> i osobne dla <b>parzystych</b> —
+                puste pole parzyste kopiuje treść z nieparzystego. Stopka jest wspólna dla wszystkich stron.
+              </p>
+            </div>
 
             <div>
               <div className="text-xs text-[#666] mb-1">Tekst nagłówka (pusty = domyślnie nazwa urządzenia)</div>
@@ -2531,12 +2575,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   const w = window.open("", "_blank", "width=1000,height=900");
                   if (w) { w.document.write(previewHtml); w.document.close(); }
                 }}
-                className="text-xs px-3 py-1.5 rounded border border-[#666] text-[#e0e0e0]"
+                className="text-xs px-3 py-1.5 rounded border border-[#666] text-[var(--text-secondary)]"
                 title="Otwiera podglad w osobnym oknie przegladarki - mozna je przeciagnac poza glowne okno, np. na drugi monitor"
               >
                 ⇱ Otworz w oknie
               </button>
-              <button onClick={() => setShowPrintPreview(false)} className="text-xs px-3 py-1.5 rounded border border-[#666] text-[#e0e0e0]">
+              <button onClick={() => setShowPrintPreview(false)} className="text-xs px-3 py-1.5 rounded border border-[#666] text-[var(--text-secondary)]">
                 Zamknij
               </button>
             </div>

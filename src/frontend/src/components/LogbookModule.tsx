@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
+import { sendEmailNotification } from "../lib/emailNotify";
 
 function activityLabel(r: any): string {
   const k = Object.keys(r || {})[0];
@@ -26,11 +27,14 @@ function czasSesji(start: string, end: string): string {
 export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
   const actor = useBackendActor();
   const [tab, setTab] = useState<"entries" | "instructors">("entries");
+  const [showHelp, setShowHelp] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [entries, setEntries] = useState<any[]>([]);
   const [signatures, setSignatures] = useState<Record<string, string>>({});
   const [entryDevices, setEntryDevices] = useState<Record<string, string>>({});
+  const [entryDeviceIds, setEntryDeviceIds] = useState<Record<string, number>>({});
+  const [linkedTickets, setLinkedTickets] = useState<Record<string, number>>({});
   const [instructors, setInstructors] = useState<any[]>([]);
 
   const [newEmail, setNewEmail] = useState("");
@@ -41,14 +45,20 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
   const [filterName, setFilterName] = useState("");
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState<any>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [recomputingId, setRecomputingId] = useState<number | null>(null);
+  const [recomputeResult, setRecomputeResult] = useState<string>("");
 
   const reload = async () => {
     if (!actor) return;
-    const [e, i, sigs, devs] = await Promise.all([
+    const [e, i, sigs, devs, tix] = await Promise.all([
       actor.listLogbookEntries(),
       actor.listLogbookInstructors(),
       actor.listLogbookEntrySignatures(),
       actor.listLogbookEntryDevices(),
+      actor.listLogbookEntryLinkedTickets(),
     ]);
     setEntries([...e].sort((a: any, b: any) => (a.dataText < b.dataText ? 1 : -1)));
     setInstructors(i);
@@ -56,12 +66,65 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
     for (const [id, sig] of sigs as [bigint, string][]) { sigMap[String(id)] = sig; }
     setSignatures(sigMap);
     const devMap: Record<string, string> = {};
-    for (const [id, , label] of devs as [bigint, bigint, string][]) { devMap[String(id)] = label; }
+    const devIdMap: Record<string, number> = {};
+    for (const [id, devId, label] of devs as [bigint, bigint, string][]) { devMap[String(id)] = label; devIdMap[String(id)] = Number(devId); }
     setEntryDevices(devMap);
+    setEntryDeviceIds(devIdMap);
+    const tixMap: Record<string, number> = {};
+    for (const [entryId, ticketId] of tix as [bigint, bigint][]) { tixMap[String(entryId)] = Number(ticketId); }
+    setLinkedTickets(tixMap);
     setLoading(false);
   };
 
   useEffect(() => { reload(); }, [actor]);
+
+  const startEdit = (e: any) => {
+    setEditingId(Number(e.id));
+    setEditDraft({
+      dataText: e.dataText,
+      instruktorName: e.instruktorName,
+      szkoleni: e.szkoleni,
+      rodzajAktywnosci: Object.keys(e.rodzajAktywnosci || {})[0] || "szkolenie",
+      godzRozpoczecia: e.godzRozpoczecia,
+      godzZakonczenia: e.godzZakonczenia,
+      licznikPoSesji: e.licznikPoSesji,
+      brakUsterek: e.brakUsterek,
+      opisUsterki: e.opisUsterki,
+    });
+    setRecomputeResult("");
+  };
+
+  const saveEdit = async () => {
+    if (editingId === null || !editDraft) return;
+    setEditSaving(true);
+    await actor.adminUpdateLogbookEntry(
+      BigInt(editingId),
+      editDraft.dataText,
+      editDraft.instruktorName,
+      editDraft.szkoleni,
+      { [editDraft.rodzajAktywnosci]: null },
+      editDraft.godzRozpoczecia,
+      editDraft.godzZakonczenia,
+      editDraft.licznikPoSesji,
+      editDraft.brakUsterek,
+      editDraft.opisUsterki,
+    );
+    setEditingId(null);
+    setEditDraft(null);
+    setEditSaving(false);
+    reload();
+  };
+
+  const recomputeCounters = async (entryId: number) => {
+    const devId = entryDeviceIds[String(entryId)];
+    if (devId === undefined) return;
+    if (!confirm("Przeliczyć licznik nalotu dla WSZYSTKICH kolejnych wpisów tego urządzenia, licząc od tego wpisu włącznie? Tej operacji nie da się cofnąć automatycznie.")) return;
+    setRecomputingId(entryId);
+    const count = await actor.adminRecomputeLogbookCounters(BigInt(devId), BigInt(entryId));
+    setRecomputeResult(`Przeliczono licznik dla ${Number(count)} wpis(ów).`);
+    setRecomputingId(null);
+    reload();
+  };
 
   const addInstructor = async () => {
     if (!newEmail.trim() || !newName.trim()) {
@@ -71,10 +134,19 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
     setAddError("");
     try {
       const pin = await actor.addLogbookInstructor(newEmail.trim(), newName.trim());
-      setRevealedPin({ email: newEmail.trim().toLowerCase(), pin: pin as string });
+      const addedEmail = newEmail.trim().toLowerCase();
+      setRevealedPin({ email: addedEmail, pin: pin as string });
       setNewEmail("");
       setNewName("");
       reload();
+      sendEmailNotification(
+        actor,
+        [addedEmail],
+        "Dostep do Dziennika uzytkowania - PIN logowania",
+        "Zostales dodany jako uzytkownik Dziennika uzytkowania urzadzenia.\n\n"
+          + "Email: " + addedEmail + "\nPIN: " + (pin as string)
+          + "\n\nZaloguj sie na stronie dziennika tym adresem e-mail i PIN-em."
+      ).catch(() => {});
     } catch (e: any) {
       setAddError(String(e?.message || e));
     }
@@ -85,6 +157,14 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
     const pin = await actor.resetLogbookInstructorPin(email);
     setRevealedPin({ email, pin: pin as string });
     reload();
+    sendEmailNotification(
+      actor,
+      [email],
+      "Nowy PIN do Dziennika uzytkowania",
+      "Twoj PIN do Dziennika uzytkowania urzadzenia zostal zresetowany.\n\n"
+        + "Email: " + email + "\nNowy PIN: " + (pin as string)
+        + "\n\nStary PIN juz nie dziala."
+    ).catch(() => {});
   };
 
   const toggleActive = async (email: string, active: boolean) => {
@@ -136,6 +216,38 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
       <div className="max-w-[1200px] mx-auto p-6 space-y-6">
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
         <h1 className="text-xl font-semibold">📘 Dziennik użytkowania</h1>
+
+        <div className="border border-cyan-500/30 rounded-lg overflow-hidden max-w-3xl">
+          <button
+            type="button"
+            onClick={() => setShowHelp((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-left"
+          >
+            <span className="text-sm font-medium text-cyan-700 dark:text-cyan-400">❓ Jak sprawdzać wpisy i zarządzać instruktorami</span>
+            <span className="text-cyan-600 text-xs shrink-0">{showHelp ? "▲ zwiń" : "▼ rozwiń"}</span>
+          </button>
+          {showHelp && (
+            <div className="p-3 space-y-2 bg-[var(--bg-card)]">
+              <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="font-semibold text-cyan-700 dark:text-cyan-400 mb-1">📋 Zakładka „Wpisy"</p>
+                <p>Podgląd wszystkich sesji ze wszystkich urządzeń, zapisanych przez instruktorów na publicznej stronie /dziennik. Filtruj po nazwisku i zakresie dat, kliknij miniaturę podpisu żeby powiększyć. „📊 Eksportuj do Excel" zapisuje aktualnie przefiltrowaną listę do pliku .xlsx.</p>
+              </div>
+              <div className="rounded-md border border-fuchsia-400/40 bg-fuchsia-500/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="font-semibold text-fuchsia-700 dark:text-fuchsia-400 mb-1">✏ Edycja wpisów i licznik nalotu</p>
+                <p>Instruktor może sam poprawić TYLKO swój ostatni wpis w całym dzienniku (dowolne urządzenie) — jeśli ktokolwiek doda kolejny wpis, traci tę możliwość i musi wysłać zgłoszenie (ticket), które zobaczysz tu, w kolumnie „Akcje" (✏ Edytuj, dostępne zawsze dla admina, niezależnie od pozycji wpisu).</p>
+                <p className="mt-1">Jeśli poprawka zmienia godziny sesji, licznik nalotu kolejnych wpisów tego samego urządzenia może się rozjechać — użyj przycisku „🔄 Przelicz licznik od tego wpisu" zaraz po zapisaniu poprawki, żeby przeliczyć licznik dla wszystkich kolejnych wpisów tego urządzenia.</p>
+              </div>
+              <div className="rounded-md border border-amber-400/40 bg-amber-500/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="font-semibold text-amber-700 dark:text-amber-400 mb-1">⚠ Kolumna „Usterki"</p>
+                <p>Czerwona/pomarańczowa ikona ⚠ oznacza zgłoszoną usterkę — najedź lub kliknij, żeby zobaczyć pełny opis. Zielone „Brak" oznacza sesję bez zastrzeżeń.</p>
+              </div>
+              <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="font-semibold text-emerald-700 dark:text-emerald-400 mb-1">👤 Zakładka „Instruktorzy"</p>
+                <p>Tu dodajesz osoby uprawnione do logowania na /dziennik. „+ Dodaj" generuje 6-cyfrowy PIN automatycznie i pokazuje go raz — zapisz/przekaż go od razu, bo później nie da się go odczytać (tylko zresetować). „Reset PIN" wylogowuje instruktora z aktywnych sesji i generuje nowy PIN. „Dezaktywuj" blokuje logowanie bez usuwania historii wpisów danej osoby.</p>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="flex gap-2 border-b border-[var(--border-color)]">
           <button
@@ -194,11 +306,17 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                   <th className="py-2 pr-3">Licznik</th>
                   <th className="py-2 pr-3">Usterki</th>
                   <th className="py-2 pr-3">Podpis</th>
+                  <th className="py-2 pr-3">Zgłoszenie</th>
+                  <th className="py-2 pr-3 w-32">Akcje</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredEntries.map((e) => (
-                  <tr key={String(e.id)} className="border-b border-[var(--border-color)]/50">
+                {filteredEntries.map((e) => {
+                  const id = Number(e.id);
+                  const isEditingRow = editingId === id;
+                  return (
+                  <Fragment key={String(e.id)}>
+                  <tr className="border-b border-[var(--border-color)]/50">
                     <td className="py-2 pr-3 whitespace-nowrap">{e.dataText}</td>
                     <td className="py-2 pr-3">{entryDevices[String(e.id)] || "—"}</td>
                     <td className="py-2 pr-3">{e.instruktorName}<br /><span className="text-[10px] text-[var(--text-muted)]">{e.instruktorEmail}</span></td>
@@ -224,7 +342,13 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                         />
                       ) : "—"}
                     </td>
-                    <td className="py-2 pr-3 text-right">
+                    <td className="py-2 pr-3">
+                      {linkedTickets[String(e.id)] !== undefined ? (
+                        <span className="text-xs text-fuchsia-600 font-medium">🎫 #{linkedTickets[String(e.id)]}</span>
+                      ) : "—"}
+                    </td>
+                    <td className="py-2 pr-3 text-right whitespace-nowrap">
+                      <button onClick={() => startEdit(e)} className="text-xs text-cyan-600 hover:underline mr-2">✏ Edytuj</button>
                       <button
                         onClick={async () => { await actor.trashLogbookEntry(e.id); reload(); }}
                         className="text-xs text-red-500 hover:underline"
@@ -233,9 +357,71 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                       </button>
                     </td>
                   </tr>
-                ))}
+                  {isEditingRow && editDraft && (
+                    <tr className="border-b border-[var(--border-color)]/50 bg-fuchsia-500/5">
+                      <td colSpan={12} className="p-3">
+                        <div className="rounded-md border border-fuchsia-400/50 bg-[var(--bg-card)] p-3 space-y-2 max-w-3xl">
+                          <p className="text-xs font-semibold text-fuchsia-700 dark:text-fuchsia-400">✏ Edycja wpisu #{id} (admin — dowolny wpis)</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <label className="text-xs text-[var(--text-muted)]">Data
+                              <input type="date" value={editDraft.dataText} onChange={(ev) => setEditDraft({ ...editDraft, dataText: ev.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm mt-0.5 bg-[var(--bg-page)]" />
+                            </label>
+                            <label className="text-xs text-[var(--text-muted)]">Instruktor
+                              <input value={editDraft.instruktorName} onChange={(ev) => setEditDraft({ ...editDraft, instruktorName: ev.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm mt-0.5 bg-[var(--bg-page)]" />
+                            </label>
+                            <label className="text-xs text-[var(--text-muted)]">Szkoleni
+                              <input value={editDraft.szkoleni} onChange={(ev) => setEditDraft({ ...editDraft, szkoleni: ev.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm mt-0.5 bg-[var(--bg-page)]" />
+                            </label>
+                            <label className="text-xs text-[var(--text-muted)]">Rodzaj
+                              <select value={editDraft.rodzajAktywnosci} onChange={(ev) => setEditDraft({ ...editDraft, rodzajAktywnosci: ev.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm mt-0.5 bg-[var(--bg-page)]">
+                                <option value="szkolenie">Szkolenie</option>
+                                <option value="komercyjne">Komerc.</option>
+                                <option value="techniczne">Techniczne</option>
+                              </select>
+                            </label>
+                            <label className="text-xs text-[var(--text-muted)]">Godz. rozpoczęcia
+                              <input value={editDraft.godzRozpoczecia} onChange={(ev) => setEditDraft({ ...editDraft, godzRozpoczecia: ev.target.value })} placeholder="HH:MM" className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm mt-0.5 bg-[var(--bg-page)]" />
+                            </label>
+                            <label className="text-xs text-[var(--text-muted)]">Godz. zakończenia
+                              <input value={editDraft.godzZakonczenia} onChange={(ev) => setEditDraft({ ...editDraft, godzZakonczenia: ev.target.value })} placeholder="HH:MM" className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm mt-0.5 bg-[var(--bg-page)]" />
+                            </label>
+                            <label className="text-xs text-[var(--text-muted)]">Licznik po sesji
+                              <input value={editDraft.licznikPoSesji} onChange={(ev) => setEditDraft({ ...editDraft, licznikPoSesji: ev.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm mt-0.5 bg-[var(--bg-page)]" />
+                            </label>
+                          </div>
+                          <label className="flex items-center gap-2 text-xs">
+                            <input type="checkbox" checked={editDraft.brakUsterek} onChange={(ev) => setEditDraft({ ...editDraft, brakUsterek: ev.target.checked, opisUsterki: ev.target.checked ? "" : editDraft.opisUsterki })} />
+                            Brak usterek
+                          </label>
+                          {!editDraft.brakUsterek && (
+                            <textarea value={editDraft.opisUsterki} onChange={(ev) => setEditDraft({ ...editDraft, opisUsterki: ev.target.value })} rows={2} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm bg-[var(--bg-page)]" />
+                          )}
+                          {recomputeResult && <p className="text-xs text-emerald-600">{recomputeResult}</p>}
+                          <div className="flex justify-between items-center gap-2">
+                            <button
+                              onClick={() => recomputeCounters(id)}
+                              disabled={recomputingId === id}
+                              title="Przelicza licznik nalotu dla wszystkich kolejnych wpisów tego urządzenia, licząc od tego wpisu"
+                              className="text-xs px-3 py-1.5 rounded border border-amber-500 text-amber-600 disabled:opacity-50"
+                            >
+                              {recomputingId === id ? "Przeliczanie…" : "🔄 Przelicz licznik od tego wpisu"}
+                            </button>
+                            <div className="flex gap-2">
+                              <button onClick={() => { setEditingId(null); setEditDraft(null); }} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)]">Anuluj</button>
+                              <button onClick={saveEdit} disabled={editSaving} className="text-xs px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-50">
+                                {editSaving ? "Zapisywanie…" : "💾 Zapisz"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  );
+                })}
                 {filteredEntries.length === 0 && (
-                  <tr><td colSpan={11} className="py-6 text-center text-[var(--text-muted)]">Brak wpisów spełniających filtry.</td></tr>
+                  <tr><td colSpan={12} className="py-6 text-center text-[var(--text-muted)]">Brak wpisów spełniających filtry.</td></tr>
                 )}
               </tbody>
             </table>

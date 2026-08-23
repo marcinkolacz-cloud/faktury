@@ -210,6 +210,43 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
     projectEntries: trashedProjectEntries,
   };
 
+  onProgress("Eksportuję Dziennik użytkowania...");
+  const [
+    logbookEntries, logbookTrashedEntries, logbookInstructors,
+    logbookSignatures, logbookEntryDevices, logbookLinkedTickets,
+  ] = await Promise.all([
+    actor.listLogbookEntries(),
+    actor.listTrashedLogbookEntries(),
+    actor.listLogbookInstructors(),
+    actor.listLogbookEntrySignatures(),
+    actor.listLogbookEntryDevices(),
+    actor.listLogbookEntryLinkedTickets(),
+  ]);
+  backup.logbook = {
+    entries: [...logbookEntries, ...logbookTrashedEntries],
+    instructors: logbookInstructors,
+    signatures: logbookSignatures,
+    entryDevices: logbookEntryDevices,
+    linkedTickets: logbookLinkedTickets,
+  };
+
+  onProgress("Eksportuję Dokumentację (foldery i rozdziały)...");
+  const docFolders = await actor.listDocFolders();
+  const docDeviceIds = [
+    ...allDevices.map((d: any) => Number(d.id)),
+    ...docFolders.map((f: any) => 1000000000 + Number(f[0])),
+  ];
+  let allManualChapters: any[] = [];
+  for (const id of docDeviceIds) {
+    const chs = await actor.listDeviceManualChapters(id);
+    allManualChapters.push(...chs);
+  }
+  const trashedManualChapters = await actor.listTrashedDeviceManualChapters();
+  backup.documentation = {
+    folders: docFolders,
+    chapters: [...allManualChapters, ...trashedManualChapters],
+  };
+
   onProgress("Generuję plik JSON...");
   return backup;
 }
@@ -247,7 +284,7 @@ export function BackupExport({ actor }: { actor: any }) {
     <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
       <h2 className="font-semibold text-[var(--text-primary)]">Kopia zapasowa</h2>
       <p className="text-xs text-[var(--text-muted)]">
-        Eksportuje Admin (dostęp + kody zaproszeń), Rejestr Faktur, Projekty, Magazyn, Zgłoszenia (z załącznikami), Zamówienia, Umowy, Powiadomienia e-mail i Rejestr urządzeń do jednego pliku JSON. Nie obejmuje Dysku.
+        Eksportuje Admin (dostęp + kody zaproszeń), Rejestr Faktur, Projekty, Magazyn, Zgłoszenia (z załącznikami), Zamówienia, Umowy, Powiadomienia e-mail, Rejestr urządzeń, Dziennik użytkowania i Dokumentację (foldery + rozdziały) do jednego pliku JSON. Nie obejmuje Dysku.
       </p>
       <button
         onClick={runExport}

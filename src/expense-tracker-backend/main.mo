@@ -101,6 +101,10 @@ persistent actor {
   let docHeaderFooterSettings = Map.empty<Text, Types.DocHeaderFooterSettings>();
   let deviceManualVariables = Map.empty<Nat, [Types.ManualVariable]>();
   let deviceManualChapterBackupEnabled = Map.empty<Nat, Bool>();
+  // Własne foldery dokumentacji, niepowiązane z żadnym urządzeniem/projektem
+  // — dowolny pracownik z dostępem do modułu devices może sobie taki
+  // utworzyć (przycisk „Nowy folder” w Dokumentacji).
+  let docFolders = Map.empty<Nat, (Text, Principal, Int)>();
   // Dziennik użytkowania urządzeń — publiczny formularz z PIN-auth instruktorów
   // (bez Internet Identity). PIN nigdy nie jest trzymany w plaintext, tylko
   // hash + sól per instruktor.
@@ -108,6 +112,7 @@ persistent actor {
   let logbookEntriesTrashed = Map.empty<Nat, Int>();
   let logbookEntrySignatures = Map.empty<Nat, Text>();
   let logbookEntryDeviceId = Map.empty<Nat, Nat>();
+  let logbookEntryLinkedTicket = Map.empty<Nat, Nat>();
   let logbookInstructorPinHash = Map.empty<Text, Blob>();
   let logbookInstructorSalt = Map.empty<Text, Text>();
   let logbookInstructorName = Map.empty<Text, Text>();
@@ -237,8 +242,8 @@ persistent actor {
   include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
-  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, deviceManualVariables, deviceManualChapterBackupEnabled, accessRoles, moduleAccess);
-  include LogbookApi(logbookEntries, logbookEntriesTrashed, logbookEntrySignatures, logbookEntryDeviceId, devices, logbookInstructorPinHash, logbookInstructorSalt, logbookInstructorName, logbookInstructorActive, logbookInstructorCreatedAt, logbookSessions, logbookLoginAttempts, recentLogbookSubmissions, accessRoles, moduleAccess);
+  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, deviceManualVariables, deviceManualChapterBackupEnabled, docFolders, accessRoles, moduleAccess);
+  include LogbookApi(logbookEntries, logbookEntriesTrashed, logbookEntrySignatures, logbookEntryDeviceId, logbookEntryLinkedTicket, devices, logbookInstructorPinHash, logbookInstructorSalt, logbookInstructorName, logbookInstructorActive, logbookInstructorCreatedAt, logbookSessions, logbookLoginAttempts, recentLogbookSubmissions, accessRoles, moduleAccess, tickets, ticketTokens, ticketExtras, recentSubmissionTimes);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 
   // Kwarantanna KSeF → Rejestr Faktur. Osobna, równoległa mapa

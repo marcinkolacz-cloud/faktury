@@ -322,20 +322,35 @@ export function ManualVariablesPanel({
         >
           <h2 className="text-sm font-bold text-[#4fc3f7]">🔗 Zmienne referencyjne dokumentu</h2>
           <div className="flex items-center gap-2">
-            <button onClick={() => setTab("vars")} className={"text-xs px-3 py-1.5 rounded border " + (tab === "vars" ? "bg-cyan-600 text-white border-cyan-600" : "border-[#666] text-[#e0e0e0]")}>Referencje</button>
-            <button onClick={() => setTab("backup")} className={"text-xs px-3 py-1.5 rounded border " + (tab === "backup" ? "bg-cyan-600 text-white border-cyan-600" : "border-[#666] text-[#e0e0e0]")}>Backup rozdziałów</button>
-            <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-[#666] text-[#e0e0e0]">Zamknij</button>
+            <button onClick={() => setTab("vars")} className={"text-xs px-3 py-1.5 rounded border " + (tab === "vars" ? "bg-cyan-600 text-white border-cyan-600" : "border-[#666] text-[var(--text-secondary)]")}>Referencje</button>
+            <button onClick={() => setTab("backup")} className={"text-xs px-3 py-1.5 rounded border " + (tab === "backup" ? "bg-cyan-600 text-white border-cyan-600" : "border-[#666] text-[var(--text-secondary)]")}>Backup rozdziałów</button>
+            <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-[#666] text-[var(--text-secondary)]">Zamknij</button>
           </div>
         </div>
 
         <div className="flex-1 overflow-auto p-4">
           {tab === "vars" ? (
             <>
-              <p className="text-[11px] text-[var(--text-muted)] mb-3">
-                To narzędzie nie jest częścią dokumentu — nie jest drukowane ani widoczne w podglądzie/eksporcie.
-                Wpisz aktualną wartość widoczną w dokumencie, nową wartość i kliknij „Wstaw”, albo zaznacz kilka wierszy i kliknij „Wstaw zaznaczone”.
-                Po podmianie „Aktualna wartość” aktualizuje się automatycznie. Edycje etykiet/wartości zapisz przyciskiem „💾 Zapisz listę”.
-              </p>
+              <div className="mb-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="font-semibold text-cyan-600 dark:text-cyan-400 mb-1">ⓘ Jak to działa</p>
+                <p className="mb-1">
+                  To narzędzie nie jest częścią dokumentu — nie jest drukowane ani widoczne w podglądzie/eksporcie.
+                  W kolumnie <b>Aktualna wartość</b> wpisz tekst dokładnie tak, jak wygląda teraz w dokumencie
+                  (wielkość liter nieistotna, reszta musi się zgadzać). W <b>Nowa wartość</b> wpisz, na co ma zostać podmieniony.
+                </p>
+                <p className="mb-1">
+                  Kliknij <b>Wstaw</b> przy wierszu albo zaznacz kilka i <b>Wstaw zaznaczone</b>. Jeśli tekst wystąpi więcej niż raz,
+                  pojawi się lista wystąpień do ręcznego wyboru, które podmienić.
+                </p>
+                <p className="text-cyan-700 dark:text-cyan-300 font-medium">
+                  ⚡ Po udanej podmianie „Nowa wartość” automatycznie wskakuje do kolumny „Aktualna wartość” i staje się nowym punktem
+                  odniesienia — kolejna podmiana tej samej zmiennej działa już na niej, bez przepisywania.
+                </p>
+                <p className="mt-1">
+                  Wyszukiwanie działa tylko na rozdziałach z włączonym backupem (zakładka „Backup” obok) — reszta nie zostanie sprawdzona.
+                  Edycje etykiet/wartości zapisz osobno przyciskiem „💾 Zapisz listę”.
+                </p>
+              </div>
               <div className="flex items-center gap-2 mb-2">
                 <button onClick={saveList} disabled={!dirty || busy === "save-list"} className="text-xs px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white">
                   {busy === "save-list" ? "Zapisywanie…" : "💾 Zapisz listę"}

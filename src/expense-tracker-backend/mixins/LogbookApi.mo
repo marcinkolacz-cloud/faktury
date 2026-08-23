@@ -8,6 +8,7 @@ import Text "mo:core/Text";
 import Blob "mo:core/Blob";
 import Random "mo:core/Random";
 import Nat "mo:core/Nat";
+import Iter "mo:core/Iter";
 import AccessLib "../lib/access";
 import InvitesLib "../lib/invites";
 import Sha256 "mo:sha2/Sha256";
@@ -25,6 +26,7 @@ mixin (
   logbookEntriesTrashed : Map.Map<Nat, Int>,
   logbookEntrySignatures : Map.Map<Nat, Text>,
   logbookEntryDeviceId : Map.Map<Nat, Nat>,
+  logbookEntryLinkedTicket : Map.Map<Nat, Nat>,
   devices : Map.Map<Nat, Types.Device>,
   logbookInstructorPinHash : Map.Map<Text, Blob>,
   logbookInstructorSalt : Map.Map<Text, Text>,
@@ -36,11 +38,16 @@ mixin (
   recentLogbookSubmissions : List.List<Int>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
+  tickets : Map.Map<Nat, Types.Ticket>,
+  ticketTokens : Map.Map<Text, Nat>,
+  ticketExtras : Map.Map<Nat, Types.TicketExtras>,
+  recentSubmissionTimes : List.List<Int>,
 ) {
   let ALLOWED_DOMAIN : Text = "@bartoliniair.com";
   let SESSION_TTL_NS : Int = 12 * 60 * 60 * 1_000_000_000; // 12h
   let LOCKOUT_WINDOW_NS : Int = 15 * 60 * 1_000_000_000; // 15 min
   let LOCKOUT_MAX_ATTEMPTS : Nat = 5;
+  let logbookPinResetTokens = Map.empty<Text, Int>(); // one-time, 5 min TTL, in-memory only
 
   func requireLogbookAdmin(caller : Principal) {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
@@ -49,6 +56,72 @@ mixin (
 
   func normalizeEmail(email : Text) : Text {
     Text.toLower(Text.trim(email, #char ' '));
+  };
+
+  // Parsuje "H:MM" lub "HH:MM" (godziny nieograniczone) na łączną liczbę
+  // minut. Używane zarówno dla godzin sesji (24h), jak i licznika nalotu
+  // urządzenia (nieograniczony). Zwraca null przy nieprawidłowym formacie
+  // zamiast trapować — wywołujący decyduje co zrobić z brakiem wartości.
+  func parseHM(s : Text) : ?Nat {
+    let parts = Iter.toArray(Text.split(Text.trim(s, #char ' '), #char ':'));
+    if (parts.size() != 2) { return null; };
+    switch (Nat.fromText(parts[0]), Nat.fromText(parts[1])) {
+      case (?h, ?m) { ?(h * 60 + m) };
+      case (_, _) { null };
+    };
+  };
+
+  func formatHM(totalMinutes : Nat) : Text {
+    let h = totalMinutes / 60;
+    let m = totalMinutes % 60;
+    Nat.toText(h) # ":" # (if (m < 10) { "0" # Nat.toText(m) } else { Nat.toText(m) });
+  };
+
+  // Czas trwania sesji w minutach, licząc z zawinięciem przez północ
+  // (np. rozpoczęcie 23:30, zakończenie 00:15 -> 45 minut). Nieprawidłowy
+  // format godziny liczy się jako 0 minut zamiast trapować, żeby nie
+  // blokować operacji administracyjnych na starych/ręcznie wpisanych danych.
+  func sessionDurationMin(start : Text, end : Text) : Nat {
+    switch (parseHM(start), parseHM(end)) {
+      case (?s, ?e) { if (e >= s) { e - s } else { e + 24 * 60 - s } };
+      case (_, _) { 0 };
+    };
+  };
+
+  // Najwyższe ID wpisu spośród WSZYSTKICH (dowolne urządzenie, dowolny
+  // instruktor) niewykasowanych wpisów w dzienniku — to jest "ostatni wpis"
+  // w rozumieniu funkcji edycji: świadomie globalne, nie per-urządzenie i nie
+  // per-instruktor, żeby zabezpieczyć łańcuch liczników przed pomyleniem.
+  func maxNonTrashedLogbookId() : ?Nat {
+    var maxId : ?Nat = null;
+    for ((id, _) in logbookEntries.entries()) {
+      if (logbookEntriesTrashed.get(id) == null) {
+        switch (maxId) {
+          case (?m) { if (id > m) { maxId := ?id; }; };
+          case null { maxId := ?id; };
+        };
+      };
+    };
+    maxId;
+  };
+
+  // Wpis jest edytowalny przez instruktora TYLKO gdy: należy do niego (po
+  // adresie e-mail z sesji) ORAZ jest globalnie ostatnim niewykasowanym
+  // wpisem w całym dzienniku (patrz maxNonTrashedLogbookId). Jeśli
+  // ktokolwiek — na dowolnym urządzeniu — doda nowy wpis później, stary
+  // wpis przestaje być edytowalny, żeby nie rozjechać liczników.
+  func isEditableByOwner(email : Text, id : Nat) : Bool {
+    switch (logbookEntries.get(id)) {
+      case (?e) {
+        if (e.instruktorEmail != email) { false } else if (logbookEntriesTrashed.get(id) != null) { false } else {
+          switch (maxNonTrashedLogbookId()) {
+            case (?m) { id == m };
+            case null { false };
+          };
+        };
+      };
+      case null { false };
+    };
   };
 
   func isAllowedDomain(email : Text) : Bool {
@@ -116,6 +189,40 @@ mixin (
     logbookInstructorSalt.add(normEmail, salt);
     invalidateSessionsFor(normEmail);
     pin;
+  };
+
+  // Publiczne "Nie pamiętam PIN-u" — TYLKO dla już zarejestrowanych i
+  // aktywnych instruktorów (email musi już istnieć w bazie, dodany przez
+  // admina). Generuje nowy PIN (nadpisuje stary) i zwraca (PIN, token) do
+  // jednorazowego wysłania maila przez Worker — token konsumowany przez
+  // consumeLogbookPinResetToken (server-to-server), więc przechwycony
+  // token nic więcej nie zdziała. Ten sam rate-limit/lockout co logowanie.
+  public shared func requestLogbookPinReset(email : Text, honeypot : Text) : async ?(Text, Text) {
+    if (honeypot != "") { Runtime.trap("Rejected"); };
+    let normEmail = normalizeEmail(email);
+    pruneAndCheckLockout(normEmail);
+    switch (logbookInstructorName.get(normEmail), logbookInstructorActive.get(normEmail)) {
+      case (?_, ?true) {
+        let pin = await generatePin();
+        let salt = await generateSalt();
+        logbookInstructorPinHash.add(normEmail, hashPin(normEmail, pin, salt));
+        logbookInstructorSalt.add(normEmail, salt);
+        invalidateSessionsFor(normEmail);
+        let tokenPart1 = await InvitesLib.generateRandomCode();
+        let tokenPart2 = await InvitesLib.generateRandomCode();
+        let token = tokenPart1 # tokenPart2;
+        logbookPinResetTokens.add(token, Time.now() + 300_000_000_000);
+        ?(pin, token);
+      };
+      case (_, _) { recordFailedAttempt(normEmail); null };
+    };
+  };
+
+  public shared func consumeLogbookPinResetToken(token : Text) : async Bool {
+    switch (logbookPinResetTokens.get(token)) {
+      case (?exp) { logbookPinResetTokens.remove(token); Time.now() < exp; };
+      case null { false };
+    };
   };
 
   public shared ({ caller }) func setLogbookInstructorActive(email : Text, active : Bool) : async Bool {
@@ -239,9 +346,18 @@ mixin (
   ) : async Bool {
     if (honeypot != "") { Runtime.trap("Rejected"); };
     if (Text.size(Text.trim(podpisDataUrl, #char ' ')) == 0) { Runtime.trap("Signature required"); };
-    if (Text.size(Text.trim(instruktorNameInput, #char ' ')) == 0) { Runtime.trap("Instructor name required"); };
     if (devices.get(deviceId) == null) { Runtime.trap("Unknown device"); };
     let email = requireValidSession(sessionToken);
+    // Ignorujemy dowolny tekst przysłany przez klienta (instruktorNameInput)
+    // i wymuszamy imię/nazwisko zarejestrowane dla tego adresu e-mail w
+    // panelu Instruktorzy — inaczej jeden zalogowany instruktor mógłby
+    // wpisać sesję jako ktoś inny. Frontend i tak blokuje to pole, ale
+    // walidacja musi żyć tu, na serwerze.
+    let resolvedName = switch (logbookInstructorName.get(email)) {
+      case (?n) { n };
+      case null { Text.trim(instruktorNameInput, #char ' ') };
+    };
+    if (Text.size(resolvedName) == 0) { Runtime.trap("Instructor name required"); };
 
     let now = Time.now();
     let oneMinuteAgo : Int = now - 60_000_000_000;
@@ -259,7 +375,7 @@ mixin (
       id = newId;
       dataText;
       instruktorEmail = email;
-      instruktorName = Text.trim(instruktorNameInput, #char ' ');
+      instruktorName = resolvedName;
       szkoleni;
       rodzajAktywnosci;
       godzRozpoczecia;
@@ -274,10 +390,100 @@ mixin (
     true;
   };
 
+  // Edycja WŁASNEGO wpisu — dozwolona tylko gdy to globalnie ostatni
+  // niewykasowany wpis w całym dzienniku (patrz isEditableByOwner). Nie
+  // pozwala zmienić urządzenia, e-maila instruktora ani podpisu — tylko
+  // dane samej sesji. Serwer re-weryfikuje warunek edytowalności niezależnie
+  // od tego, co pokazywał frontend (nie ufa samej fladze z listMyLogbookEntries).
+  public shared func updateMyLogbookEntry(
+    sessionToken : Text,
+    entryId : Nat,
+    dataText : Text,
+    szkoleni : Text,
+    rodzajAktywnosci : Types.LogbookActivityType,
+    godzRozpoczecia : Text,
+    godzZakonczenia : Text,
+    licznikPoSesji : Text,
+    brakUsterek : Bool,
+    opisUsterki : Text,
+  ) : async Bool {
+    let email = requireValidSession(sessionToken);
+    if (not isEditableByOwner(email, entryId)) {
+      Runtime.trap("Ten wpis nie jest już edytowalny — ktoś dodał nowszy wpis w dzienniku.");
+    };
+    switch (logbookEntries.get(entryId)) {
+      case (?e) {
+        logbookEntries.add(entryId, { e with dataText; szkoleni; rodzajAktywnosci; godzRozpoczecia; godzZakonczenia; licznikPoSesji; brakUsterek; opisUsterki });
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  // Instruktor zgłasza korektę wpisu, którego już nie może sam edytować
+  // (bo nie jest już globalnie ostatni) — tworzy zwykły ticket (widoczny w
+  // module Zgłoszenia) i zapamiętuje powiązanie z wpisem, żeby admin widział
+  // od razu który wpis dotyczy zgłoszenia.
+  public shared func submitLogbookCorrectionTicket(sessionToken : Text, entryId : Nat, description : Text, honeypot : Text) : async ?Text {
+    if (honeypot != "") { Runtime.trap("Rejected"); };
+    let email = requireValidSession(sessionToken);
+    switch (logbookEntries.get(entryId)) {
+      case (?e) {
+        if (e.instruktorEmail != email) { Runtime.trap("To nie jest Twój wpis"); };
+        let devLabel = switch (logbookEntryDeviceId.get(entryId)) {
+          case (?devId) { switch (devices.get(devId)) { case (?d) { d.symbol # " — " # d.name }; case null { "" } } };
+          case null { "" };
+        };
+        let now = Time.now();
+        let oneMinuteAgo : Int = now - 60_000_000_000;
+        var stillValid = List.empty<Int>();
+        for (t in recentSubmissionTimes.values()) { if (t > oneMinuteAgo) { stillValid.add(t); }; };
+        if (stillValid.size() >= 5) { Runtime.trap("Rate limit exceeded, try again later"); };
+        stillValid.add(now);
+        recentSubmissionTimes.clear();
+        for (t in stillValid.values()) { recentSubmissionTimes.add(t); };
+
+        let newId = tickets.size();
+        let tokenPart1 = await InvitesLib.generateRandomCode();
+        let tokenPart2 = await InvitesLib.generateRandomCode();
+        let trackingToken = tokenPart1 # tokenPart2;
+        let ticket : Types.Ticket = {
+          id = newId;
+          clientName = e.instruktorName;
+          clientEmail = email;
+          subject = "Korekta wpisu w dzienniku — " # devLabel # " — " # e.dataText;
+          description;
+          status = #open_;
+          replies = [];
+          createdAt = now;
+        };
+        tickets.add(newId, ticket);
+        ticketTokens.add(trackingToken, newId);
+        ticketExtras.add(newId, { company = "Bartolini Air Simulation"; deviceNumber = devLabel });
+        logbookEntryLinkedTicket.add(entryId, newId);
+        ?trackingToken;
+      };
+      case null { null };
+    };
+  };
+
   public query func logbookWhoAmI(sessionToken : Text) : async ?Text {
     switch (logbookSessions.get(sessionToken)) {
       case (?(email, expiresAt)) {
         if (Time.now() > expiresAt) { null } else { ?email };
+      };
+      case null { null };
+    };
+  };
+
+  // Imię i nazwisko przypisane do zalogowanego instruktora (z rejestru
+  // instruktorów, ustawione przez admina przy dodawaniu konta) — używane do
+  // zablokowania pola "Instruktor / użytkownik" w formularzu, żeby jeden
+  // instruktor nie mógł wpisać wpisu jako ktoś inny.
+  public shared func logbookMyName(sessionToken : Text) : async ?Text {
+    switch (logbookSessions.get(sessionToken)) {
+      case (?(email, expiresAt)) {
+        if (Time.now() > expiresAt) { null } else { logbookInstructorName.get(email) };
       };
       case null { null };
     };
@@ -365,9 +571,9 @@ mixin (
   // accessRoles) — zwraca tylko wpisy powiązane z jego adresem e-mail z
   // sesji, więc jeden instruktor nie zobaczy wpisów innych. Dołącza etykietę
   // urządzenia, żeby frontend nie musiał robić osobnego wywołania.
-  public query func listMyLogbookEntries(sessionToken : Text) : async [(Types.LogbookEntry, Text)] {
+  public shared func listMyLogbookEntries(sessionToken : Text) : async [(Types.LogbookEntry, Text, Bool, ?Nat)] {
     let email = requireValidSessionQuery(sessionToken);
-    var result = List.empty<(Types.LogbookEntry, Text)>();
+    var result = List.empty<(Types.LogbookEntry, Text, Bool, ?Nat)>();
     for ((id, e) in logbookEntries.entries()) {
       if (e.instruktorEmail == email and logbookEntriesTrashed.get(id) == null) {
         let devLabel = switch (logbookEntryDeviceId.get(id)) {
@@ -379,7 +585,7 @@ mixin (
           };
           case null { "?" };
         };
-        result.add((e, devLabel));
+        result.add((e, devLabel, isEditableByOwner(email, id), logbookEntryLinkedTicket.get(id)));
       };
     };
     result.toArray();
@@ -424,6 +630,113 @@ mixin (
       case (?_) { logbookEntriesTrashed.add(id, Time.now()); true; };
       case null { false };
     };
+  };
+
+  // Admin może poprawić DOWOLNY wpis (nie tylko ostatni) — np. po zgłoszeniu
+  // przez ticket. Nie przelicza sam licznika kolejnych wpisów — do tego
+  // służy osobno adminRecomputeLogbookCounters, wywoływane świadomie po
+  // poprawce, żeby nie nadpisywać liczników niepotrzebnie przy zwykłej
+  // literówce w opisie usterki.
+  public shared ({ caller }) func adminUpdateLogbookEntry(
+    entryId : Nat,
+    dataText : Text,
+    instruktorName : Text,
+    szkoleni : Text,
+    rodzajAktywnosci : Types.LogbookActivityType,
+    godzRozpoczecia : Text,
+    godzZakonczenia : Text,
+    licznikPoSesji : Text,
+    brakUsterek : Bool,
+    opisUsterki : Text,
+  ) : async Bool {
+    requireLogbookAdmin(caller);
+    switch (logbookEntries.get(entryId)) {
+      case (?e) {
+        logbookEntries.add(entryId, { e with dataText; instruktorName; szkoleni; rodzajAktywnosci; godzRozpoczecia; godzZakonczenia; licznikPoSesji; brakUsterek; opisUsterki });
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func getLogbookEntryLinkedTicket(entryId : Nat) : async ?Nat {
+    requireLogbookAdmin(caller);
+    logbookEntryLinkedTicket.get(entryId);
+  };
+
+  public query ({ caller }) func listLogbookEntryLinkedTickets() : async [(Nat, Nat)] {
+    requireLogbookAdmin(caller);
+    var result = List.empty<(Nat, Nat)>();
+    for ((entryId, ticketId) in logbookEntryLinkedTicket.entries()) { result.add((entryId, ticketId)); };
+    result.toArray();
+  };
+
+  // Po ręcznej poprawce godzin/daty wpisu przez admina licznik nalotu
+  // urządzenia mógł się rozjechać dla WSZYSTKICH kolejnych wpisów tego
+  // samego urządzenia (bo każdy dolicza czas swojej sesji do licznika
+  // poprzedniego wpisu). Ta funkcja przelicza licznik od fromEntryId
+  // (włącznie) w górę, w kolejności ID, bazując na liczniku ostatniego
+  // wcześniejszego wpisu tego urządzenia (albo na "flightHours"/"flightMinutes"
+  // z karty urządzenia, jeśli wcześniejszych wpisów brak). Zwraca liczbę
+  // przeliczonych wpisów.
+  public shared ({ caller }) func adminRecomputeLogbookCounters(deviceId : Nat, fromEntryId : Nat) : async Nat {
+    requireLogbookAdmin(caller);
+    var baseline : Nat = 0;
+    var bestBeforeId : ?Nat = null;
+    var scanId = 0;
+    while (scanId < fromEntryId) {
+      switch (logbookEntryDeviceId.get(scanId)) {
+        case (?devId) {
+          if (devId == deviceId and logbookEntriesTrashed.get(scanId) == null) {
+            switch (logbookEntries.get(scanId)) {
+              case (?e) {
+                if (Text.size(Text.trim(e.licznikPoSesji, #char ' ')) > 0) { bestBeforeId := ?scanId; };
+              };
+              case null {};
+            };
+          };
+        };
+        case null {};
+      };
+      scanId += 1;
+    };
+    switch (bestBeforeId) {
+      case (?bid) {
+        switch (logbookEntries.get(bid)) {
+          case (?e) { switch (parseHM(e.licznikPoSesji)) { case (?m) { baseline := m }; case null {} }; };
+          case null {};
+        };
+      };
+      case null {
+        switch (devices.get(deviceId)) {
+          case (?d) { baseline := d.flightHours * 60 + d.flightMinutes; };
+          case null {};
+        };
+      };
+    };
+    var count = 0;
+    var running = baseline;
+    let total = logbookEntries.size();
+    var id = fromEntryId;
+    while (id < total) {
+      switch (logbookEntryDeviceId.get(id)) {
+        case (?devId) {
+          if (devId == deviceId and logbookEntriesTrashed.get(id) == null) {
+            switch (logbookEntries.get(id)) {
+              case (?e) {
+                running += sessionDurationMin(e.godzRozpoczecia, e.godzZakonczenia);
+                logbookEntries.add(id, { e with licznikPoSesji = formatHM(running) });
+                count += 1;
+              };
+              case null {};
+            };
+          };
+        };
+        case null {};
+      };
+      id += 1;
+    };
+    count;
   };
 
   public shared ({ caller }) func restoreLogbookEntry(id : Nat) : async Bool {
