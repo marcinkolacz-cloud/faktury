@@ -94,12 +94,12 @@ mixin (
     newId;
   };
 
-  public shared ({ caller }) func importWarehouseItems(rows : [Types.WarehouseItem]) : async Nat {
+  public shared ({ caller }) func importWarehouseItems(rows : [Types.WarehouseItem], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (i in rows.vals()) {
       switch (warehouseItems.get(i.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { warehouseItems.add(i.id, i); count += 1; }; };
         case null { warehouseItems.add(i.id, i); count += 1; };
       };
     };
@@ -247,12 +247,12 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func importStockMovements(rows : [Types.StockMovement]) : async Nat {
+  public shared ({ caller }) func importStockMovements(rows : [Types.StockMovement], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (m in rows.vals()) {
       switch (stockMovements.get(m.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { stockMovements.add(m.id, m); count += 1; }; };
         case null { stockMovements.add(m.id, m); count += 1; };
       };
     };
@@ -377,24 +377,24 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importTrashedWarehouseItems(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedWarehouseItems(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (warehouseItemsTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { warehouseItemsTrashed.add(id, ts); count += 1; }; };
         case null { warehouseItemsTrashed.add(id, ts); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTrashedStockMovements(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedStockMovements(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (stockMovementsTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { stockMovementsTrashed.add(id, ts); count += 1; }; };
         case null { stockMovementsTrashed.add(id, ts); count += 1; };
       };
     };

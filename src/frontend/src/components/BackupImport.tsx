@@ -106,7 +106,7 @@ async function uploadAttachmentContent(actor: any, attachmentId: bigint, base64:
   }
 }
 
-async function importBackup(actor: any, backup: any, onProgress: (s: string) => void) {
+async function importBackup(actor: any, backup: any, onProgress: (s: string) => void, overwrite: boolean) {
   onProgress("Importuję dostęp administracyjny...");
   const existingAccess: any[] = await actor.listAccessEntries();
   const existingPrincipals = new Set(existingAccess.map((e: any) => e.principal.toText()));
@@ -117,49 +117,49 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
     await actor.setUserModules(principal, a.modules);
   }
   const codes = backup.admin.inviteCodes.map(convertInviteCode);
-  if (codes.length) await actor.importInviteCodes(codes);
+  if (codes.length) await actor.importInviteCodes(codes, overwrite);
   if (backup.admin.displayNames && backup.admin.displayNames.length) {
     const names = backup.admin.displayNames.map(([p, n]: [string, string]) => [Principal.fromText(p), n]);
-    await actor.importPrincipalDisplayNames(names);
+    await actor.importPrincipalDisplayNames(names, overwrite);
   }
 
   onProgress("Importuję Projekty...");
   const projects = backup.invoicesAndProjects.projects.map(convertProject);
-  if (projects.length) await actor.importProjects(projects);
+  if (projects.length) await actor.importProjects(projects, overwrite);
 
   onProgress("Importuję Zaliczki...");
   const payments = backup.invoicesAndProjects.advancePayments.map(convertAdvancePayment);
-  if (payments.length) await actor.importAdvancePayments(payments);
+  if (payments.length) await actor.importAdvancePayments(payments, overwrite);
 
   onProgress("Importuję Wydatki...");
   const expenses = backup.invoicesAndProjects.expenses.map(convertExpense);
-  if (expenses.length) await actor.importExpenses(expenses);
+  if (expenses.length) await actor.importExpenses(expenses, overwrite);
   const ksef = backup.invoicesAndProjects.ksefSent.map(([id, sent]: [any, boolean]) => [bn(id), sent]);
-  if (ksef.length) await actor.importExpenseKsefSent(ksef);
+  if (ksef.length) await actor.importExpenseKsefSent(ksef, overwrite);
 
   onProgress("Importuję Magazyn...");
   const items = backup.warehouse.items.map(convertWarehouseItem);
-  if (items.length) await actor.importWarehouseItems(items);
+  if (items.length) await actor.importWarehouseItems(items, overwrite);
   const movements = backup.warehouse.movements.map(convertStockMovement);
-  if (movements.length) await actor.importStockMovements(movements);
+  if (movements.length) await actor.importStockMovements(movements, overwrite);
 
   onProgress("Importuję Zgłoszenia...");
   const tickets = backup.tickets.tickets.map(convertTicket);
-  if (tickets.length) await actor.importTickets(tickets);
+  if (tickets.length) await actor.importTickets(tickets, overwrite);
   const extras = backup.tickets.extras.map(([id, e]: [any, any]) => [bn(id), e]);
-  if (extras.length) await actor.importTicketExtras(extras);
+  if (extras.length) await actor.importTicketExtras(extras, overwrite);
   const archived = backup.tickets.archivedIds.map(bn);
-  if (archived.length) await actor.importTicketArchived(archived);
+  if (archived.length) await actor.importTicketArchived(archived, overwrite);
   const seenCounts = backup.tickets.seenCounts.map(([id, c]: [any, any]) => [bn(id), bn(c)]);
-  if (seenCounts.length) await actor.importTicketSeenCounts(seenCounts);
+  if (seenCounts.length) await actor.importTicketSeenCounts(seenCounts, overwrite);
   const tokens = backup.tickets.tokens.map(([tok, id]: [string, any]) => [tok, bn(id)]);
-  if (tokens.length) await actor.importTicketTokens(tokens);
+  if (tokens.length) await actor.importTicketTokens(tokens, overwrite);
 
   const attMetas = backup.tickets.attachments.map((a: any) => convertTicketAttachment(a.meta));
-  if (attMetas.length) await actor.importTicketAttachments(attMetas);
+  if (attMetas.length) await actor.importTicketAttachments(attMetas, overwrite);
   if (backup.tickets.links?.length) {
     const links = backup.tickets.links.map(([id, l]: [any, any]) => [bn(id), convertTicketLinks(l)]);
-    await actor.importTicketLinks(links);
+    await actor.importTicketLinks(links, overwrite);
   }
   let done = 0;
   for (const a of backup.tickets.attachments) {
@@ -171,46 +171,46 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
   if (backup.calendar) {
     onProgress("Importuję Kalendarz...");
     const events = backup.calendar.events.map(convertCalendarEvent);
-    if (events.length) await actor.importCalendarEvents(events);
+    if (events.length) await actor.importCalendarEvents(events, overwrite);
     const notes = backup.calendar.notes.map(convertCalendarNote);
-    if (notes.length) await actor.importCalendarNotes(notes);
+    if (notes.length) await actor.importCalendarNotes(notes, overwrite);
     const calAtts = (backup.calendar.attachments || []).map(([id, atts]: [any, any]) => [bn(id), atts]);
-    if (calAtts.length) await actor.importCalendarAttachments(calAtts);
+    if (calAtts.length) await actor.importCalendarAttachments(calAtts, overwrite);
     const trashedEv = (backup.calendar.trashedEventEntries || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
-    if (trashedEv.length) await actor.importTrashedCalendarEvents(trashedEv);
+    if (trashedEv.length) await actor.importTrashedCalendarEvents(trashedEv, overwrite);
     const trashedNt = (backup.calendar.trashedNoteEntries || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
-    if (trashedNt.length) await actor.importTrashedCalendarNotes(trashedNt);
+    if (trashedNt.length) await actor.importTrashedCalendarNotes(trashedNt, overwrite);
   }
 
   onProgress("Importuję Zamówienia...");
   if (backup.orders?.orders?.length) {
-    await actor.importOrders(backup.orders.orders.map(convertOrder));
+    await actor.importOrders(backup.orders.orders.map(convertOrder), overwrite);
   }
   if (backup.orders?.trashedEntries?.length) {
     const te = backup.orders.trashedEntries.map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
-    await actor.importTrashedOrders(te);
+    await actor.importTrashedOrders(te, overwrite);
   }
 
   onProgress("Importuję Umowy...");
   if (backup.contracts?.contracts?.length) {
-    await actor.importContracts(backup.contracts.contracts.map(convertContract));
+    await actor.importContracts(backup.contracts.contracts.map(convertContract), overwrite);
   }
   if (backup.contracts?.trashedEntries?.length) {
     const te = backup.contracts.trashedEntries.map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
-    await actor.importTrashedContracts(te);
+    await actor.importTrashedContracts(te, overwrite);
   }
 
   onProgress("Importuję Powiadomienia e-mail...");
   if (backup.emailSubscribers?.subscribers?.length) {
-    await actor.importSubscribers(backup.emailSubscribers.subscribers.map(convertSubscriber));
+    await actor.importSubscribers(backup.emailSubscribers.subscribers.map(convertSubscriber), overwrite);
   }
 
   onProgress("Importuję Rejestr urządzeń...");
   if (backup.devices?.devices?.length) {
-    await actor.importDevices(backup.devices.devices.map(convertDevice));
+    await actor.importDevices(backup.devices.devices.map(convertDevice), overwrite);
   }
   if (backup.devices?.serviceEntries?.length) {
-    await actor.importDeviceServiceEntries(backup.devices.serviceEntries.map(convertDeviceServiceEntry));
+    await actor.importDeviceServiceEntries(backup.devices.serviceEntries.map(convertDeviceServiceEntry), overwrite);
   }
 
   if (backup.ksef && backup.ksef.invoices && backup.ksef.invoices.length) {
@@ -221,40 +221,40 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
       backup.ksef.sharedStatuses || [],
       backup.ksef.lineItemsData || [],
       backup.ksef.links || []
-    );
+    , overwrite);
   }
 
   if (backup.trash) {
     onProgress("Importuję wpisy Kosza...");
     const toEntries = (arr: any[]) => (arr || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
     const te = toEntries(backup.trash.expenseEntries);
-    if (te.length) await actor.importTrashedExpenses(te);
+    if (te.length) await actor.importTrashedExpenses(te, overwrite);
     const tp = toEntries(backup.trash.paymentEntries);
-    if (tp.length) await actor.importTrashedAdvancePayments(tp);
+    if (tp.length) await actor.importTrashedAdvancePayments(tp, overwrite);
     const ta = toEntries(backup.trash.attachmentEntries);
-    if (ta.length) await actor.importTrashedTicketAttachments(ta);
+    if (ta.length) await actor.importTrashedTicketAttachments(ta, overwrite);
     const tw = toEntries(backup.trash.warehouseEntries);
-    if (tw.length) await actor.importTrashedWarehouseItems(tw);
+    if (tw.length) await actor.importTrashedWarehouseItems(tw, overwrite);
     const tm = toEntries(backup.trash.movementEntries);
-    if (tm.length) await actor.importTrashedStockMovements(tm);
+    if (tm.length) await actor.importTrashedStockMovements(tm, overwrite);
     const tpr = toEntries(backup.trash.projectEntries);
-    if (tpr.length) await actor.importTrashedProjects(tpr);
+    if (tpr.length) await actor.importTrashedProjects(tpr, overwrite);
   }
 
   if (backup.logbook) {
     onProgress("Importuję Dziennik użytkowania...");
     const entries = backup.logbook.entries.map(convertLogbookEntry);
-    if (entries.length) await actor.importLogbookEntries(entries);
+    if (entries.length) await actor.importLogbookEntries(entries, overwrite);
     const instructors = (backup.logbook.instructors || []).map(convertLogbookInstructor);
-    if (instructors.length) await actor.importLogbookInstructors(instructors);
+    if (instructors.length) await actor.importLogbookInstructors(instructors, overwrite);
     const sigs = (backup.logbook.signatures || []).map(([id, s]: [any, any]) => [bn(id), s]);
-    if (sigs.length) await actor.importLogbookEntrySignatures(sigs);
+    if (sigs.length) await actor.importLogbookEntrySignatures(sigs, overwrite);
     const devs = (backup.logbook.entryDevices || []).map(([id, devId]: [any, any, any]) => [bn(id), bn(devId)]);
-    if (devs.length) await actor.importLogbookEntryDevices(devs);
+    if (devs.length) await actor.importLogbookEntryDevices(devs, overwrite);
     const links = (backup.logbook.linkedTickets || []).map(([id, tId]: [any, any]) => [bn(id), bn(tId)]);
-    if (links.length) await actor.importLogbookEntryLinkedTickets(links);
+    if (links.length) await actor.importLogbookEntryLinkedTickets(links, overwrite);
     const trashedLb = (backup.logbook.trashedEntries || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
-    if (trashedLb.length) await actor.importTrashedLogbookEntries(trashedLb);
+    if (trashedLb.length) await actor.importTrashedLogbookEntries(trashedLb, overwrite);
   }
 
   if (backup.documentation) {
@@ -262,11 +262,11 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
     const folders = (backup.documentation.folders || []).map(([id, name, owner, createdAt]: [any, any, any, any]) =>
       [bn(id), name, Principal.fromText(owner), bn(createdAt)]
     );
-    if (folders.length) await actor.importDocFolders(folders);
+    if (folders.length) await actor.importDocFolders(folders, overwrite);
     const chapters = (backup.documentation.chapters || []).map(convertManualChapter);
-    if (chapters.length) await actor.importDeviceManualChapters(chapters);
+    if (chapters.length) await actor.importDeviceManualChapters(chapters, overwrite);
     const trashedCh = (backup.documentation.trashedChapterEntries || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
-    if (trashedCh.length) await actor.importTrashedDeviceManualChapters(trashedCh);
+    if (trashedCh.length) await actor.importTrashedDeviceManualChapters(trashedCh, overwrite);
   }
 
   onProgress("Import zakończony.");
@@ -276,6 +276,7 @@ export function BackupImport({ actor }: { actor: any }) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
+  const [overwrite, setOverwrite] = useState(false);
 
   const handleFile = async (file: File) => {
     setRunning(true);
@@ -284,12 +285,15 @@ export function BackupImport({ actor }: { actor: any }) {
     try {
       const text = await file.text();
       const backup = JSON.parse(text);
-      if (!confirm("Import doda tylko rekordy, których jeszcze nie ma na tym kanistrze (istniejące ID zostaną pominięte, nic nie zostanie nadpisane). Kontynuować?")) {
+      const msg = overwrite
+        ? "⚠️ NADPISZ: istniejące rekordy o tym samym ID zostaną ZASTĄPIONE treścią z pliku (tryb synchronizacji klonu). Kontynuować?"
+        : "Import doda tylko rekordy, których jeszcze nie ma na tym kanistrze (istniejące ID zostaną pominięte, nic nie zostanie nadpisane). Kontynuować?";
+      if (!confirm(msg)) {
         setRunning(false);
         setProgress("");
         return;
       }
-      await importBackup(actor, backup, setProgress);
+      await importBackup(actor, backup, setProgress, overwrite);
     } catch (e: any) {
       setError("Błąd importu: " + String(e?.message || e));
     }
@@ -300,8 +304,12 @@ export function BackupImport({ actor }: { actor: any }) {
     <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
       <h2 className="font-semibold text-[var(--text-primary)]">Import kopii zapasowej</h2>
       <p className="text-xs text-[var(--text-muted)]">
-        ℹ️ Import dosypuje tylko brakujące rekordy — jeśli dane o danym ID już istnieją na tym kanistrze, zostaną pominięte (nic nie jest nadpisywane). Bezpieczne do wielokrotnego użycia.
+        ℹ️ Domyślnie import dosypuje tylko brakujące rekordy (istniejące ID pomijane, nic nie nadpisywane) — bezpieczne na produkcji. Tryb "Nadpisz" służy do codziennej synchronizacji klonu weryfikacyjnego z aktualną produkcją.
       </p>
+      <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+        <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
+        Nadpisz istniejące rekordy (tryb synchronizacji klonu — NIE używać na produkcji)
+      </label>
       <input
         type="file"
         accept=".json"

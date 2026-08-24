@@ -157,24 +157,24 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importDevices(rows : [Types.Device]) : async Nat {
+  public shared ({ caller }) func importDevices(rows : [Types.Device], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (d in rows.vals()) {
       switch (devices.get(d.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { devices.add(d.id, d); count += 1; }; };
         case null { devices.add(d.id, d); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importDeviceServiceEntries(rows : [Types.DeviceServiceEntryV2]) : async Nat {
+  public shared ({ caller }) func importDeviceServiceEntries(rows : [Types.DeviceServiceEntryV2], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (e in rows.vals()) {
       switch (deviceServiceEntriesV2.get(e.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { deviceServiceEntriesV2.add(e.id, e); count += 1; }; };
         case null { deviceServiceEntriesV2.add(e.id, e); count += 1; };
       };
     };

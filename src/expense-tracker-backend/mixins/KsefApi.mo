@@ -174,31 +174,30 @@ mixin (
     invoices : [Types.PendingInvoice],
     sharedStatuses : [(Text, Bool)],
     lineItemsData : [(Text, [Types.InvoiceLineItem])],
-    links : [(Text, Text)],
-  ) : async Nat {
+    links : [(Text, Text)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (inv in invoices.vals()) {
       switch (pendingInvoices.get(inv.ksefNumber)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { pendingInvoices.add(inv.ksefNumber, inv); count += 1; }; };
         case null { pendingInvoices.add(inv.ksefNumber, inv); count += 1; };
       };
     };
     for ((k, v) in sharedStatuses.vals()) {
       switch (invoiceSharedToTeam.get(k)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { invoiceSharedToTeam.add(k, v); }; };
         case null { invoiceSharedToTeam.add(k, v); };
       };
     };
     for ((k, v) in lineItemsData.vals()) {
       switch (invoiceLineItems.get(k)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { invoiceLineItems.add(k, v); }; };
         case null { invoiceLineItems.add(k, v); };
       };
     };
     for ((k, v) in links.vals()) {
       switch (invoiceOneDriveLink.get(k)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { invoiceOneDriveLink.add(k, v); }; };
         case null { invoiceOneDriveLink.add(k, v); };
       };
     };

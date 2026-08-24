@@ -135,24 +135,24 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importContracts(rows : [Types.Contract]) : async Nat {
+  public shared ({ caller }) func importContracts(rows : [Types.Contract], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (c in rows.vals()) {
       switch (contracts.get(c.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { contracts.add(c.id, c); count += 1; }; };
         case null { contracts.add(c.id, c); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTrashedContracts(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedContracts(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (contractsTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { contractsTrashed.add(id, ts); count += 1; }; };
         case null { contractsTrashed.add(id, ts); count += 1; };
       };
     };

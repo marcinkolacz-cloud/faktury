@@ -122,60 +122,60 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func importTickets(rows : [Types.Ticket]) : async Nat {
+  public shared ({ caller }) func importTickets(rows : [Types.Ticket], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (t in rows.vals()) {
       switch (tickets.get(t.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { tickets.add(t.id, t); count += 1; }; };
         case null { tickets.add(t.id, t); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTicketExtras(rows : [(Nat, Types.TicketExtras)]) : async Nat {
+  public shared ({ caller }) func importTicketExtras(rows : [(Nat, Types.TicketExtras)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, extras) in rows.vals()) {
       switch (ticketExtras.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { ticketExtras.add(id, extras); count += 1; }; };
         case null { ticketExtras.add(id, extras); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTicketArchived(rows : [Nat]) : async Nat {
+  public shared ({ caller }) func importTicketArchived(rows : [Nat], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (id in rows.vals()) {
       switch (ticketArchived.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { ticketArchived.add(id, true); count += 1; }; };
         case null { ticketArchived.add(id, true); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTicketSeenCounts(rows : [(Nat, Nat)]) : async Nat {
+  public shared ({ caller }) func importTicketSeenCounts(rows : [(Nat, Nat)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, seenCount) in rows.vals()) {
       switch (ticketSeenCounts.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { ticketSeenCounts.add(id, seenCount); count += 1; }; };
         case null { ticketSeenCounts.add(id, seenCount); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTicketTokens(rows : [(Text, Nat)]) : async Nat {
+  public shared ({ caller }) func importTicketTokens(rows : [(Text, Nat)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((token, id) in rows.vals()) {
       switch (ticketTokens.get(token)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { ticketTokens.add(token, id); count += 1; }; };
         case null { ticketTokens.add(token, id); count += 1; };
       };
     };

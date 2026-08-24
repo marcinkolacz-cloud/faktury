@@ -120,12 +120,12 @@ mixin (
     true;
   };
 
-  public shared ({ caller }) func importTicketLinks(rows : [(Nat, Types.TicketLinks)]) : async Nat {
+  public shared ({ caller }) func importTicketLinks(rows : [(Nat, Types.TicketLinks)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, links) in rows.vals()) {
       switch (ticketLinks.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { ticketLinks.add(id, links); count += 1; }; };
         case null { ticketLinks.add(id, links); count += 1; };
       };
     };

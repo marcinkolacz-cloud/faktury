@@ -32,12 +32,12 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func importInviteCodes(rows : [InvitesLib.InviteCode]) : async Nat {
+  public shared ({ caller }) func importInviteCodes(rows : [InvitesLib.InviteCode], overwrite : Bool) : async Nat {
     if (not isAdmin(caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (c in rows.vals()) {
       switch (inviteCodes.get(c.code)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { inviteCodes.add(c.code, c); count += 1; }; };
         case null { inviteCodes.add(c.code, c); count += 1; };
       };
     };

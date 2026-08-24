@@ -123,24 +123,24 @@ mixin (
     count;
   };
 
-  public shared ({ caller }) func importExpenses(rows : [Types.Expense]) : async Nat {
+  public shared ({ caller }) func importExpenses(rows : [Types.Expense], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (e in rows.vals()) {
       switch (expenses.get(e.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { expenses.add(e.id, e); count += 1; }; };
         case null { expenses.add(e.id, e); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importExpenseKsefSent(rows : [(Nat, Bool)]) : async Nat {
+  public shared ({ caller }) func importExpenseKsefSent(rows : [(Nat, Bool)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, sent) in rows.vals()) {
       switch (expenseKsefSent.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { expenseKsefSent.add(id, sent); count += 1; }; };
         case null { expenseKsefSent.add(id, sent); count += 1; };
       };
     };
@@ -296,12 +296,12 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importTrashedExpenses(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedExpenses(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (expensesTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { expensesTrashed.add(id, ts); count += 1; }; };
         case null { expensesTrashed.add(id, ts); count += 1; };
       };
     };

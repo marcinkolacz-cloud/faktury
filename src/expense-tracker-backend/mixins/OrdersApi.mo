@@ -191,24 +191,24 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importOrders(rows : [Types.Order]) : async Nat {
+  public shared ({ caller }) func importOrders(rows : [Types.Order], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (o in rows.vals()) {
       switch (orders.get(o.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { orders.add(o.id, o); count += 1; }; };
         case null { orders.add(o.id, o); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTrashedOrders(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedOrders(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (ordersTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { ordersTrashed.add(id, ts); count += 1; }; };
         case null { ordersTrashed.add(id, ts); count += 1; };
       };
     };

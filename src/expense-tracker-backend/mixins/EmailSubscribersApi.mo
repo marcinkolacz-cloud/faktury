@@ -75,12 +75,12 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importSubscribers(rows : [Types.Subscriber]) : async Nat {
+  public shared ({ caller }) func importSubscribers(rows : [Types.Subscriber], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (s in rows.vals()) {
       switch (emailSubscribers.get(s.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { emailSubscribers.add(s.id, s); count += 1; }; };
         case null { emailSubscribers.add(s.id, s); count += 1; };
       };
     };

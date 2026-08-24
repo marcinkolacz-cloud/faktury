@@ -770,24 +770,24 @@ mixin (
 
   // --- Import (kopia zapasowa) ---
 
-  public shared ({ caller }) func importLogbookEntries(rows : [Types.LogbookEntry]) : async Nat {
+  public shared ({ caller }) func importLogbookEntries(rows : [Types.LogbookEntry], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (e in rows.vals()) {
       switch (logbookEntries.get(e.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { logbookEntries.add(e.id, e); count += 1; }; };
         case null { logbookEntries.add(e.id, e); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTrashedLogbookEntries(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedLogbookEntries(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (logbookEntriesTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { logbookEntriesTrashed.add(id, ts); count += 1; }; };
         case null { logbookEntriesTrashed.add(id, ts); count += 1; };
       };
     };
@@ -801,36 +801,36 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importLogbookEntrySignatures(entries : [(Nat, Text)]) : async Nat {
+  public shared ({ caller }) func importLogbookEntrySignatures(entries : [(Nat, Text)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, sig) in entries.vals()) {
       switch (logbookEntrySignatures.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { logbookEntrySignatures.add(id, sig); count += 1; }; };
         case null { logbookEntrySignatures.add(id, sig); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importLogbookEntryDevices(entries : [(Nat, Nat)]) : async Nat {
+  public shared ({ caller }) func importLogbookEntryDevices(entries : [(Nat, Nat)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, devId) in entries.vals()) {
       switch (logbookEntryDeviceId.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { logbookEntryDeviceId.add(id, devId); count += 1; }; };
         case null { logbookEntryDeviceId.add(id, devId); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importLogbookEntryLinkedTickets(entries : [(Nat, Nat)]) : async Nat {
+  public shared ({ caller }) func importLogbookEntryLinkedTickets(entries : [(Nat, Nat)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((entryId, ticketId) in entries.vals()) {
       switch (logbookEntryLinkedTicket.get(entryId)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { logbookEntryLinkedTicket.add(entryId, ticketId); count += 1; }; };
         case null { logbookEntryLinkedTicket.add(entryId, ticketId); count += 1; };
       };
     };
@@ -840,12 +840,19 @@ mixin (
   // Uwaga: PIN instruktora NIE jest eksportowany (tylko hash+sól, celowo
   // nieodwracalne). Po imporcie instruktor istnieje (nazwa/email/aktywność),
   // ale musi ustawić PIN od nowa przez resetLogbookInstructorPin.
-  public shared ({ caller }) func importLogbookInstructors(rows : [Types.LogbookInstructorView]) : async Nat {
+  public shared ({ caller }) func importLogbookInstructors(rows : [Types.LogbookInstructorView], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (r in rows.vals()) {
       switch (logbookInstructorName.get(r.email)) {
-        case (?_) {};
+        case (?_) {
+          if (overwrite) {
+            logbookInstructorName.add(r.email, r.name);
+            logbookInstructorActive.add(r.email, r.active);
+            logbookInstructorCreatedAt.add(r.email, r.createdAt);
+            count += 1;
+          };
+        };
         case null {
           logbookInstructorName.add(r.email, r.name);
           logbookInstructorActive.add(r.email, r.active);

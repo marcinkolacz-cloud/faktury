@@ -210,36 +210,36 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importCalendarEvents(rows : [Types.CalendarEvent]) : async Nat {
+  public shared ({ caller }) func importCalendarEvents(rows : [Types.CalendarEvent], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (e in rows.vals()) {
       switch (calendarEvents.get(e.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { calendarEvents.add(e.id, e); count += 1; }; };
         case null { calendarEvents.add(e.id, e); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importCalendarNotes(rows : [Types.CalendarNote]) : async Nat {
+  public shared ({ caller }) func importCalendarNotes(rows : [Types.CalendarNote], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (n in rows.vals()) {
       switch (calendarNotes.get(n.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { calendarNotes.add(n.id, n); count += 1; }; };
         case null { calendarNotes.add(n.id, n); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importCalendarAttachments(rows : [(Nat, [(Text, Text)])]) : async Nat {
+  public shared ({ caller }) func importCalendarAttachments(rows : [(Nat, [(Text, Text)])], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((eventId, atts) in rows.vals()) {
       switch (calendarAttachments.get(eventId)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { calendarAttachments.add(eventId, atts); count += 1; }; };
         case null { calendarAttachments.add(eventId, atts); count += 1; };
       };
     };
@@ -260,24 +260,24 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importTrashedCalendarEvents(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedCalendarEvents(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (calendarEventsTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { calendarEventsTrashed.add(id, ts); count += 1; }; };
         case null { calendarEventsTrashed.add(id, ts); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTrashedCalendarNotes(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedCalendarNotes(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (calendarNotesTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { calendarNotesTrashed.add(id, ts); count += 1; }; };
         case null { calendarNotesTrashed.add(id, ts); count += 1; };
       };
     };

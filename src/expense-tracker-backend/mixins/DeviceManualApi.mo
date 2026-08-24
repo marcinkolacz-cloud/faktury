@@ -738,36 +738,36 @@ mixin (
 
   // --- Import (kopia zapasowa) ---
 
-  public shared ({ caller }) func importDocFolders(rows : [(Nat, Text, Principal, Int)]) : async Nat {
+  public shared ({ caller }) func importDocFolders(rows : [(Nat, Text, Principal, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, name, owner, createdAt) in rows.vals()) {
       switch (docFolders.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { docFolders.add(id, (name, owner, createdAt)); count += 1; }; };
         case null { docFolders.add(id, (name, owner, createdAt)); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importDeviceManualChapters(rows : [Types.DeviceManualChapter]) : async Nat {
+  public shared ({ caller }) func importDeviceManualChapters(rows : [Types.DeviceManualChapter], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (ch in rows.vals()) {
       switch (deviceManualChapters.get(ch.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { deviceManualChapters.add(ch.id, ch); count += 1; }; };
         case null { deviceManualChapters.add(ch.id, ch); count += 1; };
       };
     };
     count;
   };
 
-  public shared ({ caller }) func importTrashedDeviceManualChapters(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedDeviceManualChapters(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (deviceManualChaptersTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { deviceManualChaptersTrashed.add(id, ts); count += 1; }; };
         case null { deviceManualChaptersTrashed.add(id, ts); count += 1; };
       };
     };

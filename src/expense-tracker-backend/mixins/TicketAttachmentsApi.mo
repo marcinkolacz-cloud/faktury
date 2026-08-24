@@ -96,12 +96,12 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func importTicketAttachments(rows : [Types.TicketAttachmentMeta]) : async Nat {
+  public shared ({ caller }) func importTicketAttachments(rows : [Types.TicketAttachmentMeta], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (a in rows.vals()) {
       switch (ticketAttachments.get(a.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { ticketAttachments.add(a.id, a); count += 1; }; };
         case null { ticketAttachments.add(a.id, a); count += 1; };
       };
     };
@@ -191,12 +191,12 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importTrashedTicketAttachments(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedTicketAttachments(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (ticketAttachmentsTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { ticketAttachmentsTrashed.add(id, ts); count += 1; }; };
         case null { ticketAttachmentsTrashed.add(id, ts); count += 1; };
       };
     };

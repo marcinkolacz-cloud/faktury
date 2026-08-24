@@ -628,12 +628,12 @@ persistent actor {
     true;
   };
 
-  public shared ({ caller }) func importPrincipalDisplayNames(entries : [(Principal, Text)]) : async Nat {
+  public shared ({ caller }) func importPrincipalDisplayNames(entries : [(Principal, Text)], overwrite : Bool) : async Nat {
     if (not isAdmin(caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((p, name) in entries.vals()) {
       switch (principalDisplayNames.get(p)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { principalDisplayNames.add(p, name); count += 1; }; };
         case null { principalDisplayNames.add(p, name); count += 1; };
       };
     };

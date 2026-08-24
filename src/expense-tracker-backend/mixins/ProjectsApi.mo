@@ -31,12 +31,12 @@ mixin (
     newId;
   };
 
-  public shared ({ caller }) func importProjects(rows : [Types.Project]) : async Nat {
+  public shared ({ caller }) func importProjects(rows : [Types.Project], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for (p in rows.vals()) {
       switch (projects.get(p.id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { projects.add(p.id, p); count += 1; }; };
         case null { projects.add(p.id, p); count += 1; };
       };
     };
@@ -100,12 +100,12 @@ mixin (
     result.toArray();
   };
 
-  public shared ({ caller }) func importTrashedProjects(entries : [(Nat, Int)]) : async Nat {
+  public shared ({ caller }) func importTrashedProjects(entries : [(Nat, Int)], overwrite : Bool) : async Nat {
     if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
     var count = 0;
     for ((id, ts) in entries.vals()) {
       switch (projectsTrashed.get(id)) {
-        case (?_) {};
+        case (?_) { if (overwrite) { projectsTrashed.add(id, ts); count += 1; }; };
         case null { projectsTrashed.add(id, ts); count += 1; };
       };
     };
