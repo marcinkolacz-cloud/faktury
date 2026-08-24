@@ -133,6 +133,11 @@ persistent actor {
   let ticketDriveFolders = Map.empty<Nat, Text>();
   let orderDriveFolders = Map.empty<Nat, Text>();
   let orderProductionEstimates = Map.empty<Nat, Text>();
+  let orderFulfillmentDates = Map.empty<Nat, Text>();
+  let orderParts = Map.empty<Nat, Text>();
+  let orderOrdererNames = Map.empty<Nat, Text>();
+  let orderContactPhones = Map.empty<Nat, Text>();
+  let orderContactEmails = Map.empty<Nat, Text>();
   let contractDriveFolders = Map.empty<Nat, Text>();
   let recentSubmissionTimes = List.empty<Int>();
   let recentClientReplyTimes = List.empty<Int>();
@@ -238,7 +243,7 @@ persistent actor {
   include FilesApi(files, fileChunks, folders, accessRoles, filesTrashed, foldersTrashed, moduleAccess);
   include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles, calendarEventsTrashed, calendarNotesTrashed, moduleAccess, calendarEventCreator);
   include TicketLinksApi(tickets, ticketLinks, ticketDriveFolders, calendarEvents, calendarEventCreator, accessRoles, moduleAccess);
-  include OrdersApi(orders, ordersTrashed, orderDriveFolders, accessRoles, moduleAccess);
+  include OrdersApi(orders, ordersTrashed, orderDriveFolders, orderFulfillmentDates, orderParts, orderOrdererNames, orderContactPhones, orderContactEmails, accessRoles, moduleAccess);
   include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);

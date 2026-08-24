@@ -143,18 +143,20 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
   };
 
   onProgress("Eksportuję Zamówienia...");
-  const [ordersActive, ordersTrashedFull] = await Promise.all([
+  const [ordersActive, ordersTrashedFull, ordersTrashedEntries] = await Promise.all([
     actor.listOrders(),
     actor.listTrashedOrders(),
+    actor.listTrashedOrderEntries(),
   ]);
-  backup.orders = { orders: [...ordersActive, ...ordersTrashedFull] };
+  backup.orders = { orders: [...ordersActive, ...ordersTrashedFull], trashedEntries: ordersTrashedEntries };
 
   onProgress("Eksportuję Umowy...");
-  const [contractsActive, contractsTrashedFull] = await Promise.all([
+  const [contractsActive, contractsTrashedFull, contractsTrashedEntries] = await Promise.all([
     actor.listContracts(),
     actor.listTrashedContracts(),
+    actor.listTrashedContractEntries(),
   ]);
-  backup.contracts = { contracts: [...contractsActive, ...contractsTrashedFull] };
+  backup.contracts = { contracts: [...contractsActive, ...contractsTrashedFull], trashedEntries: contractsTrashedEntries };
 
   onProgress("Eksportuję Powiadomienia email...");
   const subscribers = await actor.listSubscribers();
@@ -214,6 +216,7 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
   const [
     logbookEntries, logbookTrashedEntries, logbookInstructors,
     logbookSignatures, logbookEntryDevices, logbookLinkedTickets,
+    logbookTrashedEntryEntries,
   ] = await Promise.all([
     actor.listLogbookEntries(),
     actor.listTrashedLogbookEntries(),
@@ -221,6 +224,7 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
     actor.listLogbookEntrySignatures(),
     actor.listLogbookEntryDevices(),
     actor.listLogbookEntryLinkedTickets(),
+    actor.listTrashedLogbookEntryEntries(),
   ]);
   backup.logbook = {
     entries: [...logbookEntries, ...logbookTrashedEntries],
@@ -228,6 +232,7 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
     signatures: logbookSignatures,
     entryDevices: logbookEntryDevices,
     linkedTickets: logbookLinkedTickets,
+    trashedEntries: logbookTrashedEntryEntries,
   };
 
   onProgress("Eksportuję Dokumentację (foldery i rozdziały)...");
@@ -242,9 +247,11 @@ async function exportBackup(actor: any, onProgress: (s: string) => void) {
     allManualChapters.push(...chs);
   }
   const trashedManualChapters = await actor.listTrashedDeviceManualChapters();
+  const trashedManualChapterEntries = await actor.listTrashedDeviceManualChapterEntries();
   backup.documentation = {
     folders: docFolders,
     chapters: [...allManualChapters, ...trashedManualChapters],
+    trashedChapterEntries: trashedManualChapterEntries,
   };
 
   onProgress("Generuję plik JSON...");

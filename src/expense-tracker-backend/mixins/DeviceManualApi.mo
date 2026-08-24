@@ -641,7 +641,7 @@ mixin (
     var result = List.empty<(Nat, Bool)>();
     for ((id, ch) in deviceManualChapters.entries()) {
       if (ch.deviceId == deviceId and deviceManualChaptersTrashed.get(id) == null) {
-        result.add((id, deviceManualChapterBackupEnabled.get(id) == ?true));
+        result.add((id, deviceManualChapterBackupEnabled.get(id) == ?true and Text.size(ch.contentHtml) > 0));
       };
     };
     result.toArray();
@@ -734,5 +734,50 @@ mixin (
     });
     deviceManualVariables.add(deviceId, updated2);
     true;
+  };
+
+  // --- Import (kopia zapasowa) ---
+
+  public shared ({ caller }) func importDocFolders(rows : [(Nat, Text, Principal, Int)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, name, owner, createdAt) in rows.vals()) {
+      switch (docFolders.get(id)) {
+        case (?_) {};
+        case null { docFolders.add(id, (name, owner, createdAt)); count += 1; };
+      };
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importDeviceManualChapters(rows : [Types.DeviceManualChapter]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (ch in rows.vals()) {
+      switch (deviceManualChapters.get(ch.id)) {
+        case (?_) {};
+        case null { deviceManualChapters.add(ch.id, ch); count += 1; };
+      };
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importTrashedDeviceManualChapters(entries : [(Nat, Int)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, ts) in entries.vals()) {
+      switch (deviceManualChaptersTrashed.get(id)) {
+        case (?_) {};
+        case null { deviceManualChaptersTrashed.add(id, ts); count += 1; };
+      };
+    };
+    count;
+  };
+
+  public query ({ caller }) func listTrashedDeviceManualChapterEntries() : async [(Nat, Int)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Admin access required"); };
+    var result = List.empty<(Nat, Int)>();
+    for ((id, ts) in deviceManualChaptersTrashed.entries()) { result.add((id, ts)); };
+    result.toArray();
   };
 };

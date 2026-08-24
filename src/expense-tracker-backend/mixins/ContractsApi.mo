@@ -158,4 +158,11 @@ mixin (
     };
     count;
   };
+
+  public query ({ caller }) func listTrashedContractEntries() : async [(Nat, Int)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can view this"); };
+    var result = List.empty<(Nat, Int)>();
+    for ((id, ts) in contractsTrashed.entries()) { result.add((id, ts)); };
+    result.toArray();
+  };
 };

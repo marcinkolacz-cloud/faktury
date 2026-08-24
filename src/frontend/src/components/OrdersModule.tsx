@@ -3,6 +3,7 @@ import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { DriveFolderPanel } from "./DriveFolderPanel";
 import { setDriveActor } from "../lib/oneDriveConfig";
+import { sendEmailNotification } from "../lib/emailNotify";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Oczekujące",
@@ -29,7 +30,7 @@ function formatDate(ns: bigint): string {
   return new Date(ms).toLocaleDateString("pl-PL", { year: "numeric", month: "short", day: "numeric" });
 }
 
-const emptyForm = { date: new Date().toISOString().slice(0, 10), name: "", quantity: "1", supplierName: "", totalAmount: "", advanceAmount: "", currency: "PLN", note: "" };
+const emptyForm = { date: new Date().toISOString().slice(0, 10), name: "", quantity: "1", supplierName: "", totalAmount: "", advanceAmount: "", currency: "PLN", note: "", fulfillmentDate: "", parts: "", ordererName: "", contactPhone: "", contactEmail: "" };
 
 export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
   const actor = useBackendActor();
@@ -41,6 +42,11 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
   const [form, setForm] = useState(emptyForm);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [folderPath, setFolderPath] = useState<string | null>(null);
+  const [subscribers, setSubscribers] = useState<any[]>([]);
+  const [selectedSubscriberIds, setSelectedSubscriberIds] = useState<number[]>([]);
+  const [externalEmail, setExternalEmail] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailResult, setEmailResult] = useState<string | null>(null);
   const reload = async () => {
     if (!actor) return;
     const o = await actor.listOrders();
@@ -59,6 +65,7 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
       actor.getCallerRole().then((r: any) => {
         if (r && r.length > 0) setMyRole(Object.keys(r[0])[0]);
       });
+      actor.listSubscribers().then((s: any[]) => setSubscribers(s)).catch(() => {});
     }
   }, [actor]);
 
@@ -78,9 +85,9 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
     const totalAmount = parseFloat(form.totalAmount) || 0;
     const advanceAmount = parseFloat(form.advanceAmount) || 0;
     if ((selected as any)?._editing) {
-      await actor.updateOrder(selected.id, form.date, form.name.trim(), quantity, form.supplierName.trim(), totalAmount, advanceAmount, form.currency, form.note.trim());
+      await actor.updateOrder(selected.id, form.date, form.name.trim(), quantity, form.supplierName.trim(), totalAmount, advanceAmount, form.currency, form.note.trim(), form.fulfillmentDate, form.parts.trim(), form.ordererName.trim(), form.contactPhone.trim(), form.contactEmail.trim());
     } else {
-      await actor.createOrder(form.date, form.name.trim(), quantity, form.supplierName.trim(), totalAmount, advanceAmount, form.currency, form.note.trim(), "Zespół");
+      await actor.createOrder(form.date, form.name.trim(), quantity, form.supplierName.trim(), totalAmount, advanceAmount, form.currency, form.note.trim(), "Zespół", form.fulfillmentDate, form.parts.trim(), form.ordererName.trim(), form.contactPhone.trim(), form.contactEmail.trim());
     }
     setForm(emptyForm);
     setShowForm(false);
@@ -98,9 +105,47 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
       advanceAmount: String(o.advanceAmount),
       currency: o.currency,
       note: o.note,
+      fulfillmentDate: o.fulfillmentDate || "",
+      parts: o.parts || "",
+      ordererName: o.ordererName || "",
+      contactPhone: o.contactPhone || "",
+      contactEmail: o.contactEmail || "",
     });
     setSelected({ ...o, _editing: true });
     setShowForm(true);
+  };
+
+  const toggleSubscriber = (id: number) => {
+    setSelectedSubscriberIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+
+  const sendOrderEmail = async () => {
+    const teamEmails = subscribers.filter((s) => selectedSubscriberIds.includes(s.id)).map((s) => s.email);
+    const recipients = [...teamEmails, ...(externalEmail.trim() ? [externalEmail.trim()] : [])];
+    if (recipients.length === 0) { setEmailResult("Wybierz odbiorcę."); return; }
+    setSendingEmail(true);
+    setEmailResult(null);
+    const subject = "Zamówienie: " + form.name;
+    const message =
+      "Zamówienie: " + form.name + "\n" +
+      "Dostawca: " + form.supplierName + "\n" +
+      "Data zamówienia: " + form.date + "\n" +
+      (form.fulfillmentDate ? "Data realizacji: " + form.fulfillmentDate + "\n" : "") +
+      (form.ordererName.trim() ? "Zamawiający: " + form.ordererName.trim() + "\n" : "") +
+      ((form.contactPhone.trim() || form.contactEmail.trim()) ? "Kontakt: " + [form.contactPhone.trim(), form.contactEmail.trim()].filter(Boolean).join(" · ") + "\n" : "") +
+      "Ilość: " + form.quantity + "\n" +
+      "Kwota całości: " + form.totalAmount + " " + form.currency + "\n" +
+      "Zaliczka: " + form.advanceAmount + " " + form.currency +
+      (form.parts.trim() ? "\n\nSpis części:\n" + form.parts.trim() : "") +
+      (form.note.trim() ? "\n\nNotatka: " + form.note.trim() : "") +
+      "\n\n---\nWiadomość wysłana automatycznie z systemu zamówień. Prosimy nie odpowiadać na tego maila.";
+    try {
+      const r = await sendEmailNotification(actor, recipients, subject, message);
+      setEmailResult("Wysłano: " + r.ok + "/" + r.total);
+    } catch {
+      setEmailResult("Błąd wysyłki.");
+    }
+    setSendingEmail(false);
   };
 
   const changeStatus = async (id: bigint, status: string) => {
@@ -188,6 +233,22 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
                 <input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
                 <label className="text-xs text-[var(--text-muted)]">Dostawca</label>
                 <input value={form.supplierName} onChange={(e) => setForm({ ...form, supplierName: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <label className="text-xs text-[var(--text-muted)]">Data realizacji</label>
+                <input type="date" value={form.fulfillmentDate} onChange={(e) => setForm({ ...form, fulfillmentDate: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <label className="text-xs text-[var(--text-muted)]">Spis części</label>
+                <textarea value={form.parts} onChange={(e) => setForm({ ...form, parts: e.target.value })} rows={3} placeholder={"1x ...\n2x ..."} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <label className="text-xs text-[var(--text-muted)]">Osoba zamawiająca</label>
+                <input value={form.ordererName} onChange={(e) => setForm({ ...form, ordererName: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-xs text-[var(--text-muted)]">Kontakt tel.</label>
+                    <input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-[var(--text-muted)]">Kontakt email</label>
+                    <input value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <div className="flex-1">
                     <label className="text-xs text-[var(--text-muted)]">Kwota całości</label>
@@ -204,6 +265,24 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
                 </div>
                 <label className="text-xs text-[var(--text-muted)]">Notatka</label>
                 <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} rows={3} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                <div className="border-t border-[var(--border-color-light)] pt-2 mt-2 space-y-1.5">
+                  <label className="text-xs text-[var(--text-muted)]">Wyślij email o zamówieniu</label>
+                  <div className="flex flex-wrap gap-2">
+                    {subscribers.map((s) => (
+                      <label key={s.id} className="flex items-center gap-1 text-xs bg-[var(--bg-page)] border border-[var(--border-color)] rounded px-2 py-1 cursor-pointer">
+                        <input type="checkbox" checked={selectedSubscriberIds.includes(s.id)} onChange={() => toggleSubscriber(s.id)} />
+                        {s.name || s.email}
+                      </label>
+                    ))}
+                  </div>
+                  <input value={externalEmail} onChange={(e) => setExternalEmail(e.target.value)} placeholder="Adres zewnętrzny (opcjonalnie)" className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={sendOrderEmail} disabled={sendingEmail} className="px-3 py-1.5 border border-cyan-600 text-cyan-600 hover:bg-cyan-50 rounded text-sm disabled:opacity-50">
+                      {sendingEmail ? "Wysyłanie..." : "Wyślij email"}
+                    </button>
+                    {emailResult && <span className="text-xs text-[var(--text-muted)]">{emailResult}</span>}
+                  </div>
+                </div>
                 <div className="flex gap-2 pt-2">
                   <button onClick={submitForm} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm">Zapisz</button>
                   <button onClick={() => { setShowForm(false); setSelected(null); }} className="px-3 py-1.5 border border-[var(--border-color)] rounded text-sm">Anuluj</button>
@@ -232,7 +311,11 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
                   <p>Kwota całości: <span className="font-medium">{String(selected.totalAmount)} {selected.currency}</span></p>
                   <p>Kwota zaliczki: <span className="font-medium">{String(selected.advanceAmount)} {selected.currency}</span></p>
                   <p>Do zapłaty przy dostawie: <span className="font-medium">{(Number(selected.totalAmount) - Number(selected.advanceAmount)).toFixed(2)} {selected.currency}</span></p>
+                  {selected.fulfillmentDate && <p>Data realizacji: <span className="font-medium">{selected.fulfillmentDate}</span></p>}
+                  {selected.ordererName && <p>Zamawiający: <span className="font-medium">{selected.ordererName}</span></p>}
+                  {(selected.contactPhone || selected.contactEmail) && <p>Kontakt: <span className="font-medium">{[selected.contactPhone, selected.contactEmail].filter(Boolean).join(" · ")}</span></p>}
                 </div>
+                {selected.parts && <div><p className="text-xs text-[var(--text-muted)]">Spis części:</p><p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap">{selected.parts}</p></div>}
                 {selected.note && <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap">{selected.note}</p>}
                 <DriveFolderPanel
                   path={folderPath}

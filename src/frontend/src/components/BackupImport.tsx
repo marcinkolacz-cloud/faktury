@@ -77,6 +77,16 @@ function convertPendingInvoice(inv: any) {
   return convertFields(inv, ["importedAt"]);
 }
 
+function convertLogbookEntry(e: any) {
+  return convertFields(e, ["id", "createdAt"]);
+}
+function convertLogbookInstructor(i: any) {
+  return convertFields(i, ["createdAt"]);
+}
+function convertManualChapter(ch: any) {
+  return convertFields(ch, ["id", "deviceId", "order", "updatedAt"]);
+}
+
 function convertInviteCode(c: any) {
   return {
     ...c,
@@ -172,15 +182,22 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
     if (trashedNt.length) await actor.importTrashedCalendarNotes(trashedNt);
   }
 
-  if (backup.ksef && backup.ksef.invoices && backup.ksef.invoices.length) {
-    onProgress("Importuję Zamówienia...");
+  onProgress("Importuję Zamówienia...");
   if (backup.orders?.orders?.length) {
     await actor.importOrders(backup.orders.orders.map(convertOrder));
+  }
+  if (backup.orders?.trashedEntries?.length) {
+    const te = backup.orders.trashedEntries.map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
+    await actor.importTrashedOrders(te);
   }
 
   onProgress("Importuję Umowy...");
   if (backup.contracts?.contracts?.length) {
     await actor.importContracts(backup.contracts.contracts.map(convertContract));
+  }
+  if (backup.contracts?.trashedEntries?.length) {
+    const te = backup.contracts.trashedEntries.map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
+    await actor.importTrashedContracts(te);
   }
 
   onProgress("Importuję Powiadomienia e-mail...");
@@ -196,7 +213,8 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
     await actor.importDeviceServiceEntries(backup.devices.serviceEntries.map(convertDeviceServiceEntry));
   }
 
-  onProgress("Importuję faktury KSeF...");
+  if (backup.ksef && backup.ksef.invoices && backup.ksef.invoices.length) {
+    onProgress("Importuję faktury KSeF...");
     const invoices = backup.ksef.invoices.map(convertPendingInvoice);
     await actor.importPendingInvoicesFull(
       invoices,
@@ -221,6 +239,34 @@ async function importBackup(actor: any, backup: any, onProgress: (s: string) => 
     if (tm.length) await actor.importTrashedStockMovements(tm);
     const tpr = toEntries(backup.trash.projectEntries);
     if (tpr.length) await actor.importTrashedProjects(tpr);
+  }
+
+  if (backup.logbook) {
+    onProgress("Importuję Dziennik użytkowania...");
+    const entries = backup.logbook.entries.map(convertLogbookEntry);
+    if (entries.length) await actor.importLogbookEntries(entries);
+    const instructors = (backup.logbook.instructors || []).map(convertLogbookInstructor);
+    if (instructors.length) await actor.importLogbookInstructors(instructors);
+    const sigs = (backup.logbook.signatures || []).map(([id, s]: [any, any]) => [bn(id), s]);
+    if (sigs.length) await actor.importLogbookEntrySignatures(sigs);
+    const devs = (backup.logbook.entryDevices || []).map(([id, devId]: [any, any, any]) => [bn(id), bn(devId)]);
+    if (devs.length) await actor.importLogbookEntryDevices(devs);
+    const links = (backup.logbook.linkedTickets || []).map(([id, tId]: [any, any]) => [bn(id), bn(tId)]);
+    if (links.length) await actor.importLogbookEntryLinkedTickets(links);
+    const trashedLb = (backup.logbook.trashedEntries || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
+    if (trashedLb.length) await actor.importTrashedLogbookEntries(trashedLb);
+  }
+
+  if (backup.documentation) {
+    onProgress("Importuję Dokumentację...");
+    const folders = (backup.documentation.folders || []).map(([id, name, owner, createdAt]: [any, any, any, any]) =>
+      [bn(id), name, Principal.fromText(owner), bn(createdAt)]
+    );
+    if (folders.length) await actor.importDocFolders(folders);
+    const chapters = (backup.documentation.chapters || []).map(convertManualChapter);
+    if (chapters.length) await actor.importDeviceManualChapters(chapters);
+    const trashedCh = (backup.documentation.trashedChapterEntries || []).map(([id, ts]: [any, any]) => [bn(id), bn(ts)]);
+    if (trashedCh.length) await actor.importTrashedDeviceManualChapters(trashedCh);
   }
 
   onProgress("Import zakończony.");

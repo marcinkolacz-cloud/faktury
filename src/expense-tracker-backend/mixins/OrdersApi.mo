@@ -11,9 +11,24 @@ mixin (
   orders : Map.Map<Nat, Types.Order>,
   ordersTrashed : Map.Map<Nat, Int>,
   orderDriveFolders : Map.Map<Nat, Text>,
+  orderFulfillmentDates : Map.Map<Nat, Text>,
+  orderParts : Map.Map<Nat, Text>,
+  orderOrdererNames : Map.Map<Nat, Text>,
+  orderContactPhones : Map.Map<Nat, Text>,
+  orderContactEmails : Map.Map<Nat, Text>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
 ) {
+  func toView(o : Types.Order) : Types.OrderView {
+    {
+      o with
+      fulfillmentDate = switch (orderFulfillmentDates.get(o.id)) { case (?d) d; case null "" };
+      parts = switch (orderParts.get(o.id)) { case (?p) p; case null "" };
+      ordererName = switch (orderOrdererNames.get(o.id)) { case (?v) v; case null "" };
+      contactPhone = switch (orderContactPhones.get(o.id)) { case (?v) v; case null "" };
+      contactEmail = switch (orderContactEmails.get(o.id)) { case (?v) v; case null "" };
+    };
+  };
   func requireOrdersAccess(caller : Principal) {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "orders")) { Runtime.trap("Module access required: orders"); };
@@ -29,6 +44,11 @@ mixin (
     currency : Text,
     note : Text,
     createdBy : Text,
+    fulfillmentDate : Text,
+    parts : Text,
+    ordererName : Text,
+    contactPhone : Text,
+    contactEmail : Text,
   ) : async Nat {
     requireOrdersAccess(caller);
     var maxId = 0;
@@ -53,6 +73,11 @@ mixin (
       createdAt = Time.now();
     };
     orders.add(newId, order);
+    orderFulfillmentDates.add(newId, fulfillmentDate);
+    orderParts.add(newId, parts);
+    orderOrdererNames.add(newId, ordererName);
+    orderContactPhones.add(newId, contactPhone);
+    orderContactEmails.add(newId, contactEmail);
     newId;
   };
 
@@ -66,10 +91,23 @@ mixin (
     advanceAmount : Float,
     currency : Text,
     note : Text,
+    fulfillmentDate : Text,
+    parts : Text,
+    ordererName : Text,
+    contactPhone : Text,
+    contactEmail : Text,
   ) : async Bool {
     requireOrdersAccess(caller);
     switch (orders.get(id)) {
-      case (?o) { orders.add(id, { o with date; name; quantity; supplierName; totalAmount; advanceAmount; currency; note }); true; };
+      case (?o) {
+        orders.add(id, { o with date; name; quantity; supplierName; totalAmount; advanceAmount; currency; note });
+        orderFulfillmentDates.add(id, fulfillmentDate);
+        orderParts.add(id, parts);
+        orderOrdererNames.add(id, ordererName);
+        orderContactPhones.add(id, contactPhone);
+        orderContactEmails.add(id, contactEmail);
+        true;
+      };
       case null { false };
     };
   };
@@ -82,12 +120,12 @@ mixin (
     };
   };
 
-  public query ({ caller }) func listOrders() : async [Types.Order] {
+  public query ({ caller }) func listOrders() : async [Types.OrderView] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "orders")) { Runtime.trap("Module access required: orders"); };
-    var result = List.empty<Types.Order>();
+    var result = List.empty<Types.OrderView>();
     for ((id, o) in orders.entries()) {
-      if (ordersTrashed.get(id) == null) { result.add(o); };
+      if (ordersTrashed.get(id) == null) { result.add(toView(o)); };
     };
     result.toArray();
   };
@@ -140,13 +178,13 @@ mixin (
     };
   };
 
-  public query ({ caller }) func listTrashedOrders() : async [Types.Order] {
+  public query ({ caller }) func listTrashedOrders() : async [Types.OrderView] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "orders")) { Runtime.trap("Module access required: orders"); };
-    var result = List.empty<Types.Order>();
+    var result = List.empty<Types.OrderView>();
     for ((id, _) in ordersTrashed.entries()) {
       switch (orders.get(id)) {
-        case (?o) { result.add(o); };
+        case (?o) { result.add(toView(o)); };
         case null {};
       };
     };
@@ -175,5 +213,12 @@ mixin (
       };
     };
     count;
+  };
+
+  public query ({ caller }) func listTrashedOrderEntries() : async [(Nat, Int)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can view this"); };
+    var result = List.empty<(Nat, Int)>();
+    for ((id, ts) in ordersTrashed.entries()) { result.add((id, ts)); };
+    result.toArray();
   };
 };

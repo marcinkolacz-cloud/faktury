@@ -767,4 +767,93 @@ mixin (
     };
     result.toArray();
   };
+
+  // --- Import (kopia zapasowa) ---
+
+  public shared ({ caller }) func importLogbookEntries(rows : [Types.LogbookEntry]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (e in rows.vals()) {
+      switch (logbookEntries.get(e.id)) {
+        case (?_) {};
+        case null { logbookEntries.add(e.id, e); count += 1; };
+      };
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importTrashedLogbookEntries(entries : [(Nat, Int)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, ts) in entries.vals()) {
+      switch (logbookEntriesTrashed.get(id)) {
+        case (?_) {};
+        case null { logbookEntriesTrashed.add(id, ts); count += 1; };
+      };
+    };
+    count;
+  };
+
+  public query ({ caller }) func listTrashedLogbookEntryEntries() : async [(Nat, Int)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Admin access required"); };
+    var result = List.empty<(Nat, Int)>();
+    for ((id, ts) in logbookEntriesTrashed.entries()) { result.add((id, ts)); };
+    result.toArray();
+  };
+
+  public shared ({ caller }) func importLogbookEntrySignatures(entries : [(Nat, Text)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, sig) in entries.vals()) {
+      switch (logbookEntrySignatures.get(id)) {
+        case (?_) {};
+        case null { logbookEntrySignatures.add(id, sig); count += 1; };
+      };
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importLogbookEntryDevices(entries : [(Nat, Nat)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((id, devId) in entries.vals()) {
+      switch (logbookEntryDeviceId.get(id)) {
+        case (?_) {};
+        case null { logbookEntryDeviceId.add(id, devId); count += 1; };
+      };
+    };
+    count;
+  };
+
+  public shared ({ caller }) func importLogbookEntryLinkedTickets(entries : [(Nat, Nat)]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for ((entryId, ticketId) in entries.vals()) {
+      switch (logbookEntryLinkedTicket.get(entryId)) {
+        case (?_) {};
+        case null { logbookEntryLinkedTicket.add(entryId, ticketId); count += 1; };
+      };
+    };
+    count;
+  };
+
+  // Uwaga: PIN instruktora NIE jest eksportowany (tylko hash+sól, celowo
+  // nieodwracalne). Po imporcie instruktor istnieje (nazwa/email/aktywność),
+  // ale musi ustawić PIN od nowa przez resetLogbookInstructorPin.
+  public shared ({ caller }) func importLogbookInstructors(rows : [Types.LogbookInstructorView]) : async Nat {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Only admin can import data"); };
+    var count = 0;
+    for (r in rows.vals()) {
+      switch (logbookInstructorName.get(r.email)) {
+        case (?_) {};
+        case null {
+          logbookInstructorName.add(r.email, r.name);
+          logbookInstructorActive.add(r.email, r.active);
+          logbookInstructorCreatedAt.add(r.email, r.createdAt);
+          count += 1;
+        };
+      };
+    };
+    count;
+  };
 };

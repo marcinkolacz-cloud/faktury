@@ -237,6 +237,30 @@ module {
     createdAt : Int;
   };
 
+  // fulfillmentDate/parts live in separate stable maps (orderFulfillmentDates/orderParts)
+  // and are merged in here for listOrders/listTrashedOrders results only — never stored
+  // as part of the Order record itself.
+  public type OrderView = {
+    id : Nat;
+    date : Text;
+    name : Text;
+    quantity : Float;
+    supplierName : Text;
+    totalAmount : Float;
+    advanceAmount : Float;
+    currency : Text;
+    note : Text;
+    status : OrderStatus;
+    driveFolderId : ?Nat;
+    createdBy : Text;
+    createdAt : Int;
+    fulfillmentDate : Text;
+    parts : Text;
+    ordererName : Text;
+    contactPhone : Text;
+    contactEmail : Text;
+  };
+
   public type Contract = {
     id : Nat;
     title : Text;

@@ -386,6 +386,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [editMode, setEditMode] = useState(false);
   const [fitToScreen, setFitToScreen] = useState(false);
   const [twoPageView, setTwoPageView] = useState(false);
+  const [showChainVersion, setShowChainVersion] = useState(false);
+  const showChainVersionRef = useRef(false);
+  useEffect(() => { showChainVersionRef.current = showChainVersion; }, [showChainVersion]);
   const [twoPageHtml, setTwoPageHtml] = useState("");
   const [twoPageTick, setTwoPageTick] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -714,17 +717,19 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   }, [actor]);
 
   const fetchChapterContent = async (id: number): Promise<string> => {
-    try {
-      const fromDrive = await loadChapterContentFromDrive(deviceLabel, id);
-      if (fromDrive) return fromDrive;
-    } catch { /* Drive niedostepny lub plik nie istnieje - fallback nizej */ }
-    const lenRes: any = await actor.getDeviceManualChapterContentLength(id);
+    if (!showChainVersionRef.current) {
+      try {
+        const fromDrive = await loadChapterContentFromDrive(deviceLabel, id);
+        if (fromDrive) return fromDrive;
+      } catch { /* Drive niedostepny lub plik nie istnieje - fallback nizej */ }
+    }
+    const lenRes: any = await actor.getDeviceManualChapterContentLength(BigInt(id));
     const total = lenRes && lenRes.length ? Number(lenRes[0]) : 0;
     if (total === 0) return "";
     const CHUNK = 1_000_000;
     let result = "";
     for (let start = 0; start < total; start += CHUNK) {
-      const chunkRes: any = await actor.getDeviceManualChapterContentChunk(id, start, CHUNK);
+      const chunkRes: any = await actor.getDeviceManualChapterContentChunk(BigInt(id), BigInt(start), BigInt(CHUNK));
       result += chunkRes && chunkRes.length ? chunkRes[0] : "";
     }
     return result;
@@ -792,6 +797,23 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     });
     return () => { cancelled = true; };
   }, [activeId, actor, deviceLabel]);
+  // Re-fetch when the operator toggles "pokaż kopię z kanistra" so the
+  // editor/preview reflects the newly-chosen source without switching
+  // chapters.
+  useEffect(() => {
+    if (!actor || activeId === null || !deviceLabel) return;
+    let cancelled = false;
+    setLoadingChapterContent(true);
+    fetchChapterContent(activeId).then((content) => {
+      if (cancelled) return;
+      setChapters((prev) => prev.map((c) => (c.id === activeId ? { ...c, contentHtml: content } : c)));
+      if (!editMode && editorRef.current && activeIdRef.current === activeId) {
+        editorRef.current.innerHTML = content || "<p></p>";
+      }
+      setLoadingChapterContent(false);
+    });
+    return () => { cancelled = true; };
+  }, [showChainVersion]);
   // Poll for changes made by other staff members so they show up without
   // requiring a manual F5. Cheap: listDeviceManualChapters is a query call
   // (no consensus round, no HTTP outcalls). Skipped while actively editing
@@ -2007,6 +2029,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         ⚙️ Nagłówek/stopka
                       </button>
                     )}
+                    <span className="w-px h-5 bg-[#ccc] mx-1" />
+                    <button
+                      onClick={() => setShowChainVersion((v) => !v)}
+                      title="Pokazuje treść zapisaną w kanistrze (kopia zapasowa), pomijając OneDrive — do weryfikacji backupu"
+                      className={`text-xs px-3 py-1.5 rounded border ${showChainVersion ? "bg-amber-500 text-white border-amber-500" : "border-[#ccc]"}`}
+                    >
+                      🔒 {showChainVersion ? "Wersja z kanistra" : "Pokaż kopię z kanistra"}
+                    </button>
                     <span className="w-px h-5 bg-[#ccc] mx-1" />
                     <button
                       onClick={() => setFitToScreen((v) => !v)}
