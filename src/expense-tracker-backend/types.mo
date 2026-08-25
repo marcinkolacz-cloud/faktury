@@ -13,6 +13,14 @@ module {
     addedAt : Int;
   };
 
+  public type AuditEntry = {
+    id : Nat;
+    time : Int;
+    byWhom : Principal;
+    action : Text;
+    details : Text;
+  };
+
   public type AdvancePayment = {
     id : Nat;
     date : Text;

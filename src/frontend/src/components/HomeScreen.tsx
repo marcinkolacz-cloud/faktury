@@ -34,6 +34,12 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
 
   return (
     <div className="min-h-screen bg-[var(--bg-page)] flex items-center justify-center p-6">
+      <div
+        className="fixed top-1 right-2 z-50 text-xs font-mono text-[var(--text-secondary)] bg-[var(--bg-card)] px-1.5 py-0.5 rounded border border-[var(--border-color)] select-none pointer-events-none"
+        title={"Build: " + __BUILD_HASH__ + " · " + __BUILD_TIME__}
+      >
+        v.{__BUILD_HASH__}
+      </div>
       <div className="max-w-5xl w-full space-y-6">
         <div className="flex items-center gap-4 justify-center">
           <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-10" />

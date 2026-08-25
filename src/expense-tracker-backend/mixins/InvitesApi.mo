@@ -7,11 +7,13 @@ import Text "mo:core/Text";
 import Time "mo:core/Time";
 import InvitesLib "../lib/invites";
 import AccessLib "../lib/access";
+import AuditLib "../lib/audit";
 
 mixin (
   inviteCodes : Map.Map<Text, InvitesLib.InviteCode>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
+  auditLog : List.List<Types.AuditEntry>,
   isAdmin : Principal -> Bool,
 ) {
   public shared ({ caller }) func generateInviteCode(role : Types.Role) : async Text {
@@ -31,6 +33,7 @@ mixin (
         // legacy-compat default-allow list in access.mo. Admin must
         // grant modules individually.
         if (moduleAccess.get(caller) == null) { moduleAccess.add(caller, []); };
+        AuditLib.record(auditLog, caller, "invite_redeemed", "Kod: " # code);
         true;
       };
       case null { false };
@@ -75,6 +78,7 @@ mixin (
   public shared ({ caller }) func changeAccessRole(target : Principal, role : Types.Role) : async Bool {
     if (not isAdmin(caller)) { Runtime.trap("Only admin can change roles"); };
     accessRoles.add(target, role);
+    AuditLib.record(auditLog, caller, "role_changed", "Principal: " # target.toText());
     true;
   };
 
@@ -82,6 +86,7 @@ mixin (
     if (not isAdmin(caller)) { Runtime.trap("Only admin can revoke access"); };
     accessRoles.remove(target);
     moduleAccess.remove(target);
+    AuditLib.record(auditLog, caller, "access_revoked", "Principal: " # target.toText());
     true;
   };
 
@@ -92,6 +97,12 @@ mixin (
   public shared ({ caller }) func setUserModules(target : Principal, modules : [Text]) : async Bool {
     if (not isAdmin(caller)) { Runtime.trap("Only admin can set modules"); };
     moduleAccess.add(target, modules);
+    var modulesText = "";
+    var first = true;
+    for (m in modules.values()) {
+      if (first) { modulesText #= m; first := false; } else { modulesText #= ", " # m; };
+    };
+    AuditLib.record(auditLog, caller, "modules_changed", "Principal: " # target.toText() # ", moduły: " # modulesText);
     true;
   };
 

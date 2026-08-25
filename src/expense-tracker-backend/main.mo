@@ -39,6 +39,7 @@ import ProjectBuildsApi "mixins/ProjectBuildsApi";
 import ChatArchiveApi "mixins/ChatArchiveApi";
 import AgentKnowledgeApi "mixins/AgentKnowledgeApi";
 import LogbookApi "mixins/LogbookApi";
+import AuditLogApi "mixins/AuditLogApi";
 
 persistent actor {
   let projects = Map.empty<Nat, Types.Project>();
@@ -143,6 +144,7 @@ persistent actor {
   let recentClientReplyTimes = List.empty<Int>();
   let accessRoles = Map.empty<Principal, Types.Role>();
   let moduleAccess = Map.empty<Principal, [Text]>();
+  let auditLog = List.empty<Types.AuditEntry>();
   var adminPrincipal : ?Principal = null;
   var oneDriveTokens : ?Types.OneDriveTokens = null;
   var pendingDeviceCode : ?Text = null;
@@ -238,7 +240,7 @@ persistent actor {
   include AdvancePaymentsApi(advancePayments, accessRoles, advancePaymentsTrashed, moduleAccess);
   include ExpensesApi(expenses, accessRoles, expenseKsefSent, expensesTrashed, moduleAccess);
   include WarehouseApi(warehouseItems, stockMovements, accessRoles, warehouseItemsTrashed, stockMovementsTrashed, moduleAccess, stockMovementPerformer);
-  include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes, moduleAccess, ticketsTrashed);
+  include TicketsApi(tickets, accessRoles, recentSubmissionTimes, ticketTokens, ticketExtras, ticketArchived, ticketSeenCounts, recentClientReplyTimes, moduleAccess, ticketsTrashed, auditLog);
   include TicketAttachmentsApi(ticketAttachments, ticketAttachmentChunks, tickets, recentAttachmentTimes, accessRoles, ticketTokens, ticketAttachmentsTrashed, moduleAccess, ticketAttachmentUploader, ticketDriveAttachments);
   include FilesApi(files, fileChunks, folders, accessRoles, filesTrashed, foldersTrashed, moduleAccess);
   include CalendarApi(calendarEvents, calendarAttachments, calendarNotes, accessRoles, calendarEventsTrashed, calendarNotesTrashed, moduleAccess, calendarEventCreator);
@@ -325,7 +327,8 @@ persistent actor {
     bootstrapMatch or AccessLib.isAdmin(accessRoles, caller);
   };
 
-  include InvitesApi(inviteCodes, accessRoles, moduleAccess, isAdmin);
+  include InvitesApi(inviteCodes, accessRoles, moduleAccess, auditLog, isAdmin);
+  include AuditLogApi(auditLog, isAdmin);
 
   let driveTokenChars = [
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',

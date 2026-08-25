@@ -81,6 +81,13 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
   );
 
   return (
+    <>
+    <div
+      className="fixed top-1 right-2 z-50 text-xs font-mono text-[var(--text-secondary)] bg-[var(--bg-card)] px-1.5 py-0.5 rounded border border-[var(--border-color)] select-none pointer-events-none"
+      title={"Build: " + __BUILD_HASH__ + " · " + __BUILD_TIME__}
+    >
+      v.{__BUILD_HASH__}
+    </div>
     <aside
       className="fixed inset-y-0 left-0 z-40 flex flex-col bg-[var(--bg-card)] border-r border-[var(--border-color)] overflow-y-auto overflow-x-hidden"
       style={{ width }}
@@ -140,5 +147,6 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
         <NavBtn id="logout" icon="🚪" label="Wyloguj" onClick={logout} />
       </div>
     </aside>
+    </>
   );
 }

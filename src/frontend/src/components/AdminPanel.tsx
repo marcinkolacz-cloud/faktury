@@ -5,6 +5,7 @@ import { TrashView } from "./TrashView";
 import { KsefInvoicesView } from "./KsefInvoicesView";
 import { BackupImport } from "./BackupImport";
 import { AiAgentConfigModule } from "./AiAgentConfigModule";
+import { AuditLogView } from "./AuditLogView";
 
 const ROLE_LABELS: Record<string, string> = { read: "Odczyt", write: "Zapis", admin: "Admin" };
 
@@ -24,6 +25,7 @@ export function AdminPanel({ actor }: { actor: any }) {
   const [lastCode, setLastCode] = useState("");
   const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
   const [nameFilter, setNameFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
 
   const reloadDisplayNames = async () => {
     if (!actor) return;
@@ -89,6 +91,7 @@ export function AdminPanel({ actor }: { actor: any }) {
   return (
     <div className="space-y-6">
       <AiAgentConfigModule actor={actor} />
+      <AuditLogView actor={actor} />
       <KsefInvoicesView actor={actor} />
       <TrashView actor={actor} />
       <BackupExport actor={actor} />
@@ -134,13 +137,25 @@ export function AdminPanel({ actor }: { actor: any }) {
 
       <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 space-y-3 shadow-sm">
         <h2 className="font-semibold text-[var(--text-primary)]">Lista dostępu</h2>
-        <input
-          type="text"
-          value={nameFilter}
-          onChange={(e) => setNameFilter(e.target.value)}
-          placeholder="Filtruj po nazwie..."
-          className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm w-64"
-        />
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={nameFilter}
+            onChange={(e) => setNameFilter(e.target.value)}
+            placeholder="Filtruj po nazwie / Principal..."
+            className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm w-64"
+          />
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm"
+          >
+            <option value="">Wszystkie role</option>
+            <option value="read">Odczyt</option>
+            <option value="write">Zapis</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
         <div className="mobile-scroll-table overflow-auto max-h-[70vh]">
           <table className="w-full text-sm">
             <thead>
@@ -154,7 +169,12 @@ export function AdminPanel({ actor }: { actor: any }) {
             </thead>
             <tbody>
               {access
-                .filter((a) => (displayNames[a.principal.toString()] || "").toLowerCase().includes(nameFilter.toLowerCase()))
+                .filter((a) => {
+                  const q = nameFilter.toLowerCase();
+                  const matchesName = !q || (displayNames[a.principal.toString()] || "").toLowerCase().includes(q) || a.principal.toString().toLowerCase().includes(q);
+                  const matchesRole = !roleFilter || roleFromVariant(a.role) === roleFilter;
+                  return matchesName && matchesRole;
+                })
                 .map((a) => {
                 const isAdminRole = roleFromVariant(a.role) === "admin";
                 return (

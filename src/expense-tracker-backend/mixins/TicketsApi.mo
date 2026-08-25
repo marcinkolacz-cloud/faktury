@@ -9,6 +9,7 @@ import AccessLib "../lib/access";
 import InvitesLib "../lib/invites";
 import Array "mo:core/Array";
 import Text "mo:core/Text";
+import AuditLib "../lib/audit";
 
 mixin (
   tickets : Map.Map<Nat, Types.Ticket>,
@@ -21,6 +22,7 @@ mixin (
   recentClientReplyTimes : List.List<Int>,
   moduleAccess : Map.Map<Principal, [Text]>,
   ticketsTrashed : Map.Map<Nat, Int>,
+  auditLog : List.List<Types.AuditEntry>,
 ) {
   public shared func submitTicket(
     clientName : Text,
@@ -196,7 +198,11 @@ mixin (
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     switch (tickets.get(id)) {
-      case (?_) { ticketsTrashed.add(id, Time.now()); true; };
+      case (?_) {
+        ticketsTrashed.add(id, Time.now());
+        AuditLib.record(auditLog, caller, "ticket_trashed", "Zgłoszenie #" # Nat.toText(id));
+        true;
+      };
       case null { false };
     };
   };
@@ -205,7 +211,11 @@ mixin (
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
     switch (ticketsTrashed.get(id)) {
-      case (?_) { ticketsTrashed.remove(id); true; };
+      case (?_) {
+        ticketsTrashed.remove(id);
+        AuditLib.record(auditLog, caller, "ticket_restored", "Zgłoszenie #" # Nat.toText(id));
+        true;
+      };
       case null { false };
     };
   };
