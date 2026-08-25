@@ -120,6 +120,14 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   };
 
   const dOnly = (s: string) => s.split("T")[0];
+  const trashSelectedTicket = async (id: number) => {
+    if (!confirm("Przenieść zgłoszenie do kosza? Będzie można je odzyskać z panelu admina.")) return;
+    await actor.trashTicket(id);
+    setSelected(null);
+    reload();
+    loadArchivedIds();
+  };
+
   const dateRangesOverlap = (aStart: string, aEnd: string, bStart: string, bEnd: string) =>
     dOnly(aStart) <= dOnly(bEnd || bStart) && dOnly(bStart) <= dOnly(aEnd || aStart);
 
@@ -318,9 +326,6 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     }
     return true;
   });
-  const ticketRankMap = new Map<string, number>();
-  [...filteredTickets].sort((a, b) => Number(a.id - b.id)).forEach((t, i) => ticketRankMap.set(String(t.id), i + 1));
-
   const translate = async (text: string, targetLang: "pl" | "en"): Promise<string> => {
     // The translate Worker used to accept requests with zero
     // authentication (anyone on the internet could burn our OpenAI
@@ -530,7 +535,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
               {filteredTickets.length === 0 ? (
                 <p className="p-4 text-sm text-gray-500">{tickets.length === 0 ? "Brak zgłoszeń." : "Brak wyników dla podanych filtrów."}</p>
               ) : (
-                [...filteredTickets].reverse().map((t, idx) => (
+                [...filteredTickets].reverse().map((t) => (
                   <button
                     key={String(t.id)}
                     onClick={async () => {
@@ -546,7 +551,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-sm text-[var(--text-primary)] truncate flex items-center gap-1.5">
-                        <span className="shrink-0 text-[10px] text-gray-400 font-mono">{ticketRankMap.get(String(t.id)) || idx + 1}.</span>
+                        <span className="shrink-0 text-[10px] text-gray-400 font-mono">#{String(t.id)}</span>
                         {unreadCount(t) > 0 && (
                           <span className="shrink-0 bg-red-500 text-white text-[10px] font-bold rounded-full h-4 min-w-4 px-1 flex items-center justify-center">
                             {unreadCount(t)}
@@ -716,12 +721,20 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                 {canWrite && (
                   <div className="flex justify-end mt-2">
                     {archivedIds.has(String(selected.id)) ? (
-                      <button
-                        onClick={() => toggleArchive(selected.id, false)}
-                        className="text-xs text-cyan-600 hover:underline"
-                      >
-                        ↩ Przywróć z archiwum
-                      </button>
+                      <>
+                        <button
+                          onClick={() => toggleArchive(selected.id, false)}
+                          className="text-xs text-cyan-600 hover:underline"
+                        >
+                          ↩ Przywróć z archiwum
+                        </button>
+                        <button
+                          onClick={() => trashSelectedTicket(selected.id)}
+                          className="text-xs text-red-500 hover:underline ml-3"
+                        >
+                          🗑 Usuń (do kosza)
+                        </button>
+                      </>
                     ) : (
                       <button
                         onClick={() => toggleArchive(selected.id, true)}
