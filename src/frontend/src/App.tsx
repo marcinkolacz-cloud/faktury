@@ -30,7 +30,7 @@ import { useBackendActor as useActor2 } from "./lib/useBackend";
 const SECRET_PASSWORD = "kolacz1";
 
 function AccessGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, login, loginWithGoogle, logout } = useAuthContext();
+  const { isAuthenticated, login, loginWithGoogle, loginWithMicrosoft, logout } = useAuthContext();
   const actor = useBackendActor();
   const [granted, setGranted] = useState<boolean | null>(null);
   const [code, setCode] = useState("");
@@ -96,6 +96,15 @@ function AccessGate({ children }: { children: React.ReactNode }) {
               <path fill="#EA4335" d="M12.24 4.7729c1.7623 0 3.3477.6058 4.5942 1.7942l3.4463-3.4463C18.1902 1.1897 15.4746 0 12.24 0 7.5245 0 3.4995 2.6984 1.5223 6.6021l4.2725 3.0917C6.7239 6.8731 9.3591 4.7729 12.24 4.7729z"/>
             </svg>
             Zaloguj się przez Google
+          </button>
+          <button onClick={loginWithMicrosoft} className="w-full flex items-center justify-center gap-3 px-5 py-2.5 border border-gray-300 bg-white text-gray-700 rounded-md font-medium hover:bg-gray-50 transition-colors shadow-sm">
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path fill="#F25022" d="M1 1h10v10H1z"/>
+              <path fill="#7FBA00" d="M13 1h10v10H13z"/>
+              <path fill="#00A4EF" d="M1 13h10v10H1z"/>
+              <path fill="#FFB900" d="M13 13h10v10H13z"/>
+            </svg>
+            Zaloguj się przez Microsoft
           </button>
         </div>
       </div>

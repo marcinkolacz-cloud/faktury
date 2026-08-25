@@ -104,7 +104,8 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
     });
   };
 
-  const dateInRange = (dayStr: string, start: string, end: string) => dayStr >= start && dayStr <= end;
+  const dateOnly = (s: string) => s.split("T")[0];
+  const dateInRange = (dayStr: string, start: string, end: string) => dayStr >= dateOnly(start) && dayStr <= dateOnly(end);
 
   const loadNotes = async (eventId: bigint) => {
     const result = await actor.listCalendarNotes(eventId);
@@ -305,9 +306,11 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
 
   const formatDate = (d: string) => {
     if (!d) return "";
-    const parts = d.split("-");
+    const [datePart, timePart] = d.split("T");
+    const parts = datePart.split("-");
     if (parts.length !== 3) return d;
-    return parts[2] + "." + parts[1] + "." + parts[0];
+    const base = parts[2] + "." + parts[1] + "." + parts[0];
+    return timePart ? base + " " + timePart : base;
   };
 
   if (loading) {
@@ -331,8 +334,8 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                 <option value="importantDate">Ważna data</option>
                 <option value="task">Zadanie</option>
               </select>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm" />
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} placeholder="Data końcowa (opcjonalnie)" className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm" />
+              <input type="datetime-local" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm" />
+              <input type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} placeholder="Data końcowa (opcjonalnie)" className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm" />
               <input value={creatorName} onChange={(e) => setCreatorName(e.target.value)} placeholder="Twoje imię" className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm" />
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Opis (opcjonalnie) — możesz wkleić tekst z zachowanym formatowaniem" rows={15} className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm md:col-span-2 resize-y whitespace-pre-wrap font-mono" />
             </div>

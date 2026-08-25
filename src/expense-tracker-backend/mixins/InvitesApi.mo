@@ -26,6 +26,11 @@ mixin (
     switch (InvitesLib.checkAndUseCode(inviteCodes, code, caller)) {
       case (?role) {
         accessRoles.add(caller, role);
+        // New accounts start with zero module access (explicit empty
+        // list, not "no entry") so they don't fall through to the
+        // legacy-compat default-allow list in access.mo. Admin must
+        // grant modules individually.
+        if (moduleAccess.get(caller) == null) { moduleAccess.add(caller, []); };
         true;
       };
       case null { false };

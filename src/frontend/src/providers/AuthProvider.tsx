@@ -8,6 +8,7 @@ interface AuthContextValue {
   isInitializing: boolean;
   login: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
+  loginWithMicrosoft: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -47,6 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIdentity(id);
   };
 
+  const loginWithMicrosoft = async () => {
+    const msClient = new AuthClient({ openIdProvider: "microsoft" });
+    const id = await msClient.signIn();
+    setAuthClient(msClient);
+    setIdentity(id);
+  };
+
   const logout = async () => {
     if (!authClient) return;
     await authClient.signOut();
@@ -56,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = !!identity && !identity.getPrincipal().isAnonymous();
 
   return (
-    <AuthContext.Provider value={{ identity, isAuthenticated, isInitializing, login, loginWithGoogle, logout }}>
+    <AuthContext.Provider value={{ identity, isAuthenticated, isInitializing, login, loginWithGoogle, loginWithMicrosoft, logout }}>
       {children}
     </AuthContext.Provider>
   );

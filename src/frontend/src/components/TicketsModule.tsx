@@ -101,7 +101,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   const createEventForTicket = async () => {
     if (!selected) return;
     setLinkingEvent(true);
-    const start = eventStartDate || new Date().toISOString().slice(0, 10);
+    const start = eventStartDate || new Date().toISOString().slice(0, 16);
     const end = eventEndDate || start;
     await actor.createCalendarEventForTicket(
       selected.id,
@@ -119,8 +119,9 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
     setEventEndDate("");
   };
 
+  const dOnly = (s: string) => s.split("T")[0];
   const dateRangesOverlap = (aStart: string, aEnd: string, bStart: string, bEnd: string) =>
-    aStart <= (bEnd || bStart) && bStart <= (aEnd || aStart);
+    dOnly(aStart) <= dOnly(bEnd || bStart) && dOnly(bStart) <= dOnly(aEnd || aStart);
 
   const conflictingEvents = (() => {
     if (!eventStartDate) return [];
@@ -650,14 +651,14 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                             <p className="text-[10px] text-[var(--text-muted)]">Termin realizacji (może różnić się od daty zgłoszenia)</p>
                             <div className="flex gap-2 items-center">
                               <input
-                                type="date"
+                                type="datetime-local"
                                 value={eventStartDate}
                                 onChange={(e) => setEventStartDate(e.target.value)}
                                 className="border border-[var(--border-color)] rounded px-1.5 py-0.5 text-[11px]"
                               />
                               <span className="text-[10px] text-[var(--text-muted)]">do</span>
                               <input
-                                type="date"
+                                type="datetime-local"
                                 value={eventEndDate}
                                 onChange={(e) => setEventEndDate(e.target.value)}
                                 className="border border-[var(--border-color)] rounded px-1.5 py-0.5 text-[11px]"
