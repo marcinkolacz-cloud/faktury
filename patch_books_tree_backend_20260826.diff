@@ -1,0 +1,27 @@
+diff --git a/src/expense-tracker-backend/mixins/DeviceManualApi.mo b/src/expense-tracker-backend/mixins/DeviceManualApi.mo
+index 7f7bb3f..9453469 100755
+--- a/src/expense-tracker-backend/mixins/DeviceManualApi.mo
++++ b/src/expense-tracker-backend/mixins/DeviceManualApi.mo
+@@ -281,6 +281,22 @@ mixin (
+     result.toArray();
+   };
+ 
++  // Cała mapa rozdział→książka dla urządzenia w jednym wywołaniu — używane
++  // przez drzewko w sidebarze, żeby nie robić N zapytań (po jednym na książkę).
++  public query ({ caller }) func getDeviceChapterBookMap(deviceId : Nat) : async [(Nat, Nat)] {
++    requireManualRead(caller);
++    var result = List.empty<(Nat, Nat)>();
++    for ((chId, ch) in deviceManualChapters.entries()) {
++      if (ch.deviceId == deviceId) {
++        switch (chapterBookId.get(chId)) {
++          case (?bid) { result.add((chId, bid)); };
++          case null {};
++        };
++      };
++    };
++    result.toArray();
++  };
++
+   public query ({ caller }) func getBookManualVariables(bookId : Nat) : async [Types.ManualVariable] {
+     requireManualRead(caller);
+     switch (bookManualVariables.get(bookId)) { case (?v) v; case null [] };

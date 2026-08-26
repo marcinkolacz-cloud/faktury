@@ -48,13 +48,18 @@ export async function syncChapterToDrive(
   const listing = await odList(folderPath);
   const items = listing.items || [];
   const stale = items.filter((i: any) => typeof i.name === "string" && i.name.includes(idTag) && i.name !== fileName);
-  for (const item of stale) {
-    try { await odDelete(item.id); } catch { /* best-effort cleanup */ }
-  }
 
+  // Upload PIERWSZY, dopiero potem kasujemy stary plik pod inną nazwą —
+  // jeśli upload padnie w trakcie (np. zerwane łącze), stary plik nadal
+  // istnieje i treść nie ginie. Odwrotna kolejność (delete→upload)
+  // ryzykowała całkowitą utratę treści przy błędzie w trakcie uploadu.
   const blob = new Blob([contentHtml], { type: "text/html" });
   const file = new File([blob], fileName, { type: "text/html" });
   await odUploadFile(folderPath, file, undefined, "replace");
+
+  for (const item of stale) {
+    try { await odDelete(item.id); } catch { /* best-effort cleanup */ }
+  }
 }
 
 // Renames the chapter's Drive file WITHOUT touching its content - used by

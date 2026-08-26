@@ -302,9 +302,9 @@ async function buildWordExportHtml(deviceLabel: string, chapters: Chapter[], set
 
   const logo = settings.logoDataUri || (await fetchLogoDataUri());
   const logoImg = logo ? `<img src="${logo}" height="24" style="vertical-align:middle;margin-right:8px;"/>` : "";
-  const headerLeft = settings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
-  const headerCenter = settings.headerTextCenter.trim();
-  const headerRight = settings.headerTextRight.trim();
+  const headerLeft = (settings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`).replace(/\n/g, "<br>");
+  const headerCenter = settings.headerTextCenter.trim().replace(/\n/g, "<br>");
+  const headerRight = settings.headerTextRight.trim().replace(/\n/g, "<br>");
   const footerText = settings.footerText.trim() || "Bartolini Air Simulation";
   const pageNumbers = settings.showPageNumbers
     ? ` — Strona <span style="mso-field-code:' PAGE '"> </span> z <span style="mso-field-code:' NUMPAGES '"> </span>`
@@ -373,12 +373,42 @@ ${body}
 </body></html>`;
 }
 
+// Compact icon-rail button used by the left action sidebar in the chapter
+// editor — icon + tiny label stacked, active/disabled states, optional
+// green dot badge (used to show "backup on-chain active").
+function RailButton({ icon, label, onClick, active, disabled, title, badge }: {
+  icon: string; label: string; onClick?: () => void; active?: boolean; disabled?: boolean; title?: string; badge?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title || label}
+      className={`relative flex flex-col items-center gap-0.5 w-12 py-2 rounded-lg text-[10px] leading-tight disabled:opacity-40 transition-colors ${
+        active ? "bg-cyan-600 text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-card)]"
+      }`}
+    >
+      <span className="text-base leading-none">{icon}</span>
+      <span className="text-center px-0.5">{label}</span>
+      {badge && <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-green-400" />}
+    </button>
+  );
+}
+
 export function DocumentationModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
   const actor = useBackendActor();
   const [devices, setDevices] = useState<any[]>([]);
   const [deviceId, setDeviceId] = useState<number | null>(null);
+  const [books, setBooks] = useState<{ id: number; title: string; order: number }[]>([]);
+  const [chapterBook, setChapterBook] = useState<Record<number, number>>({});
+  const [expandedBooks, setExpandedBooks] = useState<Set<number>>(new Set());
+  const [newChapterTitles, setNewChapterTitles] = useState<Record<number, string>>({});
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
+  // Kontekst książki jest zawsze pochodną aktywnego rozdziału — nie ma
+  // osobnego "wybranego" stanu do synchronizowania (to był źródłem błędu
+  // znikającej treści przy przełączaniu).
+  const activeBookId = activeId !== null ? (chapterBook[activeId] ?? null) : null;
   const activeIdRef = useRef<number | null>(null);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   const [loading, setLoading] = useState(true);
@@ -414,7 +444,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     return () => window.removeEventListener("resize", recalc);
   }, [fitToScreen]);
   const [dirty, setDirty] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [autoSave, setAutoSave] = useState(true);
@@ -449,6 +478,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // recreates the chapters array with new object identities every tick).
   const [selectedForPrint, setSelectedForPrint] = useState<Set<number>>(new Set());
   const [chapterBackupFlags, setChapterBackupFlags] = useState<Record<number, boolean>>({});
+  const [activeBackupLength, setActiveBackupLength] = useState<number | null>(null);
+  const [backupBusy, setBackupBusy] = useState(false);
   const knownChapterIdsRef = useRef<Set<number>>(new Set());
   const chapterIdsKey = chapters.map((c) => c.id).sort((a, b) => a - b).join(",");
   useEffect(() => {
@@ -697,7 +728,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       for (const [p, name] of rows) { map[p.toText()] = name; }
       setDisplayNames(map);
     }).catch(() => { /* not critical — falls back to raw principal text */ });
-    actor.getDocHeaderFooterSettings().then((res: any) => {
+  }, [actor]);
+
+  // Nagłówek/stopka są teraz per książka (nie globalne) — przeładuj przy
+  // zmianie wybranej książki.
+  useEffect(() => {
+    if (!actor || activeBookId === null) return;
+    actor.getBookHeaderFooterSettings(activeBookId).then((res: any) => {
       const s = res && res.length > 0 ? res[0] : null;
       const extras = loadHfExtras();
       if (s) {
@@ -711,10 +748,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         };
         setHfSettings(loaded);
       } else {
-        setHfSettings((prev) => ({ ...prev, ...extras }));
+        setHfSettings((prev) => ({ ...prev, headerText: "", footerText: "Bartolini Air Simulation", logoDataUri: "", skipFirstPage: false, showPageNumbers: true, ...extras }));
       }
     }).catch(() => { /* fall back to defaults */ });
-  }, [actor]);
+  }, [actor, activeBookId]);
 
   const fetchChapterContent = async (id: number): Promise<string> => {
     if (!showChainVersionRef.current) {
@@ -738,7 +775,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const reload = async () => {
     if (deviceId === null) return;
     setLoading(true);
-    const rows = await actor.listDeviceManualChaptersMeta(deviceId);
+    const [rows, bookMap] = await Promise.all([
+      actor.listDeviceManualChaptersMeta(deviceId),
+      actor.getDeviceChapterBookMap(deviceId),
+    ]);
+    const bookMapObj: Record<number, number> = {};
+    for (const [chId, bId] of bookMap) { bookMapObj[Number(chId)] = Number(bId); }
+    setChapterBook(bookMapObj);
     setChapters((prev) => rows.map((r: any) => {
       const prevCh = prev.find((c) => c.id === Number(r.id));
       return { id: Number(r.id), title: r.title, contentHtml: prevCh ? prevCh.contentHtml : r.contentHtml, order: Number(r.order) };
@@ -746,13 +789,22 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     const mapped: Chapter[] = rows.map((r: any) => ({ id: Number(r.id), title: r.title, contentHtml: r.contentHtml, order: Number(r.order) }));
     const nextActive = mapped.find((c: any) => c.id === activeIdRef.current) ? activeIdRef.current : (mapped.length ? mapped[0].id : null);
     setActiveId(nextActive);
+    if (nextActive !== null && bookMapObj[nextActive] !== undefined) {
+      setExpandedBooks((prev) => new Set(prev).add(bookMapObj[nextActive]));
+    }
     setLoading(false);
   };
   const silentReload = async () => {
     setPollTicks((n) => n + 1);
     if (deviceId === null) return;
     try {
-      const rows = await actor.listDeviceManualChaptersMeta(deviceId);
+      const [rows, bookMap] = await Promise.all([
+        actor.listDeviceManualChaptersMeta(deviceId),
+        actor.getDeviceChapterBookMap(deviceId),
+      ]);
+      const bookMapObj: Record<number, number> = {};
+      for (const [chId, bId] of bookMap) { bookMapObj[Number(chId)] = Number(bId); }
+      setChapterBook(bookMapObj);
       setChapters((prev) => rows.map((r: any) => {
         const prevCh = prev.find((c) => c.id === Number(r.id));
         return { id: Number(r.id), title: r.title, contentHtml: prevCh ? prevCh.contentHtml : r.contentHtml, order: Number(r.order) };
@@ -776,6 +828,18 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       } catch { /* non-critical */ }
     }
   };
+  const reloadBooks = async () => {
+    if (deviceId === null || !actor) return;
+    let rows: any[] = await actor.listBooks(deviceId);
+    if (rows.length === 0) {
+      await actor.ensureDefaultBook(deviceId);
+      rows = await actor.listBooks(deviceId);
+    }
+    const mapped = rows.map((b: any) => ({ id: Number(b.id), title: b.title, order: Number(b.order) }));
+    setBooks(mapped);
+    if (mapped.length === 1) { setExpandedBooks(new Set([mapped[0].id])); }
+  };
+  useEffect(() => { reloadBooks(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [actor, deviceId]);
   useEffect(() => { reload(); }, [actor, deviceId]);
   const selectedDevice = devices.find((d) => Number(d.id) === deviceId);
   const deviceLabel = selectedDevice ? `${selectedDevice.symbol} — ${selectedDevice.name}` : "";
@@ -871,6 +935,42 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const h1Offset = activeIndex >= 0 ? h1OffsetBefore(chapters, activeIndex) : 0;
 
   useEffect(() => {
+    if (!actor || !active) { setActiveBackupLength(null); return; }
+    let cancelled = false;
+    actor.getDeviceManualChapterContentLength(active.id).then((res: any) => {
+      if (cancelled) return;
+      setActiveBackupLength(res && res.length ? Number(res[0]) : 0);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actor, active && active.id, chapterBackupFlags[active ? active.id : -1]]);
+
+  const createOrUpdateActiveBackup = async () => {
+    if (!active) return;
+    setBackupBusy(true);
+    try {
+      let full = "";
+      try { full = await loadChapterContentFromDrive(deviceLabel, active.id); } catch { /* Drive niedostępny */ }
+      if (!full) { alert("Nie udało się pobrać treści z OneDrive."); return; }
+      if (!chapterBackupFlags[active.id]) {
+        await actor.setChapterBackupEnabled(active.id, true);
+        setChapterBackupFlags((m) => ({ ...m, [active.id]: true }));
+      }
+      await actor.saveChapterBackup(active.id, full);
+      const res: any = await actor.getDeviceManualChapterContentLength(active.id);
+      setActiveBackupLength(res && res.length ? Number(res[0]) : 0);
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+  const removeActiveBackup = async () => {
+    if (!active) return;
+    await actor.setChapterBackupEnabled(active.id, false);
+    setChapterBackupFlags((m) => ({ ...m, [active.id]: false }));
+    setActiveBackupLength(0);
+  };
+
+  useEffect(() => {
     setEditMode(false);
     setDirty(false);
     setSelectedImg(null);
@@ -896,13 +996,29 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }
   }, [active?.contentHtml, editMode]);
 
-  const addChapter = async () => {
-    const title = newTitle.trim();
+  const addChapter = async (targetBookId: number) => {
+    const title = (newChapterTitles[targetBookId] || "").trim();
     if (!title || deviceId === null) return;
-    const newId = await actor.createDeviceManualChapter(deviceId, title);
-    setNewTitle("");
+    const newId = await actor.createDeviceManualChapter(deviceId, title, targetBookId);
+    setNewChapterTitles((m) => ({ ...m, [targetBookId]: "" }));
     await reload();
     setActiveId(Number(newId));
+  };
+
+  const addBook = async () => {
+    if (deviceId === null) return;
+    const name = prompt("Nazwa nowej książki:");
+    if (!name || !name.trim()) return;
+    const newId = await actor.addBook(deviceId, name.trim());
+    await reloadBooks();
+    setExpandedBooks((prev) => new Set(prev).add(Number(newId)));
+  };
+
+  const renameBookById = async (book: { id: number; title: string }) => {
+    const name = prompt("Nowa nazwa książki:", book.title);
+    if (!name || !name.trim()) return;
+    await actor.renameBook(book.id, name.trim());
+    await reloadBooks();
   };
 
   const requestDelete = (ch: Chapter) => {
@@ -1163,8 +1279,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   };
 
   const saveSettings = async () => {
+    if (activeBookId === null) return;
     try {
-      await actor.setDocHeaderFooterSettings(
+      await actor.setBookHeaderFooterSettings(
+        activeBookId,
         hfDraft.headerText,
         hfDraft.footerText,
         hfDraft.logoDataUri,
@@ -1625,12 +1743,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej), żeby zobaczyć podgląd wydruku.
       </body></html>`;
     }
-    const headerOddLeft = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
-    const headerOddCenter = hfSettings.headerTextCenter.trim();
-    const headerOddRight = hfSettings.headerTextRight.trim();
-    const headerEvenLeft = hfSettings.headerTextEvenLeft.trim() || headerOddLeft;
-    const headerEvenCenter = hfSettings.headerTextEvenCenter.trim() || headerOddCenter;
-    const headerEvenRight = hfSettings.headerTextEvenRight.trim() || headerOddRight;
+    const nl2br = (t: string) => t.replace(/\n/g, "<br>");
+    const headerOddLeft = nl2br(hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`);
+    const headerOddCenter = nl2br(hfSettings.headerTextCenter.trim());
+    const headerOddRight = nl2br(hfSettings.headerTextRight.trim());
+    const headerEvenLeft = nl2br(hfSettings.headerTextEvenLeft.trim()) || headerOddLeft;
+    const headerEvenCenter = nl2br(hfSettings.headerTextEvenCenter.trim()) || headerOddCenter;
+    const headerEvenRight = nl2br(hfSettings.headerTextEvenRight.trim()) || headerOddRight;
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
     const footerLeftHtml = hfSettings.footerTextLeft.trim();
     const footerRightHtml = hfSettings.footerTextRight.trim();
@@ -1903,10 +2022,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           >
             + Nowy folder
           </button>
-          <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] ml-2">
-            <input type="checkbox" checked={autoSave} onChange={(e) => setAutoSave(e.target.checked)} />
-            Auto-zapis (3s)
-          </label>
+          {books.length > 0 && (
+            <button onClick={addBook} className="ml-2 text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600">+ Nowa książka</button>
+          )}
           {savedFlash && <span className="text-xs text-emerald-400">💾 Zapisano</span>}
           {driveSyncFlash && <span className="text-xs text-cyan-400">☁️ Zsynchronizowano z Bartolini Drive</span>}
           {driveSyncError && <span className="text-xs text-amber-400">{driveSyncError}</span>}
@@ -1925,55 +2043,84 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         ) : (
           <div className="flex bg-[var(--bg-card)] rounded-b-lg overflow-hidden" style={{ height: "calc(100vh - 150px)" }}>
             <div className="w-72 shrink-0 border-r border-[var(--border-color)] bg-[var(--bg-page)] p-3 space-y-1 overflow-auto">
-              {chapters.map((ch) => (
-                <div
-                  key={ch.id}
-                  draggable={canEdit}
-                  onDragStart={() => canEdit && setDragId(ch.id)}
-                  onDragOver={(e) => canEdit && e.preventDefault()}
-                  onDrop={() => canEdit && handleDrop(ch.id)}
-                  className={"group flex items-center gap-1 rounded px-2 py-2 text-sm " + (canEdit ? "cursor-grab " : "") + (ch.id === activeId ? "bg-[#263238] text-[#4fc3f7]" : "hover:bg-[#1a2733]")}
-                >
-                  <span className="text-[var(--text-muted)] text-xs">{canEdit ? "⠿" : ""}</span>
-                  <input
-                    type="checkbox"
-                    checked={selectedForPrint.has(ch.id)}
-                    onChange={(e) => { e.stopPropagation(); toggleSelectedForPrint(ch.id); }}
-                    onClick={(e) => e.stopPropagation()}
-                    title="Uwzględnij w podglądzie wydruku i eksporcie"
-                    className="shrink-0"
-                  />
-                  {renamingId === ch.id ? (
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onBlur={() => confirmRename(ch)}
-                      onKeyDown={(e) => e.key === "Enter" && confirmRename(ch)}
-                      className="flex-1 min-w-0 bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-1 text-xs text-[var(--text-primary)]"
-                    />
-                  ) : (
-                    <span onClick={() => setActiveId(ch.id)} className="flex-1 truncate">
-                      {ch.title}
-                      {chapterBackupFlags[ch.id] && <span className="text-green-400 ml-1" title="Kopia backend aktywna">✓</span>}
-                    </span>
-                  )}
-                  {canEdit && <button onClick={() => startRename(ch)} title="Zmień nazwę" className="opacity-0 group-hover:opacity-100 text-[10px] text-[var(--text-muted)]">✏</button>}
-                  <button onClick={() => downloadChapter(ch)} title="Pobierz" className="opacity-0 group-hover:opacity-100 text-[10px] text-[var(--text-muted)]">⬇</button>
-                  {canEdit && <button onClick={() => requestDelete(ch)} title="Usuń" className="opacity-0 group-hover:opacity-100 text-[10px] text-red-400">✕</button>}
-                </div>
-              ))}
-              {canEdit && (
-                <div className="flex gap-1 pt-3">
-                  <input
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && addChapter()}
-                    placeholder="+ Nowy rozdział"
-                    className="flex-1 min-w-0 bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1.5 text-xs text-[var(--text-primary)]"
-                  />
-                </div>
-              )}
+              {books.map((book) => {
+                const bookChapters = chapters.filter((c) => chapterBook[c.id] === book.id);
+                const isExpanded = expandedBooks.has(book.id);
+                return (
+                  <div key={book.id} className="mb-2">
+                    <div className="group flex items-center gap-1 rounded px-1 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[#1a2733]">
+                      <span
+                        onClick={() => setExpandedBooks((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(book.id)) { next.delete(book.id); } else { next.add(book.id); }
+                          return next;
+                        })}
+                        className="cursor-pointer select-none flex-1 flex items-center gap-1"
+                      >
+                        <span className="text-[10px]">{isExpanded ? "▾" : "▸"}</span>
+                        📚 {book.title}
+                        <span className="text-[10px] text-[var(--text-muted)] font-normal">({bookChapters.length})</span>
+                      </span>
+                      {canEdit && (
+                        <button onClick={() => renameBookById(book)} title="Zmień nazwę książki" className="opacity-0 group-hover:opacity-100 text-[10px] text-[var(--text-muted)]">✏</button>
+                      )}
+                    </div>
+                    {isExpanded && (
+                      <div className="ml-3 space-y-1 mt-1">
+                        {bookChapters.map((ch) => (
+                          <div
+                            key={ch.id}
+                            draggable={canEdit}
+                            onDragStart={() => canEdit && setDragId(ch.id)}
+                            onDragOver={(e) => canEdit && e.preventDefault()}
+                            onDrop={() => canEdit && handleDrop(ch.id)}
+                            className={"group flex items-center gap-1 rounded px-2 py-2 text-sm " + (canEdit ? "cursor-grab " : "") + (ch.id === activeId ? "bg-[#263238] text-[#4fc3f7]" : "hover:bg-[#1a2733]")}
+                          >
+                            <span className="text-[var(--text-muted)] text-xs">{canEdit ? "⠿" : ""}</span>
+                            <input
+                              type="checkbox"
+                              checked={selectedForPrint.has(ch.id)}
+                              onChange={(e) => { e.stopPropagation(); toggleSelectedForPrint(ch.id); }}
+                              onClick={(e) => e.stopPropagation()}
+                              title="Uwzględnij w podglądzie wydruku i eksporcie"
+                              className="shrink-0"
+                            />
+                            {renamingId === ch.id ? (
+                              <input
+                                autoFocus
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onBlur={() => confirmRename(ch)}
+                                onKeyDown={(e) => e.key === "Enter" && confirmRename(ch)}
+                                className="flex-1 min-w-0 bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-1 text-xs text-[var(--text-primary)]"
+                              />
+                            ) : (
+                              <span onClick={() => setActiveId(ch.id)} className="flex-1 truncate">
+                                {ch.title}
+                                {chapterBackupFlags[ch.id] && <span className="text-green-400 ml-1" title="Kopia backend aktywna">✓</span>}
+                              </span>
+                            )}
+                            {canEdit && <button onClick={() => startRename(ch)} title="Zmień nazwę" className="opacity-0 group-hover:opacity-100 text-[10px] text-[var(--text-muted)]">✏</button>}
+                            <button onClick={() => downloadChapter(ch)} title="Pobierz" className="opacity-0 group-hover:opacity-100 text-[10px] text-[var(--text-muted)]">⬇</button>
+                            {canEdit && <button onClick={() => requestDelete(ch)} title="Usuń" className="opacity-0 group-hover:opacity-100 text-[10px] text-red-400">✕</button>}
+                          </div>
+                        ))}
+                        {canEdit && (
+                          <div className="flex gap-1 pt-1">
+                            <input
+                              value={newChapterTitles[book.id] || ""}
+                              onChange={(e) => setNewChapterTitles((m) => ({ ...m, [book.id]: e.target.value }))}
+                              onKeyDown={(e) => e.key === "Enter" && addChapter(book.id)}
+                              placeholder="+ Nowy rozdział"
+                              className="flex-1 min-w-0 bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1.5 text-xs text-[var(--text-primary)]"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               {!canEdit && (
                 <p className="text-[10px] text-amber-400 pt-3 leading-snug">
                   Nie masz uprawnienia do edycji dokumentacji — poproś administratora o nadanie go (osobno od zwykłej roli Zapis).
@@ -1996,72 +2143,75 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                 </div>
               ) : (
                 <>
-                  <div
-                    className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-color)] flex-wrap bg-[var(--bg-hover)]"
-                    onMouseDown={editMode ? onEditWinDragStart : undefined}
-                    style={editMode ? { cursor: "move" } : undefined}
-                  >
+                  <div className="flex-1 flex overflow-hidden">
+                  <div className="w-14 shrink-0 flex flex-col items-center gap-1 py-3 border-r border-[var(--border-color)] bg-[var(--bg-hover)] overflow-y-auto">
                     {canEdit ? (
-                      <button onClick={() => (editMode ? exitEditMode() : tryEnterEditMode())} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
-                        {editMode ? "✏ Edytuję" : "✏ Edytuj"}
-                      </button>
+                      <RailButton
+                        icon="✏"
+                        label={editMode ? "Edytuję" : "Edytuj"}
+                        active={editMode}
+                        onClick={() => (editMode ? exitEditMode() : tryEnterEditMode())}
+                      />
                     ) : (
-                      <span className="text-xs text-amber-600">🔒 Tylko podgląd — brak uprawnienia do edycji dokumentacji</span>
+                      <div title="Tylko podgląd — brak uprawnienia do edycji dokumentacji" className="text-amber-600 text-lg py-2">🔒</div>
                     )}
-                    <button onClick={openPrintPreview} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
-                      🖨 Podgląd wydruku
-                    </button>
-                    {canEdit && (
-                      <button
-                        onClick={() => setShowVarsPanel(true)}
-                        title="Zmienne referencyjne"
-                        className="text-xs px-3 py-1.5 rounded border border-[#ccc]"
-                      >
-                        🔗 Zmienne referencyjne
-                      </button>
-                    )}
-                    {canEdit && (
-                      <button
-                        onClick={openSettings}
-                        title="Nagłówek i stopka"
-                        className="text-xs px-3 py-1.5 rounded border border-[#ccc]"
-                      >
-                        ⚙️ Nagłówek/stopka
-                      </button>
-                    )}
-                    <span className="w-px h-5 bg-[#ccc] mx-1" />
-                    <button
-                      onClick={() => setShowChainVersion((v) => !v)}
-                      title="Pokazuje treść zapisaną w kanistrze (kopia zapasowa), pomijając OneDrive — do weryfikacji backupu"
-                      className={`text-xs px-3 py-1.5 rounded border ${showChainVersion ? "bg-amber-500 text-white border-amber-500" : "border-[#ccc]"}`}
-                    >
-                      🔒 {showChainVersion ? "Wersja z kanistra" : "Pokaż kopię z kanistra"}
-                    </button>
-                    <span className="w-px h-5 bg-[#ccc] mx-1" />
-                    <button
-                      onClick={() => setFitToScreen((v) => !v)}
-                      title="Dopasuj szerokość pola roboczego do szerokości ekranu"
-                      className={`text-xs px-3 py-1.5 rounded border ${fitToScreen ? "bg-cyan-600 text-white border-cyan-600" : "border-[#ccc]"}`}
-                    >
-                      🖥 Dopasuj do ekranu
-                    </button>
                     {editMode && canEdit && (
-                      <button
-                        onClick={() => setTwoPageView((v) => !v)}
-                        title="Pokazuje żywy podgląd paginacji obok edytora (ten sam silnik co Podgląd wydruku - realne strony A4, marginesy, nagłówek/stopka)"
-                        className={`text-xs px-3 py-1.5 rounded border ${twoPageView ? "bg-cyan-600 text-white border-cyan-600" : "border-[#ccc]"}`}
-                      >
-                        📖 2 strony obok
-                      </button>
+                      <RailButton icon="💾" label="Zapisz" active={dirty} disabled={!dirty} onClick={() => saveChapter(false)} />
                     )}
-                    <div className="flex items-center gap-0.5">
-                      <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} title="Pomniejsz" className="text-xs w-7 h-8 rounded border border-[#ccc]">－</button>
-                      <button onClick={() => setZoomLevel(100)} title="Resetuj powiększenie" className="text-xs px-1.5 h-8 rounded border border-[#ccc] min-w-[44px]">{zoomLevel}%</button>
-                      <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} title="Powiększ" className="text-xs w-7 h-8 rounded border border-[#ccc]">＋</button>
+                    <div className="w-8 h-px bg-[var(--border-color)] my-1" />
+                    <RailButton icon="🖨" label="Podgląd" onClick={openPrintPreview} />
+                    <RailButton
+                      icon="🖥"
+                      label="Dopasuj"
+                      active={fitToScreen}
+                      title="Dopasuj szerokość pola roboczego do szerokości ekranu"
+                      onClick={() => setFitToScreen((v) => !v)}
+                    />
+                    <div className="flex flex-col items-center gap-0.5 w-12">
+                      <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} title="Powiększ" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] hover:bg-[var(--bg-card)]">＋</button>
+                      <button onClick={() => setZoomLevel(100)} title="Resetuj powiększenie" className="text-[10px] text-[var(--text-secondary)]">{zoomLevel}%</button>
+                      <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} title="Pomniejsz" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] hover:bg-[var(--bg-card)]">－</button>
                     </div>
                     {editMode && canEdit && (
                       <>
-                        <span className="w-px h-5 bg-[#ccc] mx-1" />
+                        <div className="w-8 h-px bg-[var(--border-color)] my-1" />
+                        <RailButton icon="🔗" label="Zmienne" title="Zmienne referencyjne" onClick={() => setShowVarsPanel(true)} />
+                        <RailButton icon="⚙️" label="Nagłówek" title="Nagłówek i stopka" onClick={openSettings} />
+                        <RailButton icon="📖" label="2 strony" active={twoPageView} title="Podgląd paginacji na żywo obok edytora" onClick={() => setTwoPageView((v) => !v)} />
+                        <RailButton icon={autoSave ? "☑️" : "⬜"} label="Auto-zapis" active={autoSave} title="Auto-zapis (3s)" onClick={() => setAutoSave((v) => !v)} />
+                      </>
+                    )}
+                    {!editMode && canEdit && (
+                      <>
+                        <div className="w-8 h-px bg-[var(--border-color)] my-1" />
+                        <RailButton
+                          icon="🔒"
+                          label={showChainVersion ? "Z kanistra" : "Kanister"}
+                          active={showChainVersion}
+                          title="Pokazuje treść zapisaną w kanistrze (kopia zapasowa), pomijając OneDrive — do weryfikacji backupu"
+                          onClick={() => setShowChainVersion((v) => !v)}
+                        />
+                        <RailButton
+                          icon="🛟"
+                          label={chapterBackupFlags[active.id] ? "Aktualizuj" : "Backup"}
+                          badge={!!chapterBackupFlags[active.id]}
+                          disabled={backupBusy}
+                          title={chapterBackupFlags[active.id] ? `Aktualizuj kopię onchain (obecnie: ${activeBackupLength ?? "?"} zn.)` : "Utwórz kopię onchain z aktualnej treści OneDrive"}
+                          onClick={createOrUpdateActiveBackup}
+                        />
+                        {chapterBackupFlags[active.id] && (
+                          <RailButton icon="🗑" label="Usuń kopię" onClick={removeActiveBackup} />
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <div className="flex-1 flex flex-col overflow-hidden">
+                  {editMode && canEdit && (
+                    <div
+                      className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-color)] flex-wrap bg-[var(--bg-hover)]"
+                      onMouseDown={onEditWinDragStart}
+                      style={{ cursor: "move" }}
+                    >
                         <select
                           defaultValue=""
                           onChange={(e) => {
@@ -2099,6 +2249,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         <button onClick={() => exec("justifyLeft")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛L</button>
                         <button onClick={() => exec("justifyCenter")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛C</button>
                         <button onClick={() => exec("justifyRight")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛R</button>
+                        <button onClick={() => exec("justifyFull")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛J</button>
                         <span className="w-px h-5 bg-[#ccc] mx-1" />
                         <button onClick={insertImage} disabled={imageUploading} className="text-xs px-2 h-8 rounded border border-[#ccc] disabled:opacity-50">
                           {imageUploading ? "⏳ Przesyłam na Drive…" : "🖼 Obraz"}
@@ -2121,21 +2272,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                           </>
                         )}
                         <span className="text-[10px] text-[#999]">(albo przeciągnij plik na edytor)</span>
-                        <span className="w-px h-5 bg-[#ccc] mx-1" />
-                        <button
-                          onClick={() => saveChapter(false)}
-                          disabled={!dirty}
-                          className="text-xs px-4 h-8 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-medium"
-                        >
-                          💾 Zapisz
-                        </button>
-                      </>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   <div className="flex-1 flex overflow-hidden">
                   <div ref={commentAreaRef} className={"relative overflow-auto bg-[var(--bg-page)] py-6 " + ((twoPageView && editMode) ? "w-1/2 shrink-0 border-r border-[var(--border-color)]" : "flex-1")}>
                     <div
-                      className="mx-auto bg-[var(--bg-card)] text-[var(--text-primary)] shadow-lg relative"
+                      className="mx-auto bg-white text-black shadow-lg relative"
                       style={{
                         width: "210mm",
                         maxWidth: "210mm",
@@ -2157,9 +2299,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         style={{ height: `${hfSettings.headerHeightCm}cm`, fontSize: `${hfSettings.headerFontSize}pt` }}
                         title="Nagłówek — edytuj przez ⚙️ Nagłówek/stopka"
                       >
-                        <span>{hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`}</span>
-                        <span>{hfSettings.headerTextCenter}</span>
-                        <span>{hfSettings.headerTextRight}</span>
+                        <span className="flex-1 whitespace-pre-line">{hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`}</span>
+                        <span className="flex-1 text-center whitespace-pre-line">{hfSettings.headerTextCenter}</span>
+                        <span className="flex-1 text-right whitespace-pre-line">{hfSettings.headerTextRight}</span>
                       </div>
                     )}
                     {hfSettings.enableFooter && (
@@ -2297,6 +2439,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       <iframe title="Podgląd stron" srcDoc={twoPageHtml} className="flex-1 w-full" style={{ border: "none" }} />
                     </div>
                   )}
+                  </div>
+                  </div>
                   </div>
                 </>
               )}
@@ -2624,12 +2768,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         </div>
         </div>
       )}
-      {showVarsPanel && deviceId !== null && (
+      {showVarsPanel && deviceId !== null && activeBookId !== null && (
         <ManualVariablesPanel
           actor={actor}
-          deviceId={deviceId}
+          bookId={activeBookId as number}
           deviceLabel={deviceLabel}
-          chapters={chapters}
+          chapters={chapters.filter((c) => chapterBook[c.id] === activeBookId)}
           onClose={() => setShowVarsPanel(false)}
           onChapterContentUpdated={(chapterId, newHtml) => {
             // Wstrzykujemy dokładnie tę treść, którą panel właśnie zapisał —

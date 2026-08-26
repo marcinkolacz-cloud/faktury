@@ -470,6 +470,13 @@ module {
     updatedAt : Int;
   };
 
+  public type DocumentBook = {
+    id : Nat;
+    deviceId : Nat;
+    title : Text;
+    order : Nat;
+  };
+
   public type ManualVariable = {
     key : Text;
     fieldLabel : Text;

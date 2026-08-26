@@ -1,0 +1,58 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index c6b1646..3c8610f 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -302,9 +302,9 @@ async function buildWordExportHtml(deviceLabel: string, chapters: Chapter[], set
+ 
+   const logo = settings.logoDataUri || (await fetchLogoDataUri());
+   const logoImg = logo ? `<img src="${logo}" height="24" style="vertical-align:middle;margin-right:8px;"/>` : "";
+-  const headerLeft = settings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
+-  const headerCenter = settings.headerTextCenter.trim();
+-  const headerRight = settings.headerTextRight.trim();
++  const headerLeft = (settings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`).replace(/\n/g, "<br>");
++  const headerCenter = settings.headerTextCenter.trim().replace(/\n/g, "<br>");
++  const headerRight = settings.headerTextRight.trim().replace(/\n/g, "<br>");
+   const footerText = settings.footerText.trim() || "Bartolini Air Simulation";
+   const pageNumbers = settings.showPageNumbers
+     ? ` — Strona <span style="mso-field-code:' PAGE '"> </span> z <span style="mso-field-code:' NUMPAGES '"> </span>`
+@@ -1625,12 +1625,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+         Zaznacz przynajmniej jeden rozdział (checkbox na liście po lewej), żeby zobaczyć podgląd wydruku.
+       </body></html>`;
+     }
+-    const headerOddLeft = hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`;
+-    const headerOddCenter = hfSettings.headerTextCenter.trim();
+-    const headerOddRight = hfSettings.headerTextRight.trim();
+-    const headerEvenLeft = hfSettings.headerTextEvenLeft.trim() || headerOddLeft;
+-    const headerEvenCenter = hfSettings.headerTextEvenCenter.trim() || headerOddCenter;
+-    const headerEvenRight = hfSettings.headerTextEvenRight.trim() || headerOddRight;
++    const nl2br = (t: string) => t.replace(/\n/g, "<br>");
++    const headerOddLeft = nl2br(hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`);
++    const headerOddCenter = nl2br(hfSettings.headerTextCenter.trim());
++    const headerOddRight = nl2br(hfSettings.headerTextRight.trim());
++    const headerEvenLeft = nl2br(hfSettings.headerTextEvenLeft.trim()) || headerOddLeft;
++    const headerEvenCenter = nl2br(hfSettings.headerTextEvenCenter.trim()) || headerOddCenter;
++    const headerEvenRight = nl2br(hfSettings.headerTextEvenRight.trim()) || headerOddRight;
+     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
+     const footerLeftHtml = hfSettings.footerTextLeft.trim();
+     const footerRightHtml = hfSettings.footerTextRight.trim();
+@@ -2099,6 +2100,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                         <button onClick={() => exec("justifyLeft")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛L</button>
+                         <button onClick={() => exec("justifyCenter")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛C</button>
+                         <button onClick={() => exec("justifyRight")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛R</button>
++                        <button onClick={() => exec("justifyFull")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛J</button>
+                         <span className="w-px h-5 bg-[#ccc] mx-1" />
+                         <button onClick={insertImage} disabled={imageUploading} className="text-xs px-2 h-8 rounded border border-[#ccc] disabled:opacity-50">
+                           {imageUploading ? "⏳ Przesyłam na Drive…" : "🖼 Obraz"}
+@@ -2157,9 +2159,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                         style={{ height: `${hfSettings.headerHeightCm}cm`, fontSize: `${hfSettings.headerFontSize}pt` }}
+                         title="Nagłówek — edytuj przez ⚙️ Nagłówek/stopka"
+                       >
+-                        <span>{hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`}</span>
+-                        <span>{hfSettings.headerTextCenter}</span>
+-                        <span>{hfSettings.headerTextRight}</span>
++                        <span className="flex-1 whitespace-pre-line">{hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`}</span>
++                        <span className="flex-1 text-center whitespace-pre-line">{hfSettings.headerTextCenter}</span>
++                        <span className="flex-1 text-right whitespace-pre-line">{hfSettings.headerTextRight}</span>
+                       </div>
+                     )}
+                     {hfSettings.enableFooter && (

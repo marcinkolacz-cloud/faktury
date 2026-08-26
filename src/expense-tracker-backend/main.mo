@@ -102,6 +102,15 @@ persistent actor {
   let docHeaderFooterSettings = Map.empty<Text, Types.DocHeaderFooterSettings>();
   let deviceManualVariables = Map.empty<Nat, [Types.ManualVariable]>();
   let deviceManualChapterBackupEnabled = Map.empty<Nat, Bool>();
+  // "Książki" — poziom pomiędzy urządzeniem a rozdziałem: jedno urządzenie
+  // może mieć kilka oddzielnych podręczników, każdy z własnymi rozdziałami,
+  // zmiennymi referencyjnymi i ustawieniami nagłówka/stopki — nic nie jest
+  // dzielone między książkami. Nowe mapy (nie dotykamy istniejących
+  // rekordów DeviceManualChapter / docHeaderFooterSettings / deviceManualVariables).
+  let documentBooks = Map.empty<Nat, Types.DocumentBook>();
+  let chapterBookId = Map.empty<Nat, Nat>();
+  let bookManualVariables = Map.empty<Nat, [Types.ManualVariable]>();
+  let bookHeaderFooterSettings = Map.empty<Nat, Types.DocHeaderFooterSettings>();
   // Własne foldery dokumentacji, niepowiązane z żadnym urządzeniem/projektem
   // — dowolny pracownik z dostępem do modułu devices może sobie taki
   // utworzyć (przycisk „Nowy folder” w Dokumentacji).
@@ -249,7 +258,7 @@ persistent actor {
   include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
-  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, deviceManualVariables, deviceManualChapterBackupEnabled, docFolders, accessRoles, moduleAccess);
+  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, deviceManualVariables, deviceManualChapterBackupEnabled, docFolders, accessRoles, moduleAccess, documentBooks, chapterBookId, bookManualVariables, bookHeaderFooterSettings);
   include LogbookApi(logbookEntries, logbookEntriesTrashed, logbookEntrySignatures, logbookEntryDeviceId, logbookEntryLinkedTicket, devices, logbookInstructorPinHash, logbookInstructorSalt, logbookInstructorName, logbookInstructorActive, logbookInstructorCreatedAt, logbookSessions, logbookLoginAttempts, recentLogbookSubmissions, accessRoles, moduleAccess, tickets, ticketTokens, ticketExtras, recentSubmissionTimes);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 

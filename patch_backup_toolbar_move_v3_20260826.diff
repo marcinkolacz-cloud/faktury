@@ -1,0 +1,263 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 36b481f..ebcbe2b 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -449,6 +449,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   // recreates the chapters array with new object identities every tick).
+   const [selectedForPrint, setSelectedForPrint] = useState<Set<number>>(new Set());
+   const [chapterBackupFlags, setChapterBackupFlags] = useState<Record<number, boolean>>({});
++  const [activeBackupLength, setActiveBackupLength] = useState<number | null>(null);
++  const [backupBusy, setBackupBusy] = useState(false);
+   const knownChapterIdsRef = useRef<Set<number>>(new Set());
+   const chapterIdsKey = chapters.map((c) => c.id).sort((a, b) => a - b).join(",");
+   useEffect(() => {
+@@ -870,6 +872,42 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   const active = activeIndex >= 0 ? chapters[activeIndex] : null;
+   const h1Offset = activeIndex >= 0 ? h1OffsetBefore(chapters, activeIndex) : 0;
+ 
++  useEffect(() => {
++    if (!actor || !active) { setActiveBackupLength(null); return; }
++    let cancelled = false;
++    actor.getDeviceManualChapterContentLength(active.id).then((res: any) => {
++      if (cancelled) return;
++      setActiveBackupLength(res && res.length ? Number(res[0]) : 0);
++    });
++    return () => { cancelled = true; };
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [actor, active && active.id, chapterBackupFlags[active ? active.id : -1]]);
++
++  const createOrUpdateActiveBackup = async () => {
++    if (!active) return;
++    setBackupBusy(true);
++    try {
++      let full = "";
++      try { full = await loadChapterContentFromDrive(deviceLabel, active.id); } catch { /* Drive niedostępny */ }
++      if (!full) { alert("Nie udało się pobrać treści z OneDrive."); return; }
++      if (!chapterBackupFlags[active.id]) {
++        await actor.setChapterBackupEnabled(active.id, true);
++        setChapterBackupFlags((m) => ({ ...m, [active.id]: true }));
++      }
++      await actor.saveChapterBackup(active.id, full);
++      const res: any = await actor.getDeviceManualChapterContentLength(active.id);
++      setActiveBackupLength(res && res.length ? Number(res[0]) : 0);
++    } finally {
++      setBackupBusy(false);
++    }
++  };
++  const removeActiveBackup = async () => {
++    if (!active) return;
++    await actor.setChapterBackupEnabled(active.id, false);
++    setChapterBackupFlags((m) => ({ ...m, [active.id]: false }));
++    setActiveBackupLength(0);
++  };
++
+   useEffect(() => {
+     setEditMode(false);
+     setDirty(false);
+@@ -2005,7 +2043,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                     ) : (
+                       <span className="text-xs text-amber-600">🔒 Tylko podgląd — brak uprawnienia do edycji dokumentacji</span>
+                     )}
+-                    {canEdit && (
++                    {editMode && canEdit && (
+                       <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+                         <input type="checkbox" checked={autoSave} onChange={(e) => setAutoSave(e.target.checked)} />
+                         Auto-zapis (3s)
+@@ -2014,7 +2052,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                     <button onClick={openPrintPreview} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
+                       🖨 Podgląd wydruku
+                     </button>
+-                    {canEdit && (
++                    {editMode && canEdit && (
+                       <button
+                         onClick={() => setShowVarsPanel(true)}
+                         title="Zmienne referencyjne"
+@@ -2023,7 +2061,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                         🔗 Zmienne referencyjne
+                       </button>
+                     )}
+-                    {canEdit && (
++                    {editMode && canEdit && (
+                       <button
+                         onClick={openSettings}
+                         title="Nagłówek i stopka"
+@@ -2040,6 +2078,26 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                     >
+                       🔒 {showChainVersion ? "Wersja z kanistra" : "Pokaż kopię z kanistra"}
+                     </button>
++                    {!editMode && canEdit && (
++                      <>
++                        {chapterBackupFlags[active.id] && (
++                          <span className="text-xs text-green-400">✓ backup {activeBackupLength !== null ? `(${activeBackupLength} zn.)` : ""}</span>
++                        )}
++                        <button
++                          onClick={createOrUpdateActiveBackup}
++                          disabled={backupBusy}
++                          title="Kopiuje aktualną treść z OneDrive do kanistra (backup on-chain)"
++                          className="text-xs px-3 py-1.5 rounded border border-[#ccc] disabled:opacity-40"
++                        >
++                          {backupBusy ? "…" : chapterBackupFlags[active.id] ? "Aktualizuj kopię onchain" : "Utwórz kopię onchain"}
++                        </button>
++                        {chapterBackupFlags[active.id] && (
++                          <button onClick={removeActiveBackup} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
++                            Usuń kopię
++                          </button>
++                        )}
++                      </>
++                    )}
+                     <span className="w-px h-5 bg-[#ccc] mx-1" />
+                     <button
+                       onClick={() => setFitToScreen((v) => !v)}
+diff --git a/src/frontend/src/components/ManualVariablesPanel.tsx b/src/frontend/src/components/ManualVariablesPanel.tsx
+index fe0858c..2e4da40 100644
+--- a/src/frontend/src/components/ManualVariablesPanel.tsx
++++ b/src/frontend/src/components/ManualVariablesPanel.tsx
+@@ -92,12 +92,9 @@ export function ManualVariablesPanel({
+   const [vars, setVars] = useState<ManualVariable[]>([]);
+   const [drafts, setDrafts] = useState<Record<string, string>>({}); // key -> "nowa wartość" input
+   const [selected, setSelected] = useState<Set<string>>(new Set());
+-  const [backupEnabled, setBackupEnabled] = useState<Record<number, boolean>>({});
+-  const [backupLengths, setBackupLengths] = useState<Record<number, number>>({});
+   const [busy, setBusy] = useState<string>("");
+   const [dirty, setDirty] = useState(false);
+   const [conflict, setConflict] = useState<{ key: string; searchText: string; newValue: string; matches: DomMatch[]; picked: Set<number>; chapterHtml: Record<number, string>; queueRest: ManualVariable[] } | null>(null);
+-  const [tab, setTab] = useState<"vars" | "backup">("vars");
+ 
+   const [rect, setRect] = useState(() => ({
+     x: Math.max(20, Math.round(window.innerWidth * 0.15)),
+@@ -136,23 +133,7 @@ export function ManualVariablesPanel({
+     setVars(rows);
+     setDirty(false);
+   };
+-  const reloadBackupFlags = async () => {
+-    const entries = await Promise.all(chapters.map(async (ch) => [ch.id, await actor.getChapterBackupEnabled(ch.id)] as const));
+-    const map: Record<number, boolean> = {};
+-    for (const [id, en] of entries) map[id] = en;
+-    setBackupEnabled(map);
+-  };
+-  const reloadBackupLengths = async () => {
+-    const entries = await Promise.all(chapters.map(async (ch) => {
+-      const res: any = await actor.getDeviceManualChapterContentLength(ch.id);
+-      const len = res && res.length ? Number(res[0]) : 0;
+-      return [ch.id, len] as const;
+-    }));
+-    const map: Record<number, number> = {};
+-    for (const [id, len] of entries) map[id] = len;
+-    setBackupLengths(map);
+-  };
+-  useEffect(() => { reloadVars(); reloadBackupFlags(); reloadBackupLengths(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [deviceId, chapters.length]);
++  useEffect(() => { reloadVars(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [deviceId, chapters.length]);
+ 
+   const saveList = async () => {
+     setBusy("save-list");
+@@ -286,31 +267,6 @@ export function ManualVariablesPanel({
+     }
+   };
+ 
+-  // Jeden przycisk: robi pierwszą kopię onchain LUB nadpisuje istniejącą
+-  // aktualną treścią z OneDrive (źródło prawdy). Backend nigdy nie jest
+-  // dotykany poza tym jednym, jawnym działaniem.
+-  const createOrUpdateBackup = async (ch: Chapter) => {
+-    setBusy(`backup-${ch.id}`);
+-    try {
+-      let full = "";
+-      try { full = await loadChapterContentFromDrive(deviceLabel, ch.id); } catch { /* Drive niedostępny */ }
+-      if (!full) { alert("Nie udało się pobrać treści z OneDrive."); return; }
+-      if (!backupEnabled[ch.id]) {
+-        await actor.setChapterBackupEnabled(ch.id, true);
+-        setBackupEnabled((m) => ({ ...m, [ch.id]: true }));
+-      }
+-      await actor.saveChapterBackup(ch.id, full);
+-      await reloadBackupLengths();
+-    } finally {
+-      setBusy("");
+-    }
+-  };
+-  const removeBackup = async (ch: Chapter) => {
+-    await actor.setChapterBackupEnabled(ch.id, false);
+-    setBackupEnabled((m) => ({ ...m, [ch.id]: false }));
+-    await reloadBackupLengths();
+-  };
+-
+   return (
+     <div style={{ position: "fixed", left: rect.x, top: rect.y, width: rect.width, height: rect.height, zIndex: 350 }} className="pointer-events-none">
+       <div
+@@ -322,16 +278,13 @@ export function ManualVariablesPanel({
+         >
+           <h2 className="text-sm font-bold text-[#4fc3f7]">🔗 Zmienne referencyjne dokumentu</h2>
+           <div className="flex items-center gap-2">
+-            <button onClick={() => setTab("vars")} className={"text-xs px-3 py-1.5 rounded border " + (tab === "vars" ? "bg-cyan-600 text-white border-cyan-600" : "border-[#666] text-[var(--text-secondary)]")}>Referencje</button>
+-            <button onClick={() => setTab("backup")} className={"text-xs px-3 py-1.5 rounded border " + (tab === "backup" ? "bg-cyan-600 text-white border-cyan-600" : "border-[#666] text-[var(--text-secondary)]")}>Backup rozdziałów</button>
+             <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-[#666] text-[var(--text-secondary)]">Zamknij</button>
+           </div>
+         </div>
+ 
+         <div className="flex-1 overflow-auto p-4">
+-          {tab === "vars" ? (
+-            <>
+-              <div className="mb-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-[var(--text-secondary)] leading-relaxed">
++          <>
++            <div className="mb-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-[var(--text-secondary)] leading-relaxed">
+                 <p className="font-semibold text-cyan-600 dark:text-cyan-400 mb-1">ⓘ Jak to działa</p>
+                 <p className="mb-1">
+                   To narzędzie nie jest częścią dokumentu — nie jest drukowane ani widoczne w podglądzie/eksporcie.
+@@ -347,7 +300,7 @@ export function ManualVariablesPanel({
+                   odniesienia — kolejna podmiana tej samej zmiennej działa już na niej, bez przepisywania.
+                 </p>
+                 <p className="mt-1">
+-                  Wyszukiwanie działa tylko na rozdziałach z włączonym backupem (zakładka „Backup” obok) — reszta nie zostanie sprawdzona.
++                  Wyszukiwanie i zapis podmianek działają zawsze na treści z OneDrive, dla wszystkich rozdziałów.
+                   Edycje etykiet/wartości zapisz osobno przyciskiem „💾 Zapisz listę”.
+                 </p>
+               </div>
+@@ -405,50 +358,6 @@ export function ManualVariablesPanel({
+               </table>
+               <button onClick={addRow} className="mt-3 text-xs px-3 py-1.5 rounded border border-[#ccc]">+ Dodaj pole</button>
+             </>
+-          ) : (
+-            <>
+-              <p className="text-[11px] text-[var(--text-muted)] mb-3">
+-                Wyszukiwanie zmiennych działa tylko na rozdziałach z aktywną kopią backend. OneDrive pozostaje wersją ostateczną — backup nadpisuje jedną wersję, bez historii.
+-              </p>
+-              <table className="w-full text-xs border-collapse">
+-                <thead>
+-                  <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-color)]">
+-                    <th className="py-2 pr-2">Rozdział</th>
+-                    <th className="py-2 pr-2 w-28">Backup on-chain</th>
+-                    <th className="py-2 pr-2 w-24">Długość</th>
+-                    <th className="py-2 pr-2 w-48">Akcje</th>
+-                  </tr>
+-                </thead>
+-                <tbody>
+-                  {chapters.map((ch) => (
+-                    <tr key={ch.id} className="border-b border-[var(--border-color)]">
+-                      <td className="py-1.5 pr-2">{ch.title}</td>
+-                      <td className="py-1.5 pr-2">
+-                        {backupEnabled[ch.id] && <span className="text-green-400">✓ aktywna</span>}
+-                      </td>
+-                      <td className="py-1.5 pr-2 text-[var(--text-muted)]">
+-                        {backupLengths[ch.id] !== undefined ? `${backupLengths[ch.id]} zn.` : "—"}
+-                      </td>
+-                      <td className="py-1.5 pr-2 flex gap-1.5">
+-                        <button
+-                          onClick={() => createOrUpdateBackup(ch)}
+-                          disabled={busy === `backup-${ch.id}`}
+-                          className="text-[11px] px-2 py-1 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white"
+-                        >
+-                          {busy === `backup-${ch.id}` ? "…" : backupEnabled[ch.id] ? "Aktualizuj kopię onchain" : "Utwórz kopię onchain"}
+-                        </button>
+-                        {backupEnabled[ch.id] && (
+-                          <button onClick={() => removeBackup(ch)} className="text-[11px] px-2 py-1 rounded border border-[#ccc]">
+-                            Usuń kopię
+-                          </button>
+-                        )}
+-                      </td>
+-                    </tr>
+-                  ))}
+-                </tbody>
+-              </table>
+-            </>
+-          )}
+         </div>
+ 
+         <div

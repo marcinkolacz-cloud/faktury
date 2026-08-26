@@ -1,0 +1,215 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index ebcbe2b..7738b40 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -373,6 +373,28 @@ ${body}
+ </body></html>`;
+ }
+ 
++// Compact icon-rail button used by the left action sidebar in the chapter
++// editor — icon + tiny label stacked, active/disabled states, optional
++// green dot badge (used to show "backup on-chain active").
++function RailButton({ icon, label, onClick, active, disabled, title, badge }: {
++  icon: string; label: string; onClick?: () => void; active?: boolean; disabled?: boolean; title?: string; badge?: boolean;
++}) {
++  return (
++    <button
++      onClick={onClick}
++      disabled={disabled}
++      title={title || label}
++      className={`relative flex flex-col items-center gap-0.5 w-12 py-2 rounded-lg text-[10px] leading-tight disabled:opacity-40 transition-colors ${
++        active ? "bg-cyan-600 text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-card)]"
++      }`}
++    >
++      <span className="text-base leading-none">{icon}</span>
++      <span className="text-center px-0.5">{label}</span>
++      {badge && <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-green-400" />}
++    </button>
++  );
++}
++
+ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onHome: () => void; onNavigate: (m: string) => void; currentModule: string }) {
+   const actor = useBackendActor();
+   const [devices, setDevices] = useState<any[]>([]);
+@@ -2031,98 +2053,75 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                 </div>
+               ) : (
+                 <>
+-                  <div
+-                    className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-color)] flex-wrap bg-[var(--bg-hover)]"
+-                    onMouseDown={editMode ? onEditWinDragStart : undefined}
+-                    style={editMode ? { cursor: "move" } : undefined}
+-                  >
++                  <div className="flex-1 flex overflow-hidden">
++                  <div className="w-14 shrink-0 flex flex-col items-center gap-1 py-3 border-r border-[var(--border-color)] bg-[var(--bg-hover)] overflow-y-auto">
+                     {canEdit ? (
+-                      <button onClick={() => (editMode ? exitEditMode() : tryEnterEditMode())} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
+-                        {editMode ? "✏ Edytuję" : "✏ Edytuj"}
+-                      </button>
++                      <RailButton
++                        icon="✏"
++                        label={editMode ? "Edytuję" : "Edytuj"}
++                        active={editMode}
++                        onClick={() => (editMode ? exitEditMode() : tryEnterEditMode())}
++                      />
+                     ) : (
+-                      <span className="text-xs text-amber-600">🔒 Tylko podgląd — brak uprawnienia do edycji dokumentacji</span>
++                      <div title="Tylko podgląd — brak uprawnienia do edycji dokumentacji" className="text-amber-600 text-lg py-2">🔒</div>
+                     )}
+                     {editMode && canEdit && (
+-                      <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+-                        <input type="checkbox" checked={autoSave} onChange={(e) => setAutoSave(e.target.checked)} />
+-                        Auto-zapis (3s)
+-                      </label>
+-                    )}
+-                    <button onClick={openPrintPreview} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
+-                      🖨 Podgląd wydruku
+-                    </button>
+-                    {editMode && canEdit && (
+-                      <button
+-                        onClick={() => setShowVarsPanel(true)}
+-                        title="Zmienne referencyjne"
+-                        className="text-xs px-3 py-1.5 rounded border border-[#ccc]"
+-                      >
+-                        🔗 Zmienne referencyjne
+-                      </button>
++                      <RailButton icon="💾" label="Zapisz" active={dirty} disabled={!dirty} onClick={() => saveChapter(false)} />
+                     )}
++                    <div className="w-8 h-px bg-[var(--border-color)] my-1" />
++                    <RailButton icon="🖨" label="Podgląd" onClick={openPrintPreview} />
++                    <RailButton
++                      icon="🖥"
++                      label="Dopasuj"
++                      active={fitToScreen}
++                      title="Dopasuj szerokość pola roboczego do szerokości ekranu"
++                      onClick={() => setFitToScreen((v) => !v)}
++                    />
++                    <div className="flex flex-col items-center gap-0.5 w-12">
++                      <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} title="Powiększ" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] hover:bg-[var(--bg-card)]">＋</button>
++                      <button onClick={() => setZoomLevel(100)} title="Resetuj powiększenie" className="text-[10px] text-[var(--text-secondary)]">{zoomLevel}%</button>
++                      <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} title="Pomniejsz" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] hover:bg-[var(--bg-card)]">－</button>
++                    </div>
+                     {editMode && canEdit && (
+-                      <button
+-                        onClick={openSettings}
+-                        title="Nagłówek i stopka"
+-                        className="text-xs px-3 py-1.5 rounded border border-[#ccc]"
+-                      >
+-                        ⚙️ Nagłówek/stopka
+-                      </button>
++                      <>
++                        <div className="w-8 h-px bg-[var(--border-color)] my-1" />
++                        <RailButton icon="🔗" label="Zmienne" title="Zmienne referencyjne" onClick={() => setShowVarsPanel(true)} />
++                        <RailButton icon="⚙️" label="Nagłówek" title="Nagłówek i stopka" onClick={openSettings} />
++                        <RailButton icon="📖" label="2 strony" active={twoPageView} title="Podgląd paginacji na żywo obok edytora" onClick={() => setTwoPageView((v) => !v)} />
++                        <RailButton icon="☑️" label="Auto-zapis" active={autoSave} title="Auto-zapis (3s)" onClick={() => setAutoSave((v) => !v)} />
++                      </>
+                     )}
+-                    <span className="w-px h-5 bg-[#ccc] mx-1" />
+-                    <button
+-                      onClick={() => setShowChainVersion((v) => !v)}
+-                      title="Pokazuje treść zapisaną w kanistrze (kopia zapasowa), pomijając OneDrive — do weryfikacji backupu"
+-                      className={`text-xs px-3 py-1.5 rounded border ${showChainVersion ? "bg-amber-500 text-white border-amber-500" : "border-[#ccc]"}`}
+-                    >
+-                      🔒 {showChainVersion ? "Wersja z kanistra" : "Pokaż kopię z kanistra"}
+-                    </button>
+                     {!editMode && canEdit && (
+                       <>
+-                        {chapterBackupFlags[active.id] && (
+-                          <span className="text-xs text-green-400">✓ backup {activeBackupLength !== null ? `(${activeBackupLength} zn.)` : ""}</span>
+-                        )}
+-                        <button
+-                          onClick={createOrUpdateActiveBackup}
++                        <div className="w-8 h-px bg-[var(--border-color)] my-1" />
++                        <RailButton
++                          icon="🔒"
++                          label={showChainVersion ? "Z kanistra" : "Kanister"}
++                          active={showChainVersion}
++                          title="Pokazuje treść zapisaną w kanistrze (kopia zapasowa), pomijając OneDrive — do weryfikacji backupu"
++                          onClick={() => setShowChainVersion((v) => !v)}
++                        />
++                        <RailButton
++                          icon="🛟"
++                          label={chapterBackupFlags[active.id] ? "Aktualizuj" : "Backup"}
++                          badge={!!chapterBackupFlags[active.id]}
+                           disabled={backupBusy}
+-                          title="Kopiuje aktualną treść z OneDrive do kanistra (backup on-chain)"
+-                          className="text-xs px-3 py-1.5 rounded border border-[#ccc] disabled:opacity-40"
+-                        >
+-                          {backupBusy ? "…" : chapterBackupFlags[active.id] ? "Aktualizuj kopię onchain" : "Utwórz kopię onchain"}
+-                        </button>
++                          title={chapterBackupFlags[active.id] ? `Aktualizuj kopię onchain (obecnie: ${activeBackupLength ?? "?"} zn.)` : "Utwórz kopię onchain z aktualnej treści OneDrive"}
++                          onClick={createOrUpdateActiveBackup}
++                        />
+                         {chapterBackupFlags[active.id] && (
+-                          <button onClick={removeActiveBackup} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">
+-                            Usuń kopię
+-                          </button>
++                          <RailButton icon="🗑" label="Usuń kopię" onClick={removeActiveBackup} />
+                         )}
+                       </>
+                     )}
+-                    <span className="w-px h-5 bg-[#ccc] mx-1" />
+-                    <button
+-                      onClick={() => setFitToScreen((v) => !v)}
+-                      title="Dopasuj szerokość pola roboczego do szerokości ekranu"
+-                      className={`text-xs px-3 py-1.5 rounded border ${fitToScreen ? "bg-cyan-600 text-white border-cyan-600" : "border-[#ccc]"}`}
++                  </div>
++                  <div className="flex-1 flex flex-col overflow-hidden">
++                  {editMode && canEdit && (
++                    <div
++                      className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-color)] flex-wrap bg-[var(--bg-hover)]"
++                      onMouseDown={onEditWinDragStart}
++                      style={{ cursor: "move" }}
+                     >
+-                      🖥 Dopasuj do ekranu
+-                    </button>
+-                    {editMode && canEdit && (
+-                      <button
+-                        onClick={() => setTwoPageView((v) => !v)}
+-                        title="Pokazuje żywy podgląd paginacji obok edytora (ten sam silnik co Podgląd wydruku - realne strony A4, marginesy, nagłówek/stopka)"
+-                        className={`text-xs px-3 py-1.5 rounded border ${twoPageView ? "bg-cyan-600 text-white border-cyan-600" : "border-[#ccc]"}`}
+-                      >
+-                        📖 2 strony obok
+-                      </button>
+-                    )}
+-                    <div className="flex items-center gap-0.5">
+-                      <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} title="Pomniejsz" className="text-xs w-7 h-8 rounded border border-[#ccc]">－</button>
+-                      <button onClick={() => setZoomLevel(100)} title="Resetuj powiększenie" className="text-xs px-1.5 h-8 rounded border border-[#ccc] min-w-[44px]">{zoomLevel}%</button>
+-                      <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} title="Powiększ" className="text-xs w-7 h-8 rounded border border-[#ccc]">＋</button>
+-                    </div>
+-                    {editMode && canEdit && (
+-                      <>
+-                        <span className="w-px h-5 bg-[#ccc] mx-1" />
+                         <select
+                           defaultValue=""
+                           onChange={(e) => {
+@@ -2183,17 +2182,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                           </>
+                         )}
+                         <span className="text-[10px] text-[#999]">(albo przeciągnij plik na edytor)</span>
+-                        <span className="w-px h-5 bg-[#ccc] mx-1" />
+-                        <button
+-                          onClick={() => saveChapter(false)}
+-                          disabled={!dirty}
+-                          className="text-xs px-4 h-8 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-medium"
+-                        >
+-                          💾 Zapisz
+-                        </button>
+-                      </>
+-                    )}
+-                  </div>
++                    </div>
++                  )}
+                   <div className="flex-1 flex overflow-hidden">
+                   <div ref={commentAreaRef} className={"relative overflow-auto bg-[var(--bg-page)] py-6 " + ((twoPageView && editMode) ? "w-1/2 shrink-0 border-r border-[var(--border-color)]" : "flex-1")}>
+                     <div
+@@ -2360,6 +2350,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                     </div>
+                   )}
+                   </div>
++                  </div>
++                  </div>
+                 </>
+               )}
+               {editMode && (

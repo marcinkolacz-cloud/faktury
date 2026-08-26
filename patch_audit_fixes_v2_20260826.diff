@@ -1,0 +1,60 @@
+diff --git a/src/frontend/src/components/ManualVariablesPanel.tsx b/src/frontend/src/components/ManualVariablesPanel.tsx
+index 2e4da40..01df4d0 100644
+--- a/src/frontend/src/components/ManualVariablesPanel.tsx
++++ b/src/frontend/src/components/ManualVariablesPanel.tsx
+@@ -178,15 +178,29 @@ export function ManualVariablesPanel({
+   // niewidoczna wszędzie poza tym panelem. Best-effort: błąd Drive nie cofa
+   // już zapisanej zmiany w backendzie, tylko informuje operatora.
+   const syncChangedChaptersToDrive = async (updated: [number, string][]) => {
++    const skipped: string[] = [];
+     for (const [chapterId, newHtml] of updated) {
+       const ch = chapters.find((c) => c.id === chapterId);
+       if (!ch) continue;
++      // Nie nadpisuj rozdziału, który ktoś aktualnie edytuje — inaczej jego
++      // kolejny autozapis (bazujący na starej, nieświadomej podmianki treści)
++      // cofnąłby tę podmiankę bez ostrzeżenia.
++      try {
++        const lockHolder = await actor.getEditLock(chapterId);
++        if (lockHolder && lockHolder.length > 0) {
++          skipped.push(ch.title);
++          continue;
++        }
++      } catch { /* jeśli sprawdzenie blokady padnie, kontynuujemy - nie blokujemy zapisu na tym */ }
+       try {
+         await syncChapterToDrive(deviceLabel, ch.id, ch.order, ch.title, newHtml);
+       } catch (e: any) {
+         alert(`Zapisano w backendzie, ale nie udało się zsynchronizować rozdziału „${ch.title}” z OneDrive: ${e?.message || e}. Otwórz i zapisz ten rozdział ręcznie w edytorze.`);
+       }
+     }
++    if (skipped.length > 0) {
++      alert(`Pominięto podmiankę w rozdziałach aktualnie edytowanych przez kogoś innego: ${skipped.join(", ")}. Podmień w nich ręcznie po zakończeniu edycji.`);
++    }
+   };
+ 
+   const doInsert = async (v: ManualVariable, queueRest: ManualVariable[] = []) => {
+diff --git a/src/frontend/src/lib/documentationDriveSync.ts b/src/frontend/src/lib/documentationDriveSync.ts
+index 1d0575a..2db8182 100755
+--- a/src/frontend/src/lib/documentationDriveSync.ts
++++ b/src/frontend/src/lib/documentationDriveSync.ts
+@@ -48,13 +48,18 @@ export async function syncChapterToDrive(
+   const listing = await odList(folderPath);
+   const items = listing.items || [];
+   const stale = items.filter((i: any) => typeof i.name === "string" && i.name.includes(idTag) && i.name !== fileName);
+-  for (const item of stale) {
+-    try { await odDelete(item.id); } catch { /* best-effort cleanup */ }
+-  }
+ 
++  // Upload PIERWSZY, dopiero potem kasujemy stary plik pod inną nazwą —
++  // jeśli upload padnie w trakcie (np. zerwane łącze), stary plik nadal
++  // istnieje i treść nie ginie. Odwrotna kolejność (delete→upload)
++  // ryzykowała całkowitą utratę treści przy błędzie w trakcie uploadu.
+   const blob = new Blob([contentHtml], { type: "text/html" });
+   const file = new File([blob], fileName, { type: "text/html" });
+   await odUploadFile(folderPath, file, undefined, "replace");
++
++  for (const item of stale) {
++    try { await odDelete(item.id); } catch { /* best-effort cleanup */ }
++  }
+ }
+ 
+ // Renames the chapter's Drive file WITHOUT touching its content - used by

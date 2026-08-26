@@ -1,0 +1,261 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 9f5b27d..27e1315 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -399,6 +399,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   const actor = useBackendActor();
+   const [devices, setDevices] = useState<any[]>([]);
+   const [deviceId, setDeviceId] = useState<number | null>(null);
++  const [books, setBooks] = useState<{ id: number; title: string; order: number }[]>([]);
++  const [bookId, setBookId] = useState<number | null>(null);
++  const [bookChapterIds, setBookChapterIds] = useState<Set<number> | null>(null);
+   const [chapters, setChapters] = useState<Chapter[]>([]);
+   const [activeId, setActiveId] = useState<number | null>(null);
+   const activeIdRef = useRef<number | null>(null);
+@@ -721,7 +724,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+       for (const [p, name] of rows) { map[p.toText()] = name; }
+       setDisplayNames(map);
+     }).catch(() => { /* not critical — falls back to raw principal text */ });
+-    actor.getDocHeaderFooterSettings().then((res: any) => {
++  }, [actor]);
++
++  // Nagłówek/stopka są teraz per książka (nie globalne) — przeładuj przy
++  // zmianie wybranej książki.
++  useEffect(() => {
++    if (!actor || bookId === null) return;
++    actor.getBookHeaderFooterSettings(bookId).then((res: any) => {
+       const s = res && res.length > 0 ? res[0] : null;
+       const extras = loadHfExtras();
+       if (s) {
+@@ -735,10 +744,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+         };
+         setHfSettings(loaded);
+       } else {
+-        setHfSettings((prev) => ({ ...prev, ...extras }));
++        setHfSettings((prev) => ({ ...prev, headerText: "", footerText: "Bartolini Air Simulation", logoDataUri: "", skipFirstPage: false, showPageNumbers: true, ...extras }));
+       }
+     }).catch(() => { /* fall back to defaults */ });
+-  }, [actor]);
++  }, [actor, bookId]);
+ 
+   const fetchChapterContent = async (id: number): Promise<string> => {
+     if (!showChainVersionRef.current) {
+@@ -763,11 +772,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     if (deviceId === null) return;
+     setLoading(true);
+     const rows = await actor.listDeviceManualChaptersMeta(deviceId);
+-    setChapters((prev) => rows.map((r: any) => {
++    const filtered = bookChapterIds ? rows.filter((r: any) => bookChapterIds.has(Number(r.id))) : rows;
++    setChapters((prev) => filtered.map((r: any) => {
+       const prevCh = prev.find((c) => c.id === Number(r.id));
+       return { id: Number(r.id), title: r.title, contentHtml: prevCh ? prevCh.contentHtml : r.contentHtml, order: Number(r.order) };
+     }));
+-    const mapped: Chapter[] = rows.map((r: any) => ({ id: Number(r.id), title: r.title, contentHtml: r.contentHtml, order: Number(r.order) }));
++    const mapped: Chapter[] = filtered.map((r: any) => ({ id: Number(r.id), title: r.title, contentHtml: r.contentHtml, order: Number(r.order) }));
+     const nextActive = mapped.find((c: any) => c.id === activeIdRef.current) ? activeIdRef.current : (mapped.length ? mapped[0].id : null);
+     setActiveId(nextActive);
+     setLoading(false);
+@@ -777,11 +787,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     if (deviceId === null) return;
+     try {
+       const rows = await actor.listDeviceManualChaptersMeta(deviceId);
+-      setChapters((prev) => rows.map((r: any) => {
++      const filtered = bookChapterIds ? rows.filter((r: any) => bookChapterIds.has(Number(r.id))) : rows;
++      setChapters((prev) => filtered.map((r: any) => {
+         const prevCh = prev.find((c) => c.id === Number(r.id));
+         return { id: Number(r.id), title: r.title, contentHtml: prevCh ? prevCh.contentHtml : r.contentHtml, order: Number(r.order) };
+       }));
+-      const mapped = rows.map((r: any) => ({ id: Number(r.id), title: r.title, order: Number(r.order) }));
++      const mapped = filtered.map((r: any) => ({ id: Number(r.id), title: r.title, order: Number(r.order) }));
+       const nextActive = mapped.find((c: any) => c.id === activeIdRef.current) ? activeIdRef.current : (mapped.length ? mapped[0].id : null);
+       setActiveId(nextActive);
+       if (nextActive !== null && !editMode) {
+@@ -800,7 +811,28 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+       } catch { /* non-critical */ }
+     }
+   };
+-  useEffect(() => { reload(); }, [actor, deviceId]);
++  const reloadBooks = async () => {
++    if (deviceId === null || !actor) return;
++    let rows: any[] = await actor.listBooks(deviceId);
++    if (rows.length === 0) {
++      await actor.ensureDefaultBook(deviceId);
++      rows = await actor.listBooks(deviceId);
++    }
++    const mapped = rows.map((b: any) => ({ id: Number(b.id), title: b.title, order: Number(b.order) }));
++    setBooks(mapped);
++    setBookId((prev) => (prev !== null && mapped.some((b) => b.id === prev)) ? prev : (mapped.length ? mapped[0].id : null));
++  };
++  useEffect(() => { reloadBooks(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [actor, deviceId]);
++  useEffect(() => {
++    if (bookId === null || !actor) { setBookChapterIds(null); return; }
++    let cancelled = false;
++    actor.listChaptersByBook(bookId).then((ids: any[]) => {
++      if (cancelled) return;
++      setBookChapterIds(new Set(ids.map((n: any) => Number(n))));
++    });
++    return () => { cancelled = true; };
++  }, [actor, bookId]);
++  useEffect(() => { reload(); }, [actor, deviceId, bookId]);
+   const selectedDevice = devices.find((d) => Number(d.id) === deviceId);
+   const deviceLabel = selectedDevice ? `${selectedDevice.symbol} — ${selectedDevice.name}` : "";
+   // Fetch full content on-demand when switching chapters (e.g. clicking
+@@ -958,13 +990,31 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+ 
+   const addChapter = async () => {
+     const title = newTitle.trim();
+-    if (!title || deviceId === null) return;
+-    const newId = await actor.createDeviceManualChapter(deviceId, title);
++    if (!title || deviceId === null || bookId === null) return;
++    const newId = await actor.createDeviceManualChapter(deviceId, title, bookId);
+     setNewTitle("");
+     await reload();
+     setActiveId(Number(newId));
+   };
+ 
++  const addBook = async () => {
++    if (deviceId === null) return;
++    const name = prompt("Nazwa nowej książki:");
++    if (!name || !name.trim()) return;
++    const newId = await actor.addBook(deviceId, name.trim());
++    await reloadBooks();
++    setBookId(Number(newId));
++  };
++
++  const renameBook = async () => {
++    if (bookId === null) return;
++    const current = books.find((b) => b.id === bookId);
++    const name = prompt("Nowa nazwa książki:", current?.title || "");
++    if (!name || !name.trim()) return;
++    await actor.renameBook(bookId, name.trim());
++    await reloadBooks();
++  };
++
+   const requestDelete = (ch: Chapter) => {
+     setDeleteTarget(ch);
+     setDeleteConfirmText("");
+@@ -1223,8 +1273,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   };
+ 
+   const saveSettings = async () => {
++    if (bookId === null) return;
+     try {
+-      await actor.setDocHeaderFooterSettings(
++      await actor.setBookHeaderFooterSettings(
++        bookId,
+         hfDraft.headerText,
+         hfDraft.footerText,
+         hfDraft.logoDataUri,
+@@ -1964,6 +2016,22 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+           >
+             + Nowy folder
+           </button>
++          {books.length > 0 && (
++            <>
++              <span className="text-xs text-[var(--text-muted)] ml-2">Książka:</span>
++              <select
++                value={bookId ?? ""}
++                onChange={(e) => setBookId(e.target.value ? Number(e.target.value) : null)}
++                className="bg-[var(--bg-hover)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-1.5 text-sm"
++              >
++                {books.map((b) => (
++                  <option key={b.id} value={b.id}>{b.title}</option>
++                ))}
++              </select>
++              <button onClick={renameBook} title="Zmień nazwę książki" className="text-xs px-2 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600">✎</button>
++              <button onClick={addBook} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600">+ Nowa książka</button>
++            </>
++          )}
+           {savedFlash && <span className="text-xs text-emerald-400">💾 Zapisano</span>}
+           {driveSyncFlash && <span className="text-xs text-cyan-400">☁️ Zsynchronizowano z Bartolini Drive</span>}
+           {driveSyncError && <span className="text-xs text-amber-400">{driveSyncError}</span>}
+@@ -2678,10 +2746,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+         </div>
+         </div>
+       )}
+-      {showVarsPanel && deviceId !== null && (
++      {showVarsPanel && deviceId !== null && bookId !== null && (
+         <ManualVariablesPanel
+           actor={actor}
+-          deviceId={deviceId}
++          bookId={bookId as number}
+           deviceLabel={deviceLabel}
+           chapters={chapters}
+           onClose={() => setShowVarsPanel(false)}
+diff --git a/src/frontend/src/components/ManualVariablesPanel.tsx b/src/frontend/src/components/ManualVariablesPanel.tsx
+index 01df4d0..dee0df3 100644
+--- a/src/frontend/src/components/ManualVariablesPanel.tsx
++++ b/src/frontend/src/components/ManualVariablesPanel.tsx
+@@ -76,14 +76,14 @@ function replaceOccurrencesInHtml(html: string, needle: string, newValue: string
+ 
+ export function ManualVariablesPanel({
+   actor,
+-  deviceId,
++  bookId,
+   deviceLabel,
+   chapters,
+   onClose,
+   onChapterContentUpdated,
+ }: {
+   actor: any;
+-  deviceId: number;
++  bookId: number;
+   deviceLabel: string;
+   chapters: Chapter[];
+   onClose: () => void;
+@@ -129,16 +129,16 @@ export function ManualVariablesPanel({
+   };
+ 
+   const reloadVars = async () => {
+-    const rows = await actor.getDeviceManualVariables(deviceId);
++    const rows = await actor.getBookManualVariables(bookId);
+     setVars(rows);
+     setDirty(false);
+   };
+-  useEffect(() => { reloadVars(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [deviceId, chapters.length]);
++  useEffect(() => { reloadVars(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [bookId, chapters.length]);
+ 
+   const saveList = async () => {
+     setBusy("save-list");
+     try {
+-      await actor.setDeviceManualVariables(deviceId, vars);
++      await actor.setBookManualVariables(bookId, vars);
+       setDirty(false);
+     } finally {
+       setBusy("");
+@@ -210,7 +210,7 @@ export function ManualVariablesPanel({
+     try {
+       // Zapisz całą listę PRZED wyszukiwaniem/podmianą — inaczej reloadVars()
+       // niżej nadpisze niezapisane lokalnie wiersze (w tym puste/niekompletne).
+-      if (dirty) { await actor.setDeviceManualVariables(deviceId, vars); setDirty(false); }
++      if (dirty) { await actor.setBookManualVariables(bookId, vars); setDirty(false); }
+ 
+       // Szukamy lokalnie (prawdziwy DOM przeglądarki) we WSZYSTKICH
+       // rozdziałach, czytając treść bezpośrednio z OneDrive (źródło prawdy) —
+@@ -232,7 +232,7 @@ export function ManualVariablesPanel({
+       } else if (allMatches.length === 1) {
+         const m = allMatches[0];
+         const newHtml = replaceOccurrencesInHtml(chapterHtml[m.chapterId], v.currentValue, newValue, [m.index]);
+-        await actor.setManualVariableValue(deviceId, v.key, newValue);
++        await actor.setBookManualVariableValue(bookId, v.key, newValue);
+         await syncChangedChaptersToDrive([[m.chapterId, newHtml]]);
+         setDrafts((d) => ({ ...d, [v.key]: "" }));
+         setSelected((s) => { const n = new Set(s); n.delete(v.key); return n; });
+@@ -257,7 +257,7 @@ export function ManualVariablesPanel({
+     const picked = conflict.matches.filter((_, i) => conflict.picked.has(i));
+     setBusy(conflict.key);
+     try {
+-      if (dirty) { await actor.setDeviceManualVariables(deviceId, vars); setDirty(false); }
++      if (dirty) { await actor.setBookManualVariables(bookId, vars); setDirty(false); }
+       if (picked.length > 0) {
+         const byChapter: Record<number, number[]> = {};
+         for (const m of picked) { (byChapter[m.chapterId] ??= []).push(m.index); };
+@@ -266,7 +266,7 @@ export function ManualVariablesPanel({
+           const newHtml = replaceOccurrencesInHtml(conflict.chapterHtml[chapterId], conflict.searchText, conflict.newValue, indices);
+           return [chapterId, newHtml];
+         });
+-        await actor.setManualVariableValue(deviceId, conflict.key, conflict.newValue);
++        await actor.setBookManualVariableValue(bookId, conflict.key, conflict.newValue);
+         await syncChangedChaptersToDrive(updatedChapters);
+         setDrafts((d) => ({ ...d, [conflict.key]: "" }));
+         setSelected((s) => { const n = new Set(s); n.delete(conflict.key); return n; });

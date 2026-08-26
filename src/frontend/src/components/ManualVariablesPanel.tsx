@@ -76,14 +76,14 @@ function replaceOccurrencesInHtml(html: string, needle: string, newValue: string
 
 export function ManualVariablesPanel({
   actor,
-  deviceId,
+  bookId,
   deviceLabel,
   chapters,
   onClose,
   onChapterContentUpdated,
 }: {
   actor: any;
-  deviceId: number;
+  bookId: number;
   deviceLabel: string;
   chapters: Chapter[];
   onClose: () => void;
@@ -92,12 +92,9 @@ export function ManualVariablesPanel({
   const [vars, setVars] = useState<ManualVariable[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({}); // key -> "nowa wartość" input
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [backupEnabled, setBackupEnabled] = useState<Record<number, boolean>>({});
-  const [backupLengths, setBackupLengths] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState<string>("");
   const [dirty, setDirty] = useState(false);
   const [conflict, setConflict] = useState<{ key: string; searchText: string; newValue: string; matches: DomMatch[]; picked: Set<number>; chapterHtml: Record<number, string>; queueRest: ManualVariable[] } | null>(null);
-  const [tab, setTab] = useState<"vars" | "backup">("vars");
 
   const [rect, setRect] = useState(() => ({
     x: Math.max(20, Math.round(window.innerWidth * 0.15)),
@@ -132,32 +129,16 @@ export function ManualVariablesPanel({
   };
 
   const reloadVars = async () => {
-    const rows = await actor.getDeviceManualVariables(deviceId);
+    const rows = await actor.getBookManualVariables(bookId);
     setVars(rows);
     setDirty(false);
   };
-  const reloadBackupFlags = async () => {
-    const entries = await Promise.all(chapters.map(async (ch) => [ch.id, await actor.getChapterBackupEnabled(ch.id)] as const));
-    const map: Record<number, boolean> = {};
-    for (const [id, en] of entries) map[id] = en;
-    setBackupEnabled(map);
-  };
-  const reloadBackupLengths = async () => {
-    const entries = await Promise.all(chapters.map(async (ch) => {
-      const res: any = await actor.getDeviceManualChapterContentLength(ch.id);
-      const len = res && res.length ? Number(res[0]) : 0;
-      return [ch.id, len] as const;
-    }));
-    const map: Record<number, number> = {};
-    for (const [id, len] of entries) map[id] = len;
-    setBackupLengths(map);
-  };
-  useEffect(() => { reloadVars(); reloadBackupFlags(); reloadBackupLengths(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [deviceId, chapters.length]);
+  useEffect(() => { reloadVars(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [bookId, chapters.length]);
 
   const saveList = async () => {
     setBusy("save-list");
     try {
-      await actor.setDeviceManualVariables(deviceId, vars);
+      await actor.setBookManualVariables(bookId, vars);
       setDirty(false);
     } finally {
       setBusy("");
@@ -197,14 +178,28 @@ export function ManualVariablesPanel({
   // niewidoczna wszędzie poza tym panelem. Best-effort: błąd Drive nie cofa
   // już zapisanej zmiany w backendzie, tylko informuje operatora.
   const syncChangedChaptersToDrive = async (updated: [number, string][]) => {
+    const skipped: string[] = [];
     for (const [chapterId, newHtml] of updated) {
       const ch = chapters.find((c) => c.id === chapterId);
       if (!ch) continue;
+      // Nie nadpisuj rozdziału, który ktoś aktualnie edytuje — inaczej jego
+      // kolejny autozapis (bazujący na starej, nieświadomej podmianki treści)
+      // cofnąłby tę podmiankę bez ostrzeżenia.
+      try {
+        const lockHolder = await actor.getEditLock(chapterId);
+        if (lockHolder && lockHolder.length > 0) {
+          skipped.push(ch.title);
+          continue;
+        }
+      } catch { /* jeśli sprawdzenie blokady padnie, kontynuujemy - nie blokujemy zapisu na tym */ }
       try {
         await syncChapterToDrive(deviceLabel, ch.id, ch.order, ch.title, newHtml);
       } catch (e: any) {
         alert(`Zapisano w backendzie, ale nie udało się zsynchronizować rozdziału „${ch.title}” z OneDrive: ${e?.message || e}. Otwórz i zapisz ten rozdział ręcznie w edytorze.`);
       }
+    }
+    if (skipped.length > 0) {
+      alert(`Pominięto podmiankę w rozdziałach aktualnie edytowanych przez kogoś innego: ${skipped.join(", ")}. Podmień w nich ręcznie po zakończeniu edycji.`);
     }
   };
 
@@ -215,16 +210,16 @@ export function ManualVariablesPanel({
     try {
       // Zapisz całą listę PRZED wyszukiwaniem/podmianą — inaczej reloadVars()
       // niżej nadpisze niezapisane lokalnie wiersze (w tym puste/niekompletne).
-      if (dirty) { await actor.setDeviceManualVariables(deviceId, vars); setDirty(false); }
+      if (dirty) { await actor.setBookManualVariables(bookId, vars); setDirty(false); }
 
-      // Szukamy lokalnie (prawdziwy DOM przeglądarki) w każdym zbackupowanym
-      // rozdziale — dużo solidniejsze niż wyszukiwanie w surowym HTML na backendzie.
-      const backedUpChapters = chapters.filter((ch) => backupEnabled[ch.id]);
+      // Szukamy lokalnie (prawdziwy DOM przeglądarki) we WSZYSTKICH
+      // rozdziałach, czytając treść bezpośrednio z OneDrive (źródło prawdy) —
+      // niezależnie od tego, czy rozdział ma włączony backup on-chain.
       const chapterHtml: Record<number, string> = {};
       const allMatches: DomMatch[] = [];
-      for (const ch of backedUpChapters) {
-        const res: any = await actor.getDeviceManualChapterContent(ch.id);
-        const html: string = res && res.length ? res[0] : "";
+      for (const ch of chapters) {
+        let html = "";
+        try { html = await loadChapterContentFromDrive(deviceLabel, ch.id); } catch { /* brak treści na Drive dla tego rozdziału */ }
         chapterHtml[ch.id] = html;
         for (const m of findOccurrencesInHtml(html, v.currentValue)) {
           allMatches.push({ chapterId: ch.id, chapterTitle: ch.title, index: m.index, contextSnippet: m.contextSnippet });
@@ -232,12 +227,12 @@ export function ManualVariablesPanel({
       }
 
       if (allMatches.length === 0) {
-        alert(`Nie znaleziono „${v.currentValue}” w rozdziałach z aktywnym backupem — sprawdź zakładkę „Backup rozdziałów”.`);
+        alert(`Nie znaleziono „${v.currentValue}” w żadnym rozdziale na OneDrive.`);
         processQueue(queueRest);
       } else if (allMatches.length === 1) {
         const m = allMatches[0];
         const newHtml = replaceOccurrencesInHtml(chapterHtml[m.chapterId], v.currentValue, newValue, [m.index]);
-        await actor.applyManualVariableReplaceContents(deviceId, v.key, newValue, [[m.chapterId, newHtml]]);
+        await actor.setBookManualVariableValue(bookId, v.key, newValue);
         await syncChangedChaptersToDrive([[m.chapterId, newHtml]]);
         setDrafts((d) => ({ ...d, [v.key]: "" }));
         setSelected((s) => { const n = new Set(s); n.delete(v.key); return n; });
@@ -262,7 +257,7 @@ export function ManualVariablesPanel({
     const picked = conflict.matches.filter((_, i) => conflict.picked.has(i));
     setBusy(conflict.key);
     try {
-      if (dirty) { await actor.setDeviceManualVariables(deviceId, vars); setDirty(false); }
+      if (dirty) { await actor.setBookManualVariables(bookId, vars); setDirty(false); }
       if (picked.length > 0) {
         const byChapter: Record<number, number[]> = {};
         for (const m of picked) { (byChapter[m.chapterId] ??= []).push(m.index); };
@@ -271,7 +266,7 @@ export function ManualVariablesPanel({
           const newHtml = replaceOccurrencesInHtml(conflict.chapterHtml[chapterId], conflict.searchText, conflict.newValue, indices);
           return [chapterId, newHtml];
         });
-        await actor.applyManualVariableReplaceContents(deviceId, conflict.key, conflict.newValue, updatedChapters);
+        await actor.setBookManualVariableValue(bookId, conflict.key, conflict.newValue);
         await syncChangedChaptersToDrive(updatedChapters);
         setDrafts((d) => ({ ...d, [conflict.key]: "" }));
         setSelected((s) => { const n = new Set(s); n.delete(conflict.key); return n; });
@@ -281,31 +276,6 @@ export function ManualVariablesPanel({
       const rest = conflict.queueRest;
       setConflict(null);
       processQueue(rest);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const toggleBackup = async (ch: Chapter, enabled: boolean) => {
-    await actor.setChapterBackupEnabled(ch.id, enabled);
-    setBackupEnabled((m) => ({ ...m, [ch.id]: enabled }));
-  };
-  const saveBackup = async (ch: Chapter) => {
-    setBusy(`backup-${ch.id}`);
-    try {
-      // Backup ma odzwierciedlać to co NAPRAWDĘ jest w dokumencie — a to żyje
-      // w OneDrive (edytor tam zapisuje), nie w backendzie. Pobranie z backendu
-      // dawałoby starą treść, jeśli backend nie był ostatnio aktualizowany.
-      let full = "";
-      try {
-        full = await loadChapterContentFromDrive(deviceLabel, ch.id);
-      } catch { /* Drive niedostępny - fallback niżej */ }
-      if (!full) {
-        const res: any = await actor.getDeviceManualChapterContent(ch.id);
-        full = res && res.length ? res[0] : ch.contentHtml;
-      }
-      await actor.saveChapterBackup(ch.id, full);
-      await reloadBackupLengths();
     } finally {
       setBusy("");
     }
@@ -322,16 +292,13 @@ export function ManualVariablesPanel({
         >
           <h2 className="text-sm font-bold text-[#4fc3f7]">🔗 Zmienne referencyjne dokumentu</h2>
           <div className="flex items-center gap-2">
-            <button onClick={() => setTab("vars")} className={"text-xs px-3 py-1.5 rounded border " + (tab === "vars" ? "bg-cyan-600 text-white border-cyan-600" : "border-[#666] text-[var(--text-secondary)]")}>Referencje</button>
-            <button onClick={() => setTab("backup")} className={"text-xs px-3 py-1.5 rounded border " + (tab === "backup" ? "bg-cyan-600 text-white border-cyan-600" : "border-[#666] text-[var(--text-secondary)]")}>Backup rozdziałów</button>
             <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-[#666] text-[var(--text-secondary)]">Zamknij</button>
           </div>
         </div>
 
         <div className="flex-1 overflow-auto p-4">
-          {tab === "vars" ? (
-            <>
-              <div className="mb-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-[var(--text-secondary)] leading-relaxed">
+          <>
+            <div className="mb-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-[var(--text-secondary)] leading-relaxed">
                 <p className="font-semibold text-cyan-600 dark:text-cyan-400 mb-1">ⓘ Jak to działa</p>
                 <p className="mb-1">
                   To narzędzie nie jest częścią dokumentu — nie jest drukowane ani widoczne w podglądzie/eksporcie.
@@ -347,7 +314,7 @@ export function ManualVariablesPanel({
                   odniesienia — kolejna podmiana tej samej zmiennej działa już na niej, bez przepisywania.
                 </p>
                 <p className="mt-1">
-                  Wyszukiwanie działa tylko na rozdziałach z włączonym backupem (zakładka „Backup” obok) — reszta nie zostanie sprawdzona.
+                  Wyszukiwanie i zapis podmianek działają zawsze na treści z OneDrive, dla wszystkich rozdziałów.
                   Edycje etykiet/wartości zapisz osobno przyciskiem „💾 Zapisz listę”.
                 </p>
               </div>
@@ -405,48 +372,6 @@ export function ManualVariablesPanel({
               </table>
               <button onClick={addRow} className="mt-3 text-xs px-3 py-1.5 rounded border border-[#ccc]">+ Dodaj pole</button>
             </>
-          ) : (
-            <>
-              <p className="text-[11px] text-[var(--text-muted)] mb-3">
-                Wyszukiwanie zmiennych działa tylko na rozdziałach z aktywną kopią backend. OneDrive pozostaje wersją ostateczną — backup nadpisuje jedną wersję, bez historii.
-              </p>
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-color)]">
-                    <th className="py-2 pr-2">Rozdział</th>
-                    <th className="py-2 pr-2 w-28">Backup</th>
-                    <th className="py-2 pr-2 w-24">Długość</th>
-                    <th className="py-2 pr-2 w-40">Akcje</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chapters.map((ch) => (
-                    <tr key={ch.id} className="border-b border-[var(--border-color)]">
-                      <td className="py-1.5 pr-2">{ch.title}</td>
-                      <td className="py-1.5 pr-2">
-                        <label className="flex items-center gap-1.5">
-                          <input type="checkbox" checked={!!backupEnabled[ch.id]} onChange={(e) => toggleBackup(ch, e.target.checked)} />
-                          {backupEnabled[ch.id] && <span className="text-green-400">✓</span>}
-                        </label>
-                      </td>
-                      <td className="py-1.5 pr-2 text-[var(--text-muted)]">
-                        {backupLengths[ch.id] !== undefined ? `${backupLengths[ch.id]} zn.` : "—"}
-                      </td>
-                      <td className="py-1.5 pr-2">
-                        <button
-                          onClick={() => saveBackup(ch)}
-                          disabled={!backupEnabled[ch.id] || busy === `backup-${ch.id}`}
-                          className="text-[11px] px-2 py-1 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white"
-                        >
-                          {busy === `backup-${ch.id}` ? "…" : "Zapisz kopię backend"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          )}
         </div>
 
         <div
@@ -457,7 +382,7 @@ export function ManualVariablesPanel({
       </div>
 
       {conflict && (
-        <div className="fixed inset-0 z-[400] bg-black/60 flex items-center justify-center" onClick={() => setConflict(null)}>
+        <div className="fixed inset-0 z-[400] bg-black/60 flex items-center justify-center pointer-events-auto" onClick={() => setConflict(null)}>
           <div className="bg-[var(--bg-card)] rounded-lg shadow-2xl border border-[var(--border-color)] w-[600px] max-w-[90vw] max-h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-3 border-b border-[var(--border-color)]">
               <h3 className="text-sm font-bold text-amber-400">Znaleziono {conflict.matches.length} wystąpień „{conflict.searchText}” — wybierz które podmienić</h3>

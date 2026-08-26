@@ -27,6 +27,10 @@ mixin (
   docFolders : Map.Map<Nat, (Text, Principal, Int)>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
+  documentBooks : Map.Map<Nat, Types.DocumentBook>,
+  chapterBookId : Map.Map<Nat, Nat>,
+  bookManualVariables : Map.Map<Nat, [Types.ManualVariable]>,
+  bookHeaderFooterSettings : Map.Map<Nat, Types.DocHeaderFooterSettings>,
 ) {
   func requireManualRead(caller : Principal) {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
@@ -145,6 +149,192 @@ mixin (
       result.add((id, name, owner, createdAt));
     };
     List.toArray(result);
+  };
+
+  // --- Książki (poziom pomiędzy urządzeniem a rozdziałem) ---
+  // Jedno urządzenie może mieć kilka oddzielnych podręczników; każdy ma
+  // własne rozdziały, zmienne referencyjne i nagłówek/stopkę — nic nie jest
+  // dzielone między książkami tego samego urządzenia.
+
+  public shared ({ caller }) func addBook(deviceId : Nat, title : Text) : async Nat {
+    requireManualWrite(caller);
+    let trimmed = Text.trim(title, #char ' ');
+    if (Text.size(trimmed) == 0) { Runtime.trap("Nazwa książki jest wymagana"); };
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in documentBooks.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
+    var maxOrder = 0;
+    for ((_, b) in documentBooks.entries()) {
+      if (b.deviceId == deviceId and b.order >= maxOrder) { maxOrder := b.order + 1; };
+    };
+    documentBooks.add(newId, { id = newId; deviceId; title = trimmed; order = maxOrder });
+    newId;
+  };
+
+  public shared ({ caller }) func renameBook(bookId : Nat, title : Text) : async Bool {
+    requireManualWrite(caller);
+    let trimmed = Text.trim(title, #char ' ');
+    if (Text.size(trimmed) == 0) { Runtime.trap("Nazwa książki jest wymagana"); };
+    switch (documentBooks.get(bookId)) {
+      case (?b) { documentBooks.add(bookId, { b with title = trimmed }); true };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func deleteBook(bookId : Nat) : async Bool {
+    requireManualWrite(caller);
+    var hasChapters = false;
+    for ((_, bid) in chapterBookId.entries()) {
+      if (bid == bookId) { hasChapters := true; };
+    };
+    if (hasChapters) { Runtime.trap("Nie można usunąć książki, która ma jeszcze rozdziały — przenieś lub usuń je najpierw"); };
+    switch (documentBooks.get(bookId)) {
+      case (?_) { documentBooks.remove(bookId); bookManualVariables.remove(bookId); bookHeaderFooterSettings.remove(bookId); true };
+      case null { false };
+    };
+  };
+
+  // Migracja: pierwsze wejście do urządzenia bez żadnej książki tworzy
+  // "Książka 1" i przypisuje do niej wszystkie istniejące (jeszcze
+  // nieprzypisane) rozdziały tego urządzenia — nic nie znika z listy.
+  public shared ({ caller }) func ensureDefaultBook(deviceId : Nat) : async Nat {
+    requireManualWrite(caller);
+    for ((_, b) in documentBooks.entries()) {
+      if (b.deviceId == deviceId) { return b.id; };
+    };
+    var maxId = 0;
+    var any = false;
+    for ((id, _) in documentBooks.entries()) {
+      if (not any or id >= maxId) { maxId := id; any := true; };
+    };
+    let newId = if (any) { maxId + 1 } else { 0 };
+    documentBooks.add(newId, { id = newId; deviceId; title = "Książka 1"; order = 0 });
+    for ((chId, ch) in deviceManualChapters.entries()) {
+      if (ch.deviceId == deviceId and chapterBookId.get(chId) == null) {
+        chapterBookId.add(chId, newId);
+      };
+    };
+    // Migracja istniejących zmiennych referencyjnych / nagłówka-stopki
+    // urządzenia do nowej domyślnej książki, żeby nic nie zniknęło.
+    switch (deviceManualVariables.get(deviceId)) {
+      case (?vars) { bookManualVariables.add(newId, vars); };
+      case null {};
+    };
+    switch (docHeaderFooterSettings.get("default")) {
+      case (?s) { bookHeaderFooterSettings.add(newId, s); };
+      case null {};
+    };
+    newId;
+  };
+
+  public query ({ caller }) func listBooks(deviceId : Nat) : async [Types.DocumentBook] {
+    requireManualRead(caller);
+    var result = List.empty<Types.DocumentBook>();
+    for ((_, b) in documentBooks.entries()) {
+      if (b.deviceId == deviceId) { result.add(b); };
+    };
+    let arr = result.toArray();
+    let n = arr.size();
+    var sorted = arr;
+    var i = 0;
+    while (i < n) {
+      var minIdx = i;
+      var j = i + 1;
+      while (j < n) {
+        if (sorted[j].order < sorted[minIdx].order) { minIdx := j; };
+        j += 1;
+      };
+      if (minIdx != i) {
+        let tmp = sorted[i];
+        sorted := Array.tabulate<Types.DocumentBook>(n, func(k) {
+          if (k == i) { sorted[minIdx] } else if (k == minIdx) { tmp } else { sorted[k] };
+        });
+      };
+      i += 1;
+    };
+    sorted;
+  };
+
+  public query ({ caller }) func getChapterBook(chapterId : Nat) : async ?Nat {
+    requireManualRead(caller);
+    chapterBookId.get(chapterId);
+  };
+
+  public shared ({ caller }) func setChapterBook(chapterId : Nat, bookId : Nat) : async Bool {
+    requireManualWrite(caller);
+    if (documentBooks.get(bookId) == null) { return false; };
+    switch (deviceManualChapters.get(chapterId)) {
+      case (?_) { chapterBookId.add(chapterId, bookId); true };
+      case null { false };
+    };
+  };
+
+  public query ({ caller }) func listChaptersByBook(bookId : Nat) : async [Nat] {
+    requireManualRead(caller);
+    var result = List.empty<Nat>();
+    for ((chId, bid) in chapterBookId.entries()) {
+      if (bid == bookId) { result.add(chId); };
+    };
+    result.toArray();
+  };
+
+  // Cała mapa rozdział→książka dla urządzenia w jednym wywołaniu — używane
+  // przez drzewko w sidebarze, żeby nie robić N zapytań (po jednym na książkę).
+  public query ({ caller }) func getDeviceChapterBookMap(deviceId : Nat) : async [(Nat, Nat)] {
+    requireManualRead(caller);
+    var result = List.empty<(Nat, Nat)>();
+    for ((chId, ch) in deviceManualChapters.entries()) {
+      if (ch.deviceId == deviceId) {
+        switch (chapterBookId.get(chId)) {
+          case (?bid) { result.add((chId, bid)); };
+          case null {};
+        };
+      };
+    };
+    result.toArray();
+  };
+
+  public query ({ caller }) func getBookManualVariables(bookId : Nat) : async [Types.ManualVariable] {
+    requireManualRead(caller);
+    switch (bookManualVariables.get(bookId)) { case (?v) v; case null [] };
+  };
+
+  public shared ({ caller }) func setBookManualVariables(bookId : Nat, vars : [Types.ManualVariable]) : async () {
+    requireManualWrite(caller);
+    bookManualVariables.add(bookId, vars);
+  };
+
+  public shared ({ caller }) func setBookManualVariableValue(bookId : Nat, key : Text, newValue : Text) : async () {
+    requireManualWrite(caller);
+    let vars = switch (bookManualVariables.get(bookId)) { case (?v) v; case null [] };
+    let updated = Array.map<Types.ManualVariable, Types.ManualVariable>(vars, func(v) {
+      if (v.key == key) { { v with currentValue = newValue } } else { v };
+    });
+    bookManualVariables.add(bookId, updated);
+  };
+
+  public query ({ caller }) func getBookHeaderFooterSettings(bookId : Nat) : async ?Types.DocHeaderFooterSettings {
+    requireManualRead(caller);
+    bookHeaderFooterSettings.get(bookId);
+  };
+
+  public shared ({ caller }) func setBookHeaderFooterSettings(
+    bookId : Nat,
+    headerText : Text,
+    footerText : Text,
+    logoDataUri : Text,
+    skipFirstPage : Bool,
+    showPageNumbers : Bool,
+  ) : async () {
+    requireManualWrite(caller);
+    bookHeaderFooterSettings.add(bookId, {
+      headerText; footerText; logoDataUri; skipFirstPage; showPageNumbers;
+      updatedBy = Principal.toText(caller);
+      updatedAt = Time.now();
+    });
   };
 
   public query ({ caller }) func listDocumentationEditors() : async [(Principal, Bool)] {
@@ -273,7 +463,7 @@ mixin (
     };
   };
 
-  public shared ({ caller }) func createDeviceManualChapter(deviceId : Nat, title : Text) : async Nat {
+  public shared ({ caller }) func createDeviceManualChapter(deviceId : Nat, title : Text, bookId : Nat) : async Nat {
     requireManualWrite(caller);
     var maxId = 0;
     var any = false;
@@ -292,6 +482,7 @@ mixin (
       updatedBy = "";
       updatedAt = Time.now();
     });
+    chapterBookId.add(newId, bookId);
     newId;
   };
 
@@ -711,6 +902,15 @@ mixin (
   // przeglądarki) nowe treści rozdziałów po podmianie referencji. Zastępuje
   // ręczne stripowanie HTML w Motoko, które nie radziło sobie ze wszystkimi
   // przypadkami (zagnieżdżone tagi, encje) — przeglądarka robi to poprawnie.
+  public shared ({ caller }) func setManualVariableValue(deviceId : Nat, key : Text, newValue : Text) : async () {
+    requireManualWrite(caller);
+    let vars = switch (deviceManualVariables.get(deviceId)) { case (?v) v; case null [] };
+    let updated = Array.map<Types.ManualVariable, Types.ManualVariable>(vars, func(v) {
+      if (v.key == key) { { v with currentValue = newValue } } else { v };
+    });
+    deviceManualVariables.add(deviceId, updated);
+  };
+
   public shared ({ caller }) func applyManualVariableReplaceContents(
     deviceId : Nat,
     key : Text,

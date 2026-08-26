@@ -1,0 +1,20 @@
+--- a/src/frontend/src/components/DocumentationModule.tsx	2026-08-26 15:50:01.407001173 +0000
++++ b/src/frontend/src/components/DocumentationModule.tsx	2026-08-26 15:50:01.411129449 +0000
+@@ -2088,7 +2088,7 @@
+                         <RailButton icon="🔗" label="Zmienne" title="Zmienne referencyjne" onClick={() => setShowVarsPanel(true)} />
+                         <RailButton icon="⚙️" label="Nagłówek" title="Nagłówek i stopka" onClick={openSettings} />
+                         <RailButton icon="📖" label="2 strony" active={twoPageView} title="Podgląd paginacji na żywo obok edytora" onClick={() => setTwoPageView((v) => !v)} />
+-                        <RailButton icon="☑️" label="Auto-zapis" active={autoSave} title="Auto-zapis (3s)" onClick={() => setAutoSave((v) => !v)} />
++                        <RailButton icon={autoSave ? "☑️" : "⬜"} label="Auto-zapis" active={autoSave} title="Auto-zapis (3s)" onClick={() => setAutoSave((v) => !v)} />
+                       </>
+                     )}
+                     {!editMode && canEdit && (
+@@ -2187,7 +2187,7 @@
+                   <div className="flex-1 flex overflow-hidden">
+                   <div ref={commentAreaRef} className={"relative overflow-auto bg-[var(--bg-page)] py-6 " + ((twoPageView && editMode) ? "w-1/2 shrink-0 border-r border-[var(--border-color)]" : "flex-1")}>
+                     <div
+-                      className="mx-auto bg-[var(--bg-card)] text-[var(--text-primary)] shadow-lg relative"
++                      className="mx-auto bg-white text-black shadow-lg relative"
+                       style={{
+                         width: "210mm",
+                         maxWidth: "210mm",
