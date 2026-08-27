@@ -384,8 +384,10 @@ function RailButton({ icon, label, onClick, active, disabled, title, badge }: {
       onClick={onClick}
       disabled={disabled}
       title={title || label}
-      className={`relative flex flex-col items-center gap-1 w-16 py-2.5 rounded-lg text-[11px] leading-tight disabled:opacity-40 transition-colors ${
-        active ? "bg-[var(--accent)] text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+      className={`relative flex flex-col items-center gap-1 w-16 py-2.5 rounded-lg text-[11px] leading-tight disabled:opacity-40 transition-all duration-100 active:scale-90 ${
+        active
+          ? "bg-[var(--accent)] text-white active:bg-[var(--accent)]/80"
+          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)] active:bg-[var(--accent)]/20"
       }`}
     >
       <span className="text-2xl leading-none">{icon}</span>
@@ -1215,6 +1217,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       commentAnchorElRef.current = null;
       setCommentPopup(null);
     }
+    // Klik tylko przestawia kursor (bez wpisywania tekstu), więc onInput
+    // się nie odpala — bez tego podgląd "2 strony" zostawał na starej
+    // stronie zamiast podążać za miejscem, w którym kliknął operator.
+    if (twoPageView) setTwoPageTick((t) => t + 1);
   };
 
   const addComment = () => {
@@ -1443,14 +1449,24 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const insertPlainPasteText = () => {
     const lines = plainPasteText.split(/\r\n|\r|\n/);
     const html = lines.map((l) => `<p>${l.trim() ? escapeHtml(l) : "<br>"}</p>`).join("");
-    editorRef.current?.focus();
     const savedRange = plainPasteRangeRef.current;
+    const sel1 = window.getSelection();
     if (savedRange) {
-      const sel1 = window.getSelection();
       sel1?.removeAllRanges();
       sel1?.addRange(savedRange);
     }
+    // Restore the selection BEFORE focusing: focusing a contenteditable with
+    // no active selection resets the caret to the very start of the document,
+    // which is what caused the "jumps back to the beginning" bug.
+    editorRef.current?.focus({ preventScroll: true });
     document.execCommand("insertHTML", false, html);
+    // Bring the freshly inserted text into view (insertHTML doesn't auto-scroll).
+    const sel2 = window.getSelection();
+    if (sel2 && sel2.rangeCount > 0) {
+      const node = sel2.getRangeAt(0).startContainer;
+      const el = node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
+      el?.scrollIntoView({ block: "center" });
+    }
     setDirty(true);
     setShowPlainPasteModal(false);
   };
@@ -2293,7 +2309,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               ) : (
                 <>
                   <div className="flex-1 flex overflow-hidden">
-                  <div className="w-14 shrink-0 flex flex-col items-center gap-1 py-3 border-r border-[var(--border-color)] bg-[var(--bg-hover)] overflow-y-auto">
+                  <div className="w-14 shrink-0 flex flex-col items-center gap-1 py-3 border-r border-[var(--border-color)] bg-[var(--bg-card)] overflow-y-auto">
                     {canEdit ? (
                       <RailButton
                         icon="✏"
@@ -2318,9 +2334,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     />
                     <RailButton icon="📖" label="2 strony" active={twoPageView} title="Podgląd podziału na strony" onClick={() => setTwoPageView((v) => !v)} />
                     <div className="flex flex-col items-center gap-0.5 w-12">
-                      <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} title="Powiększ" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] hover:bg-[var(--bg-card)]">＋</button>
+                      <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} title="Powiększ" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90">＋</button>
                       <button onClick={() => setZoomLevel(100)} title="Resetuj powiększenie" className="text-[10px] text-[var(--text-secondary)]">{zoomLevel}%</button>
-                      <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} title="Pomniejsz" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] hover:bg-[var(--bg-card)]">－</button>
+                      <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} title="Pomniejsz" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90">－</button>
                     </div>
                     {editMode && canEdit && (
                       <>
@@ -2358,7 +2374,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   <div className="flex-1 flex flex-col overflow-hidden">
                   {editMode && canEdit && (
                     <div
-                      className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-color)] flex-wrap bg-[var(--bg-hover)]"
+                      className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-color)] flex-wrap bg-[var(--bg-card)]"
                       onMouseDown={onEditWinDragStart}
                       style={{ cursor: "move" }}
                     >
@@ -2369,7 +2385,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                             else if (e.target.value) exec("formatBlock", e.target.value);
                             e.target.value = "";
                           }}
-                          className="text-xs h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] px-1"
+                          className="text-xs h-8 rounded-md border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] px-1 transition-colors hover:border-[var(--accent)]"
                         >
                           <option value="" disabled>Styl</option>
                           <option value="<p>">Normal</option>
@@ -2381,7 +2397,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         <select
                           defaultValue=""
                           onChange={(e) => { if (e.target.value) exec("fontSize", e.target.value); e.target.value = ""; }}
-                          className="text-xs h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] px-1"
+                          className="text-xs h-8 rounded-md border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] px-1 transition-colors hover:border-[var(--accent)]"
                           title="Wielkość czcionki"
                         >
                           <option value="" disabled>Rozmiar</option>
@@ -2393,32 +2409,32 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                           <option value="6">Duża+ (32px)</option>
                           <option value="7">Bardzo duża (48px)</option>
                         </select>
-                        <button onClick={() => exec("bold")} className="text-xs w-8 h-8 font-bold rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">B</button>
-                        <button onClick={() => exec("italic")} className="text-xs w-8 h-8 italic rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">I</button>
-                        <button onClick={() => exec("insertUnorderedList")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">• Lista</button>
-                        <button onClick={() => setAlignment("left")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⬛L</button>
-                        <button onClick={() => setAlignment("center")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⬛C</button>
-                        <button onClick={() => setAlignment("right")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⬛R</button>
-                        <button onClick={() => setAlignment("justify")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⬛J</button>
+                        <button onClick={() => exec("bold")} className="text-xs w-8 h-8 font-bold rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">B</button>
+                        <button onClick={() => exec("italic")} className="text-xs w-8 h-8 italic rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">I</button>
+                        <button onClick={() => exec("insertUnorderedList")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">• Lista</button>
+                        <button onClick={() => setAlignment("left")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⬛L</button>
+                        <button onClick={() => setAlignment("center")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⬛C</button>
+                        <button onClick={() => setAlignment("right")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⬛R</button>
+                        <button onClick={() => setAlignment("justify")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⬛J</button>
                         <span className="w-px h-5 bg-[#ccc] mx-1" />
-                        <button onClick={insertImage} disabled={imageUploading} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] disabled:opacity-50">
+                        <button onClick={insertImage} disabled={imageUploading} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20 disabled:opacity-50">
                           {imageUploading ? "⏳ Przesyłam na Drive…" : "🖼 Obraz"}
                         </button>
-                        <button onClick={insertPageBreak} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⏎ Podział strony</button>
-                        <button onClick={insertTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">🔲 Tabela</button>
-                        <button onClick={insertWordDoc} disabled={wordImporting} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] disabled:opacity-50">
+                        <button onClick={insertPageBreak} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⏎ Podział strony</button>
+                        <button onClick={insertTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">🔲 Tabela</button>
+                        <button onClick={insertWordDoc} disabled={wordImporting} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20 disabled:opacity-50">
                           {wordImporting ? "Importuję…" : "📄 Import z Worda"}
                         </button>
-                        <button onClick={addComment} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">💬 Komentarz</button>
+                        <button onClick={addComment} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">💬 Komentarz</button>
                         {selectedTableEl && (
                           <>
                             <span className="w-px h-5 bg-[#ccc] mx-1" />
-                            <button onClick={addTableRow} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">+Wiersz</button>
-                            <button onClick={removeTableRow} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">-Wiersz</button>
-                            <button onClick={addTableColumn} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">+Kolumna</button>
-                            <button onClick={removeTableColumn} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">-Kolumna</button>
-                            <button onClick={openResizeTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">📐 Rozmiar</button>
-                            <button onClick={deleteTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] text-red-600">🗑 Usuń tabelę</button>
+                            <button onClick={addTableRow} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">+Wiersz</button>
+                            <button onClick={removeTableRow} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">-Wiersz</button>
+                            <button onClick={addTableColumn} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">+Kolumna</button>
+                            <button onClick={removeTableColumn} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">-Kolumna</button>
+                            <button onClick={openResizeTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">📐 Rozmiar</button>
+                            <button onClick={deleteTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20 text-red-600">🗑 Usuń tabelę</button>
                           </>
                         )}
                         <span className="text-[10px] text-[var(--text-muted)]">(albo przeciągnij plik na edytor)</span>
@@ -2491,6 +2507,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         if (twoPageView) setTwoPageTick((t) => t + 1);
                       }}
                       onClick={onEditorClick}
+                      onKeyUp={(e) => {
+                        // Nawigacja klawiaturą (strzałki/Home/End/PgUp/PgDn)
+                        // też przesuwa kursor bez odpalenia onInput.
+                        if (twoPageView && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
+                          setTwoPageTick((t) => t + 1);
+                        }
+                      }}
                       onPaste={onEditorPaste}
                       onDragStart={onEditorDragStart}
                       onDragEnd={onEditorDragEnd}
@@ -3010,7 +3033,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       )}
       {showPlainPasteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[500]" onClick={() => setShowPlainPasteModal(false)}>
-          <div className="bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg p-5 w-full max-w-lg space-y-3" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg p-5 w-full max-w-3xl space-y-3" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold">🧹 Wklej jako zwykły tekst</h3>
             <p className="text-xs text-[var(--text-muted)]">
               Wklej tekst poniżej (Ctrl+V) — cały format Worda zostanie odrzucony, każda linia trafi do dokumentu jako zwykły akapit "Normal".
@@ -3019,8 +3042,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               autoFocus
               value={plainPasteText}
               onChange={(e) => setPlainPasteText(e.target.value)}
-              rows={10}
-              className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm font-mono"
+              rows={22}
+              className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm font-mono resize-y"
+              style={{ minHeight: "60vh" }}
               placeholder="Wklej tutaj..."
             />
             <div className="flex justify-end gap-2 pt-1">
