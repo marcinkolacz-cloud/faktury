@@ -100,7 +100,7 @@ export function StockMovementsPanel({ items, movements, projects, actor, onChang
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-[var(--text-primary)]">Ruchy magazynowe</h2>
         {canWrite && (
-          <button onClick={() => setOpen(!open)} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium">
+          <button onClick={() => setOpen(!open)} className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium">
             + Zarejestruj ruch
           </button>
         )}
@@ -144,7 +144,7 @@ export function StockMovementsPanel({ items, movements, projects, actor, onChang
           </div>
           {error && <p className="text-red-600 text-sm">{error}</p>}
           <div className="flex gap-2">
-            <button onClick={submit} disabled={saving} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm disabled:opacity-50">
+            <button onClick={submit} disabled={saving} className="px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-sm disabled:opacity-50">
               {saving ? "Zapisywanie..." : "Zapisz"}
             </button>
             <button onClick={() => setOpen(false)} className="px-3 py-1.5 border border-[var(--border-color)] text-[var(--text-secondary)] rounded text-sm">Anuluj</button>
@@ -152,7 +152,7 @@ export function StockMovementsPanel({ items, movements, projects, actor, onChang
         </div>
       )}
       {selectedMovements.size > 0 && (
-        <div className="flex items-center gap-2 bg-cyan-950/20 border border-cyan-800 rounded p-2 text-sm">
+        <div className="flex items-center gap-2 bg-[var(--accent-text)]/20 border border-[var(--accent-text)] rounded p-2 text-sm">
           <span className="text-[var(--text-primary)]">Zaznaczono: {selectedMovements.size}</span>
           <button onClick={bulkDeleteMovements} className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Usuń</button>
           <button onClick={() => setSelectedMovements(new Set())} className="px-2 py-1 border border-[var(--border-color)] rounded text-xs">Anuluj zaznaczenie</button>

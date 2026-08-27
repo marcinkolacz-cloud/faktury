@@ -14,7 +14,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  open: "bg-cyan-600",
+  open: "bg-[var(--accent)]",
   inProgress: "bg-amber-500",
   waitingForClient: "bg-purple-500",
   closed: "bg-gray-400",
@@ -525,7 +525,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
               {(searchQuery || statusFilter !== "all" || dateFrom || dateTo) && (
                 <button
                   onClick={() => { setSearchQuery(""); setStatusFilter("all"); setDateFrom(""); setDateTo(""); }}
-                  className="text-[10px] text-cyan-600 hover:underline"
+                  className="text-[10px] text-[var(--accent)] hover:underline"
                 >
                   Wyczyść filtry
                 </button>
@@ -547,7 +547,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                       await actor.markTicketSeen(t.id);
                       loadSeenCounts();
                     }}
-                    className={"w-full text-left p-3 border-b border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (selected?.id === t.id ? "bg-cyan-500/10" : "")}
+                    className={"w-full text-left p-3 border-b border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (selected?.id === t.id ? "bg-[var(--accent-hover)]/10" : "")}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-sm text-[var(--text-primary)] truncate flex items-center gap-1.5">
@@ -597,7 +597,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                     <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
                       Zgłoszenie #{String(selected.id)} · Utworzone: {formatDate(selected.createdAt)}
                     </p>
-                    <div className="mt-2 flex items-center gap-2 bg-cyan-950/10 border border-cyan-800/30 rounded px-2 py-1.5">
+                    <div className="mt-2 flex items-center gap-2 bg-[var(--accent-text)]/10 border border-[var(--accent-text)]/30 rounded px-2 py-1.5">
                       <span className="text-[11px] text-[var(--text-muted)] shrink-0">Token śledzenia klienta:</span>
                       {loadingToken ? (
                         <span className="text-[11px] text-[var(--text-muted)]">...</span>
@@ -606,7 +606,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                           <span className="font-mono text-xs font-semibold text-[var(--text-primary)] select-all">{trackingToken}</span>
                           <button
                             onClick={() => navigator.clipboard.writeText(trackingToken)}
-                            className="text-[10px] text-cyan-600 hover:underline shrink-0 ml-auto"
+                            className="text-[10px] text-[var(--accent)] hover:underline shrink-0 ml-auto"
                           >
                             Kopiuj
                           </button>
@@ -683,7 +683,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                               <button
                                 onClick={createEventForTicket}
                                 disabled={linkingEvent || !eventStartDate}
-                                className={"text-[11px] px-2 py-1 rounded text-white disabled:opacity-40 " + (conflictingEvents.length > 0 ? "bg-amber-600 hover:bg-amber-500" : "bg-cyan-600 hover:bg-cyan-500")}
+                                className={"text-[11px] px-2 py-1 rounded text-white disabled:opacity-40 " + (conflictingEvents.length > 0 ? "bg-amber-600 hover:bg-amber-500" : "bg-[var(--accent)] hover:bg-[var(--accent-hover)]")}
                               >
                                 {conflictingEvents.length > 0 ? "Utwórz mimo kolizji" : "Utwórz wydarzenie"}
                               </button>
@@ -701,7 +701,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                                 <option key={String(e.id)} value={String(e.id)}>{e.title}</option>
                               ))}
                             </select>
-                            <button onClick={() => linkExistingEvent(selectedEventToLink)} disabled={!selectedEventToLink} className="text-[10px] text-cyan-600 hover:underline disabled:opacity-40">Połącz</button>
+                            <button onClick={() => linkExistingEvent(selectedEventToLink)} disabled={!selectedEventToLink} className="text-[10px] text-[var(--accent)] hover:underline disabled:opacity-40">Połącz</button>
                           </>
                         )}
                       </>
@@ -724,7 +724,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                       <>
                         <button
                           onClick={() => toggleArchive(selected.id, false)}
-                          className="text-xs text-cyan-600 hover:underline"
+                          className="text-xs text-[var(--accent)] hover:underline"
                         >
                           ↩ Przywróć z archiwum
                         </button>
@@ -752,7 +752,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                       <p className="text-[10px] font-medium text-[var(--text-muted)]">Załączniki:</p>
                       {attachments.map((a) => (
                         <div key={(a.kind === "drive" ? "d" : "l") + String(a.id)} className="flex items-center gap-2 text-xs">
-                          <button onClick={() => downloadAttachment(a)} className="text-cyan-600 hover:underline">
+                          <button onClick={() => downloadAttachment(a)} className="text-[var(--accent)] hover:underline">
                             📎 {a.name}{a.kind === "legacy" ? " (" + (Number(a.size) / 1024).toFixed(0) + " KB)" : ""}
                           </button>
                           <span className="text-[10px] text-[var(--text-muted)]">— {a.uploadedBy}</span>
@@ -775,19 +775,19 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                         disabled={uploadingAttachment}
                         className="text-xs text-[var(--text-secondary)]"
                       />
-                      {uploadingAttachment && <p className="text-[10px] text-cyan-600 mt-1">Wysyłanie...</p>}
+                      {uploadingAttachment && <p className="text-[10px] text-[var(--accent)] mt-1">Wysyłanie...</p>}
                     </div>
                   )}
-                  <button onClick={translateDescription} disabled={translatingDescription} className="text-xs text-cyan-600 hover:underline disabled:opacity-50">
+                  <button onClick={translateDescription} disabled={translatingDescription} className="text-xs text-[var(--accent)] hover:underline disabled:opacity-50">
                     {translatingDescription ? "Tłumaczenie..." : "Przetłumacz na polski"}
                   </button>
                   {translatedDescription && (
-                    <p className="text-sm text-[var(--text-primary)] bg-cyan-950/10 border border-cyan-800/30 rounded p-2">{translatedDescription}</p>
+                    <p className="text-sm text-[var(--text-primary)] bg-[var(--accent-text)]/10 border border-[var(--accent-text)]/30 rounded p-2">{translatedDescription}</p>
                   )}
                 </div>
                 <div className="space-y-2">
                   {selected.replies.map((r: any, idx: number) => (
-                    <div key={idx} className={"text-sm rounded p-2 " + (r.isInternal ? "bg-amber-500/10 border border-amber-800/30" : "bg-cyan-500/10")}>
+                    <div key={idx} className={"text-sm rounded p-2 " + (r.isInternal ? "bg-amber-500/10 border border-amber-800/30" : "bg-[var(--accent-hover)]/10")}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5">
                           <p className="font-medium text-[var(--text-primary)]">{r.author}</p>
@@ -860,18 +860,18 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                     <div className="flex items-center gap-2">
                       <button
                         onClick={sendReply}
-                        className={"px-3 py-1.5 text-white rounded text-sm " + (isInternalNote ? "bg-amber-600 hover:bg-amber-500" : "bg-cyan-600 hover:bg-cyan-500")}
+                        className={"px-3 py-1.5 text-white rounded text-sm " + (isInternalNote ? "bg-amber-600 hover:bg-amber-500" : "bg-[var(--accent)] hover:bg-[var(--accent-hover)]")}
                       >
                         {isInternalNote ? "Zapisz notatkę" : "Wyślij odpowiedź klientowi"}
                       </button>
-                      <button onClick={translateReply} disabled={translatingReply || !replyText.trim()} className="text-xs text-cyan-600 hover:underline disabled:opacity-50">
+                      <button onClick={translateReply} disabled={translatingReply || !replyText.trim()} className="text-xs text-[var(--accent)] hover:underline disabled:opacity-50">
                         {translatingReply ? "Tłumaczenie..." : "Przetłumacz na angielski"}
                       </button>
                     </div>
                     {translatedReply && (
-                      <div className="text-sm bg-cyan-950/10 border border-cyan-800/30 rounded p-2 space-y-1">
+                      <div className="text-sm bg-[var(--accent-text)]/10 border border-[var(--accent-text)]/30 rounded p-2 space-y-1">
                         <p className="text-[var(--text-primary)]">{translatedReply}</p>
-                        <button onClick={() => { setReplyText(translatedReply); setTranslatedReply(""); }} className="text-xs text-cyan-600 hover:underline">
+                        <button onClick={() => { setReplyText(translatedReply); setTranslatedReply(""); }} className="text-xs text-[var(--accent)] hover:underline">
                           Użyj tego tłumaczenia zamiast oryginału
                         </button>
                       </div>

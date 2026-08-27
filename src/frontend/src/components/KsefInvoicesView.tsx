@@ -522,12 +522,12 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
           <p className="text-xs text-[var(--text-muted)]">Wklej token KSeF wygenerowany w portalu MCU (mcu.mf.gov.pl/web) oraz NIP firmy.</p>
           <input value={nipInput} onChange={(e) => setNipInput(e.target.value)} placeholder="NIP (np. 7282842652)" className="w-full text-sm border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5" />
           <textarea value={ksefTokenInput} onChange={(e) => setKsefTokenInput(e.target.value)} placeholder="Token KSeF" rows={2} className="w-full text-sm border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-2 py-1.5 font-mono" />
-          <button onClick={saveToken} disabled={!ksefTokenInput.trim() || !nipInput.trim()} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50">Zapisz</button>
+          <button onClick={saveToken} disabled={!ksefTokenInput.trim() || !nipInput.trim()} className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded disabled:opacity-50">Zapisz</button>
         </div>
       ) : (
         <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
           <span>✅ Skonfigurowano (NIP: {configuredNip})</span>
-          <button onClick={testConnection} disabled={testing} className="text-cyan-600 hover:underline">{testing ? "Sprawdzam..." : "Testuj połączenie"}</button>
+          <button onClick={testConnection} disabled={testing} className="text-[var(--accent)] hover:underline">{testing ? "Sprawdzam..." : "Testuj połączenie"}</button>
           <button onClick={() => setConfigured(false)} className="text-[var(--text-secondary)] hover:underline">Zmień token</button>
           {testResult && <span>{testResult}</span>}
         </div>
@@ -539,7 +539,7 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
             <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm" />
             <span className="text-xs text-[var(--text-muted)]">do</span>
             <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-2 py-1.5 text-sm" />
-            <button onClick={fetchInvoices} disabled={fetching} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50">
+            <button onClick={fetchInvoices} disabled={fetching} className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded disabled:opacity-50">
               {fetching ? "Pobieram..." : "Pobierz nowe faktury"}
             </button>
             <button onClick={() => setShowManualForm((v) => !v)} className="px-3 py-1.5 text-sm border border-[var(--border-color)] text-[var(--text-secondary)] rounded hover:bg-[var(--bg-hover)]">
@@ -574,7 +574,7 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
                 <button onClick={() => removeManualItemRow(idx)} className="text-red-500 hover:text-red-400 text-sm">✕</button>
               </div>
             ))}
-            <button onClick={addManualItemRow} className="text-xs text-cyan-600 hover:underline">+ Dodaj pozycję</button>
+            <button onClick={addManualItemRow} className="text-xs text-[var(--accent)] hover:underline">+ Dodaj pozycję</button>
           </div>
 
           <div>
@@ -582,7 +582,7 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
             <input type="file" onChange={(e) => setManualFile(e.target.files?.[0] || null)} className="text-xs" />
           </div>
 
-          <button onClick={saveManualInvoice} disabled={manualSaving} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50">
+          <button onClick={saveManualInvoice} disabled={manualSaving} className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded disabled:opacity-50">
             {manualSaving ? "Zapisuję..." : "Zapisz fakturę"}
           </button>
         </div>
@@ -595,10 +595,10 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
         ) : (
           <>
           {selected.size > 0 && (
-            <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-800 rounded p-2 text-xs">
+            <div className="flex items-center gap-2 bg-[var(--accent-hover)]/10 border border-[var(--accent-text)] rounded p-2 text-xs">
               <span>Zaznaczono: {selected.size}</span>
               <button onClick={bulkShare} disabled={bulkProcessing} className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded disabled:opacity-50">Udostępnij</button>
-              <button onClick={bulkAddToWarehouse} disabled={bulkProcessing} className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50">
+              <button onClick={bulkAddToWarehouse} disabled={bulkProcessing} className="px-2 py-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded disabled:opacity-50">
                 {bulkProcessing ? "Przetwarzam..." : "Do magazynu"}
               </button>
               <button onClick={bulkReject} disabled={bulkProcessing} className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded disabled:opacity-50">Odrzuć</button>
@@ -660,14 +660,14 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
                       </button>
                       <button onClick={() => showReadableInvoice(inv.ksefNumber)} className="text-[var(--text-secondary)] hover:underline mr-2">📄 Podgląd</button>
                       {Object.keys(inv.status)[0] === "pending" && (
-                        <button onClick={() => addToWarehouse(inv.ksefNumber)} disabled={addingToWarehouse === inv.ksefNumber} className="text-cyan-600 hover:underline mr-2 disabled:opacity-50">
+                        <button onClick={() => addToWarehouse(inv.ksefNumber)} disabled={addingToWarehouse === inv.ksefNumber} className="text-[var(--accent)] hover:underline mr-2 disabled:opacity-50">
                           {addingToWarehouse === inv.ksefNumber ? "Przetwarzam..." : "➡️ Do magazynu"}
                         </button>
                       )}
                       {registryStatus[inv.ksefNumber] !== undefined ? (
                         <span className="text-emerald-600 mr-2">✅ W rejestrze faktur</span>
                       ) : Object.keys(inv.status)[0] === "pending" ? (
-                        <button onClick={() => openRegistryModal(inv.ksefNumber, inv.sellerName)} className="text-cyan-600 hover:underline mr-2">
+                        <button onClick={() => openRegistryModal(inv.ksefNumber, inv.sellerName)} className="text-[var(--accent)] hover:underline mr-2">
                           📋 Do rejestru faktur
                         </button>
                       ) : null}
@@ -741,7 +741,7 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
                     {status === "addedToWarehouse" ? "✅ Dodano do magazynu" : "🗑️ Odrzucono"}
                   </span>
                   {status === "rejected" && (
-                    <button onClick={() => restoreRejected(inv.ksefNumber)} className="text-cyan-600 hover:underline">Przywróć</button>
+                    <button onClick={() => restoreRejected(inv.ksefNumber)} className="text-[var(--accent)] hover:underline">Przywróć</button>
                   )}
                   <button onClick={() => permanentlyDelete(inv.ksefNumber)} className="text-red-500 hover:underline">Usuń trwale</button>
                 </div>
@@ -757,7 +757,7 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
             <div className="flex items-center justify-between p-3 border-b sticky top-0 bg-white">
               <span className="font-medium text-sm text-gray-800">Podgląd faktury</span>
               <div className="flex items-center gap-2">
-                <button onClick={() => printInvoiceHtml(readableHtml || "")} className="text-cyan-600 hover:underline text-sm">🖨️ Zapisz jako / Drukuj</button>
+                <button onClick={() => printInvoiceHtml(readableHtml || "")} className="text-[var(--accent)] hover:underline text-sm">🖨️ Zapisz jako / Drukuj</button>
                 <button onClick={() => setReadableHtml(null)} className="text-gray-600 hover:text-gray-900 text-xl leading-none px-2">✕</button>
               </div>
             </div>
@@ -823,7 +823,7 @@ export function KsefInvoicesView({ actor }: { actor: any }) {
               <button
                 onClick={saveToRegistry}
                 disabled={registrySaving || !registryProjectId || !registryPaidBy.trim()}
-                className="px-3 py-1.5 text-sm rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white"
+                className="px-3 py-1.5 text-sm rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-white"
               >
                 {registrySaving ? "Zapisuję…" : "Dodaj do rejestru"}
               </button>

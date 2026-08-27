@@ -35,7 +35,7 @@ export function ProjectsBar({ projects, expenses, actor, onChange, filterProject
       <div className="space-y-1 max-h-40 overflow-auto">
         <button
           onClick={() => setFilterProject(null)}
-          className={"w-full text-left px-2 py-1 rounded text-sm " + (filterProject === null ? "bg-cyan-50 text-cyan-700" : "text-gray-500 hover:bg-[var(--bg-page)]")}
+          className={"w-full text-left px-2 py-1 rounded text-sm " + (filterProject === null ? "bg-[var(--accent-light)] text-[var(--accent-hover)]" : "text-gray-500 hover:bg-[var(--bg-page)]")}
         >
           Wszystkie
         </button>
@@ -43,7 +43,7 @@ export function ProjectsBar({ projects, expenses, actor, onChange, filterProject
           <button
             key={String(p.id)}
             onClick={() => setFilterProject(p.name)}
-            className={"w-full text-left px-2 py-1 rounded text-sm flex justify-between " + (filterProject === p.name ? "bg-cyan-50 text-cyan-700" : "text-gray-500 hover:bg-[var(--bg-page)]")}
+            className={"w-full text-left px-2 py-1 rounded text-sm flex justify-between " + (filterProject === p.name ? "bg-[var(--accent-light)] text-[var(--accent-hover)]" : "text-gray-500 hover:bg-[var(--bg-page)]")}
           >
             <span>{p.name}</span>
             <span className="font-mono">{spentByProject(p.id).toFixed(2)}</span>

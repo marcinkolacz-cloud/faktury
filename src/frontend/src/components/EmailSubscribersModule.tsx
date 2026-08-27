@@ -133,7 +133,7 @@ export function EmailSubscribersModule({ onHome, onNavigate, currentModule }: { 
               </button>
               <button
                 onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(true); }}
-                className="px-3 py-1.5 text-sm rounded font-medium bg-cyan-600 text-white hover:bg-cyan-700"
+                className="px-3 py-1.5 text-sm rounded font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
               >
                 Dodaj adres
               </button>
@@ -166,7 +166,7 @@ export function EmailSubscribersModule({ onHome, onNavigate, currentModule }: { 
                   </label>
                   {canWrite && (
                     <>
-                      <button onClick={() => startEdit(s)} className="text-xs text-cyan-500 hover:underline">Edytuj</button>
+                      <button onClick={() => startEdit(s)} className="text-xs text-[var(--accent-hover)] hover:underline">Edytuj</button>
                       <button onClick={() => removeSubscriber(s.id)} className="text-xs text-red-500 hover:underline">Usuń</button>
                     </>
                   )}
@@ -207,7 +207,7 @@ export function EmailSubscribersModule({ onHome, onNavigate, currentModule }: { 
               <button onClick={() => { setShowForm(false); setEditingId(null); }} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] text-[var(--text-secondary)]">
                 Anuluj
               </button>
-              <button onClick={submitForm} className="px-3 py-1.5 text-sm rounded bg-cyan-600 text-white hover:bg-cyan-700">
+              <button onClick={submitForm} className="px-3 py-1.5 text-sm rounded bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]">
                 Zapisz
               </button>
             </div>

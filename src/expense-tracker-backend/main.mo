@@ -102,6 +102,10 @@ persistent actor {
   let docHeaderFooterSettings = Map.empty<Text, Types.DocHeaderFooterSettings>();
   let deviceManualVariables = Map.empty<Nat, [Types.ManualVariable]>();
   let deviceManualChapterBackupEnabled = Map.empty<Nat, Bool>();
+  // Kosz dla usuniętych kopii on-chain (Usuń kopię w UI): trzyma ostatnią
+  // treść backupu + czas usunięcia, żeby admin mógł ją odzyskać zamiast
+  // trwałego kasowania od razu.
+  let deviceManualChapterBackupTrash = Map.empty<Nat, (Text, Int)>();
   // "Książki" — poziom pomiędzy urządzeniem a rozdziałem: jedno urządzenie
   // może mieć kilka oddzielnych podręczników, każdy z własnymi rozdziałami,
   // zmiennymi referencyjnymi i ustawieniami nagłówka/stopki — nic nie jest
@@ -258,7 +262,7 @@ persistent actor {
   include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
-  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, deviceManualVariables, deviceManualChapterBackupEnabled, docFolders, accessRoles, moduleAccess, documentBooks, chapterBookId, bookManualVariables, bookHeaderFooterSettings);
+  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, deviceManualVariables, deviceManualChapterBackupEnabled, deviceManualChapterBackupTrash, docFolders, accessRoles, moduleAccess, documentBooks, chapterBookId, bookManualVariables, bookHeaderFooterSettings);
   include LogbookApi(logbookEntries, logbookEntriesTrashed, logbookEntrySignatures, logbookEntryDeviceId, logbookEntryLinkedTicket, devices, logbookInstructorPinHash, logbookInstructorSalt, logbookInstructorName, logbookInstructorActive, logbookInstructorCreatedAt, logbookSessions, logbookLoginAttempts, recentLogbookSubmissions, accessRoles, moduleAccess, tickets, ticketTokens, ticketExtras, recentSubmissionTimes);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 

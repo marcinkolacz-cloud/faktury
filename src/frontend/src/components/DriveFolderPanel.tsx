@@ -92,7 +92,7 @@ export function DriveFolderPanel({ path, basePath, defaultName, canWrite, onLink
         <p className="text-[10px] font-medium text-[var(--text-muted)]">Dokumenty (Bartolini Drive)</p>
         {canWrite ? (
           <div className="space-y-1.5">
-            <button onClick={createFolder} disabled={creating} className="text-xs text-cyan-600 hover:underline disabled:opacity-50">
+            <button onClick={createFolder} disabled={creating} className="text-xs text-[var(--accent)] hover:underline disabled:opacity-50">
               {creating ? "Tworzenie..." : "📁 Utwórz folder na dokumenty"}
             </button>
             <div className="flex gap-2 items-center">
@@ -102,7 +102,7 @@ export function DriveFolderPanel({ path, basePath, defaultName, canWrite, onLink
                 placeholder="lub wklej istniejącą ścieżkę np. Zamowienia/Nazwa"
                 className="flex-1 border border-[var(--border-color)] rounded px-2 py-1 text-[10px]"
               />
-              <button onClick={linkManual} disabled={linking || !manualPath.trim()} className="text-[10px] text-cyan-600 hover:underline disabled:opacity-40">
+              <button onClick={linkManual} disabled={linking || !manualPath.trim()} className="text-[10px] text-[var(--accent)] hover:underline disabled:opacity-40">
                 Połącz
               </button>
             </div>
@@ -132,14 +132,14 @@ export function DriveFolderPanel({ path, basePath, defaultName, canWrite, onLink
             <li key={it.id} className="text-xs flex items-center justify-between">
               <span className="text-[var(--text-secondary)] truncate">{it.isFolder ? "📁" : "📄"} {it.name}</span>
               {!it.isFolder && (
-                <button onClick={() => openFile(it.id)} className="text-cyan-600 hover:underline shrink-0 ml-2">Otwórz</button>
+                <button onClick={() => openFile(it.id)} className="text-[var(--accent)] hover:underline shrink-0 ml-2">Otwórz</button>
               )}
             </li>
           ))}
         </ul>
       )}
       {canWrite && (
-        <label className="text-xs text-cyan-600 hover:underline cursor-pointer inline-block">
+        <label className="text-xs text-[var(--accent)] hover:underline cursor-pointer inline-block">
           {uploading ? "Wgrywanie..." : "+ Dodaj plik"}
           <input
             type="file"

@@ -81,10 +81,18 @@ function AccessGate({ children }: { children: React.ReactNode }) {
         className="flex min-h-screen items-center justify-center bg-cover bg-center"
         style={{ backgroundImage: "url(/login-background.png)" }}
       >
-        <div className="space-y-3 w-80 bg-white/95 backdrop-blur border border-gray-200 rounded-lg p-6 shadow-lg">
-          <h1 onClick={handleSecretTap} className="text-lg font-semibold text-gray-900 select-none cursor-pointer">Zaloguj się</h1>
+        <div className="space-y-3 w-80 bg-white/95 backdrop-blur border border-gray-200 rounded-2xl p-6 shadow-xl">
+          <div className="flex flex-col items-center gap-2 mb-1 text-center">
+            <div className="w-11 h-11 rounded-xl bg-[#6d5cfc] flex items-center justify-center text-white text-lg shrink-0">🧾</div>
+            <div>
+              <h1 onClick={handleSecretTap} className="text-2xl font-bold text-gray-900 select-none cursor-pointer leading-tight tracking-tight">
+                Open<span className="text-[#6d5cfc]">SaaS</span>
+              </h1>
+              <p className="text-xs text-gray-500 leading-tight mt-0.5">Bartolini Air Simulation</p>
+            </div>
+          </div>
           {unlocked && (
-            <button onClick={login} className="w-full px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-md font-medium transition-colors">
+            <button onClick={login} className="w-full px-5 py-2.5 bg-[#6d5cfc] hover:bg-[#5b4bf0] text-white rounded-lg font-medium transition-colors">
               Zaloguj się przez Internet Identity
             </button>
           )}
@@ -118,7 +126,7 @@ function AccessGate({ children }: { children: React.ReactNode }) {
   if (!granted) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="space-y-3 w-80 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+        <div className="space-y-3 w-80 bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
           <p className="text-gray-700 text-sm">Wprowadź kod zaproszenia</p>
           <input
             value={code}
@@ -132,7 +140,7 @@ function AccessGate({ children }: { children: React.ReactNode }) {
               const ok = await actor.checkAccess(code);
               if (ok) { setGranted(true); } else { setError("Nieprawidłowy kod"); }
             }}
-            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded w-full font-medium"
+            className="px-4 py-2 bg-[#6d5cfc] hover:bg-[#5b4bf0] text-white rounded-lg w-full font-medium"
           >
             Aktywuj dostęp
           </button>

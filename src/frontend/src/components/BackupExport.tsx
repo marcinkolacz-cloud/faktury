@@ -296,7 +296,7 @@ export function BackupExport({ actor }: { actor: any }) {
       <button
         onClick={runExport}
         disabled={running}
-        className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50"
+        className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium disabled:opacity-50"
       >
         {running ? "Eksportuję..." : "📦 Eksportuj kopię zapasową (JSON)"}
       </button>

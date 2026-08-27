@@ -192,7 +192,7 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
               {canWrite && (
                 <button
                   onClick={() => { setForm(emptyForm); setSelected(null); setShowForm(true); }}
-                  className="w-full text-xs bg-cyan-600 hover:bg-cyan-500 text-white rounded px-2 py-1.5"
+                  className="w-full text-xs bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded px-2 py-1.5"
                 >
                   + Nowe zamówienie
                 </button>
@@ -206,7 +206,7 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
                   <button
                     key={String(o.id)}
                     onClick={() => { setSelected(o); setShowForm(false); }}
-                    className={"w-full text-left p-3 border-b border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (selected?.id === o.id && !showForm ? "bg-cyan-500/10" : "")}
+                    className={"w-full text-left p-3 border-b border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (selected?.id === o.id && !showForm ? "bg-[var(--accent-hover)]/10" : "")}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-sm text-[var(--text-primary)] truncate">{o.name}</p>
@@ -277,14 +277,14 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
                   </div>
                   <input value={externalEmail} onChange={(e) => setExternalEmail(e.target.value)} placeholder="Adres zewnętrzny (opcjonalnie)" className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
                   <div className="flex items-center gap-2">
-                    <button type="button" onClick={sendOrderEmail} disabled={sendingEmail} className="px-3 py-1.5 border border-cyan-600 text-cyan-600 hover:bg-cyan-50 rounded text-sm disabled:opacity-50">
+                    <button type="button" onClick={sendOrderEmail} disabled={sendingEmail} className="px-3 py-1.5 border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-light)] rounded text-sm disabled:opacity-50">
                       {sendingEmail ? "Wysyłanie..." : "Wyślij email"}
                     </button>
                     {emailResult && <span className="text-xs text-[var(--text-muted)]">{emailResult}</span>}
                   </div>
                 </div>
                 <div className="flex gap-2 pt-2">
-                  <button onClick={submitForm} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm">Zapisz</button>
+                  <button onClick={submitForm} className="px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-sm">Zapisz</button>
                   <button onClick={() => { setShowForm(false); setSelected(null); }} className="px-3 py-1.5 border border-[var(--border-color)] rounded text-sm">Anuluj</button>
                 </div>
               </div>
@@ -327,9 +327,9 @@ export function OrdersModule({ onHome, onNavigate, currentModule }: { onHome: ()
                 />
                 {canWrite && (
                   <div className="flex justify-between items-center pt-2">
-                    <button onClick={() => onNavigate("warehouse")} className="text-xs text-cyan-600 hover:underline">→ Przejdź do Magazynu, aby dodać dostawę</button>
+                    <button onClick={() => onNavigate("warehouse")} className="text-xs text-[var(--accent)] hover:underline">→ Przejdź do Magazynu, aby dodać dostawę</button>
                     <div className="flex gap-3">
-                      <button onClick={() => startEdit(selected)} className="text-xs text-cyan-600 hover:underline">Edytuj</button>
+                      <button onClick={() => startEdit(selected)} className="text-xs text-[var(--accent)] hover:underline">Edytuj</button>
                       <button onClick={trashSelected} className="text-xs text-red-500 hover:underline">Usuń</button>
                     </div>
                   </div>

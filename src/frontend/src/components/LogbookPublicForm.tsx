@@ -720,8 +720,8 @@ export function LogbookPublicForm() {
 
   const LangToggle = () => (
     <div className="flex border border-[var(--border-color)] rounded overflow-hidden text-xs">
-      <button onClick={() => setLang("pl")} className={"px-2 py-0.5 " + (lang === "pl" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}>PL</button>
-      <button onClick={() => setLang("en")} className={"px-2 py-0.5 " + (lang === "en" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}>EN</button>
+      <button onClick={() => setLang("pl")} className={"px-2 py-0.5 " + (lang === "pl" ? "bg-[var(--accent)] text-white" : "text-[var(--text-muted)]")}>PL</button>
+      <button onClick={() => setLang("en")} className={"px-2 py-0.5 " + (lang === "en" ? "bg-[var(--accent)] text-white" : "text-[var(--text-muted)]")}>EN</button>
     </div>
   );
 
@@ -752,18 +752,18 @@ export function LogbookPublicForm() {
           />
           <input value={loginHoneypot} onChange={(e) => setLoginHoneypot(e.target.value)} className="absolute opacity-0 pointer-events-none -z-10" tabIndex={-1} autoComplete="off" aria-hidden="true" />
           {loginError && <p className="text-red-600 text-sm">{loginError}</p>}
-          <button onClick={login} disabled={loggingIn} className="w-full px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50">
+          <button onClick={login} disabled={loggingIn} className="w-full px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium disabled:opacity-50">
             {loggingIn ? t.loggingIn : t.loginBtn}
           </button>
           {!forgotMode && (
-            <button onClick={() => { setForgotMode(true); setForgotStatus(""); }} className="w-full text-xs text-cyan-600 hover:underline">
+            <button onClick={() => { setForgotMode(true); setForgotStatus(""); }} className="w-full text-xs text-[var(--accent)] hover:underline">
               Nie pamiętam PIN-u
             </button>
           )}
           {forgotMode && (
             <div className="space-y-2 border-t border-[var(--border-color)] pt-3">
               <p className="text-xs text-[var(--text-muted)]">Podaj swój zarejestrowany adres e-mail powyżej i kliknij poniżej — wyślemy nowy PIN.</p>
-              <button onClick={requestPinReset} disabled={forgotLoading} className="w-full px-4 py-2 border border-cyan-600 text-cyan-600 rounded font-medium disabled:opacity-50">
+              <button onClick={requestPinReset} disabled={forgotLoading} className="w-full px-4 py-2 border border-[var(--accent)] text-[var(--accent)] rounded font-medium disabled:opacity-50">
                 {forgotLoading ? "Wysyłanie..." : "Wyślij nowy PIN na maila"}
               </button>
               {forgotStatus && <p className="text-xs text-[var(--text-secondary)] text-center">{forgotStatus}</p>}
@@ -785,7 +785,7 @@ export function LogbookPublicForm() {
             <span className="text-xs text-[var(--text-muted)]">{instructorEmail}</span>
             <LangToggle />
             <ThemeToggle />
-            <button onClick={logout} className="text-xs text-cyan-600 hover:underline">{t.logout}</button>
+            <button onClick={logout} className="text-xs text-[var(--accent)] hover:underline">{t.logout}</button>
           </div>
         </div>
         <h1 className="text-center text-base font-bold text-[var(--text-primary)] tracking-wide">
@@ -795,13 +795,13 @@ export function LogbookPublicForm() {
         <div className="flex gap-2 border-b border-[var(--border-color)]">
           <button
             onClick={() => setView("form")}
-            className={"px-3 py-1.5 text-sm " + (view === "form" ? "border-b-2 border-cyan-600 text-cyan-600 font-medium" : "text-[var(--text-muted)]")}
+            className={"px-3 py-1.5 text-sm " + (view === "form" ? "border-b-2 border-[var(--accent)] text-[var(--accent)] font-medium" : "text-[var(--text-muted)]")}
           >
             {t.tabNew}
           </button>
           <button
             onClick={() => setView("history")}
-            className={"px-3 py-1.5 text-sm " + (view === "history" ? "border-b-2 border-cyan-600 text-cyan-600 font-medium" : "text-[var(--text-muted)]")}
+            className={"px-3 py-1.5 text-sm " + (view === "history" ? "border-b-2 border-[var(--accent)] text-[var(--accent)] font-medium" : "text-[var(--text-muted)]")}
           >
             {t.tabHistory}
           </button>
@@ -814,8 +814,8 @@ export function LogbookPublicForm() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-[var(--text-secondary)]">{t.devicesFilterLabel}</span>
                   <div className="flex gap-2">
-                    <button onClick={() => setSelectedDevices(new Set(historyDevices))} className="text-[11px] text-cyan-600 hover:underline">{t.selectAllDevices}</button>
-                    <button onClick={() => setSelectedDevices(new Set())} className="text-[11px] text-cyan-600 hover:underline">{t.clearAllDevices}</button>
+                    <button onClick={() => setSelectedDevices(new Set(historyDevices))} className="text-[11px] text-[var(--accent)] hover:underline">{t.selectAllDevices}</button>
+                    <button onClick={() => setSelectedDevices(new Set())} className="text-[11px] text-[var(--accent)] hover:underline">{t.clearAllDevices}</button>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -841,7 +841,7 @@ export function LogbookPublicForm() {
                 <input type="date" value={historyTo} onChange={(e) => setHistoryTo(e.target.value)} className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm bg-[var(--bg-page)] text-[var(--text-primary)]" />
               </label>
               {(historyFrom || historyTo) && (
-                <button onClick={() => { setHistoryFrom(""); setHistoryTo(""); }} className="text-xs text-cyan-600 hover:underline mb-1.5">
+                <button onClick={() => { setHistoryFrom(""); setHistoryTo(""); }} className="text-xs text-[var(--accent)] hover:underline mb-1.5">
                   {t.clearFilters}
                 </button>
               )}
@@ -884,7 +884,7 @@ export function LogbookPublicForm() {
                         </td>
                         <td className="py-2 pr-3 whitespace-nowrap">
                           {editable ? (
-                            <button onClick={() => startEdit(e)} className="text-xs px-2 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white">
+                            <button onClick={() => startEdit(e)} className="text-xs px-2 py-1 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
                               {t.editBtn}
                             </button>
                           ) : linkedTicket !== null || correctionSentId === id ? (
@@ -897,10 +897,10 @@ export function LogbookPublicForm() {
                         </td>
                       </tr>
                       {isEditingRow && editDraft && (
-                        <tr className="border-b border-[var(--border-color)] bg-cyan-500/5">
+                        <tr className="border-b border-[var(--border-color)] bg-[var(--accent-hover)]/5">
                           <td colSpan={8} className="p-3">
-                            <div className="rounded-md border border-cyan-500/40 bg-[var(--bg-card)] p-3 space-y-2">
-                              <p className="text-xs font-semibold text-cyan-700 dark:text-cyan-400">{t.editPanelTitle}</p>
+                            <div className="rounded-md border border-[var(--accent-hover)]/40 bg-[var(--bg-card)] p-3 space-y-2">
+                              <p className="text-xs font-semibold text-[var(--accent-hover)] dark:text-[var(--accent-text)]">{t.editPanelTitle}</p>
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                 <label className="text-xs text-[var(--text-muted)]">{t.fieldDate}
                                   <input type="date" value={editDraft.dataText} onChange={(ev) => setEditDraft({ ...editDraft, dataText: ev.target.value })} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm mt-0.5 bg-[var(--bg-page)] text-[var(--text-primary)]" />
@@ -935,7 +935,7 @@ export function LogbookPublicForm() {
                               {editError && <p className="text-xs text-red-500">{editError}</p>}
                               <div className="flex justify-end gap-2">
                                 <button onClick={() => { setEditingId(null); setEditDraft(null); }} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] text-[var(--text-secondary)]">{t.cancel}</button>
-                                <button onClick={saveEdit} disabled={editSaving} className="text-xs px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-50">
+                                <button onClick={saveEdit} disabled={editSaving} className="text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white disabled:opacity-50">
                                   {editSaving ? t.saving : t.saveCorrection}
                                 </button>
                               </div>
@@ -975,23 +975,23 @@ export function LogbookPublicForm() {
 
         {view === "form" && (
         <>
-        <div className="border border-cyan-500/30 rounded-lg overflow-hidden">
+        <div className="border border-[var(--accent-hover)]/30 rounded-lg overflow-hidden">
           <button
             type="button"
             onClick={() => setShowHelp((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-left"
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-[var(--accent-hover)]/10 hover:bg-[var(--accent-hover)]/20 text-left"
           >
-            <span className="text-sm font-medium text-cyan-700 dark:text-cyan-400">{t.helpToggle}</span>
-            <span className="text-cyan-600 text-xs shrink-0">{showHelp ? t.collapse : t.expand}</span>
+            <span className="text-sm font-medium text-[var(--accent-hover)] dark:text-[var(--accent-text)]">{t.helpToggle}</span>
+            <span className="text-[var(--accent)] text-xs shrink-0">{showHelp ? t.collapse : t.expand}</span>
           </button>
           {showHelp && (
             <div className="p-3 space-y-2 bg-[var(--bg-card)]">
-              <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
-                <p className="font-semibold text-cyan-700 dark:text-cyan-400 mb-1">{t.help1Title}</p>
+              <div className="rounded-md border border-[var(--accent-hover)]/30 bg-[var(--accent-hover)]/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="font-semibold text-[var(--accent-hover)] dark:text-[var(--accent-text)] mb-1">{t.help1Title}</p>
                 <p>{t.help1Body}</p>
               </div>
-              <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
-                <p className="font-semibold text-cyan-700 dark:text-cyan-400 mb-1">{t.help2Title}</p>
+              <div className="rounded-md border border-[var(--accent-hover)]/30 bg-[var(--accent-hover)]/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="font-semibold text-[var(--accent-hover)] dark:text-[var(--accent-text)] mb-1">{t.help2Title}</p>
                 <p>{t.help2Body}</p>
               </div>
               <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
@@ -1116,7 +1116,7 @@ export function LogbookPublicForm() {
                   placeholder={entry.deviceId ? "np. 2455:50" : t.counterPlaceholderNoDevice}
                   className={cellInput}
                 />
-                <p className="text-[10px] text-cyan-700 mt-0.5">{t.counterHint}</p>
+                <p className="text-[10px] text-[var(--accent-hover)] mt-0.5">{t.counterHint}</p>
               </td>
             </tr>
           </tbody>
@@ -1150,7 +1150,7 @@ export function LogbookPublicForm() {
               <SignaturePad key={sigVersion} onDirtyChange={setSigDirty} padRef={sigRef} />
               <div className="flex justify-between items-center mt-1">
                 <span className="text-[10px] text-gray-400">{t.signatureCaption}</span>
-                <button type="button" onClick={clearSignature} className="text-[11px] text-cyan-600 hover:underline">{t.clearSignatureBtn}</button>
+                <button type="button" onClick={clearSignature} className="text-[11px] text-[var(--accent)] hover:underline">{t.clearSignatureBtn}</button>
               </div>
             </div>
           </div>
@@ -1165,7 +1165,7 @@ export function LogbookPublicForm() {
         <input value={submitHoneypot} onChange={(e) => setSubmitHoneypot(e.target.value)} className="absolute opacity-0 pointer-events-none -z-10" tabIndex={-1} autoComplete="off" aria-hidden="true" />
 
         {submitError && <p className="text-red-600 text-sm">{submitError}</p>}
-        <button onClick={submitEntry} disabled={submitting} className="w-full px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-semibold disabled:opacity-50">
+        <button onClick={submitEntry} disabled={submitting} className="w-full px-4 py-2.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-semibold disabled:opacity-50">
           {submitting ? t.submitting : t.submitBtn}
         </button>
         </>

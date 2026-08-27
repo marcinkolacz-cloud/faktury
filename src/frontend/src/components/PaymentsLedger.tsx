@@ -46,7 +46,7 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-[var(--text-primary)]">Rejestr wpłat (zaliczki)</h2>
         {canWrite && (
-          <button onClick={() => setOpen(!open)} className="px-3 py-1 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium">
+          <button onClick={() => setOpen(!open)} className="px-3 py-1 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium">
             + Wpłata
           </button>
         )}
@@ -56,7 +56,7 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-1 rounded text-sm text-[var(--text-primary)]" />
           <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" placeholder="Kwota" className="bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-1 rounded text-sm text-[var(--text-primary)] w-28" />
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Notatka" className="bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-1 rounded text-sm text-[var(--text-primary)] flex-1" />
-          <button onClick={submit} className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm">Dodaj</button>
+          <button onClick={submit} className="px-3 py-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-sm">Dodaj</button>
         </div>
       )}
       <div className="mobile-scroll-table overflow-auto max-h-48 hidden sm:block">
@@ -92,7 +92,7 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
                   <td className="p-1 whitespace-nowrap">
                     {canWrite && (
                       <>
-                        <button onClick={() => startEdit(p)} className="text-cyan-600 text-xs mr-2">Edytuj</button>
+                        <button onClick={() => startEdit(p)} className="text-[var(--accent)] text-xs mr-2">Edytuj</button>
                         <button onClick={() => deletePayment(p.id)} className="text-red-500 text-xs">✕</button>
                       </>
                     )}
@@ -128,7 +128,7 @@ export function PaymentsLedger({ payments, actor, onChange, canWrite }: { paymen
                 {p.note && <p className="text-xs text-gray-500 mt-1">{p.note}</p>}
                 {canWrite && (
                   <div className="flex gap-3 mt-1.5">
-                    <button onClick={() => startEdit(p)} className="text-cyan-600 text-xs">Edytuj</button>
+                    <button onClick={() => startEdit(p)} className="text-[var(--accent)] text-xs">Edytuj</button>
                     <button onClick={() => deletePayment(p.id)} className="text-red-500 text-xs">Usuń</button>
                   </div>
                 )}

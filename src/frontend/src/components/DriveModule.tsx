@@ -343,7 +343,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
       <div className="max-w-[1600px] mx-auto p-6 space-y-6">
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
         <div
-          className={"bg-[var(--bg-card)] border rounded-lg p-4 space-y-3 " + (dragActive ? "border-cyan-500 border-2" : "border-[var(--border-color)]")}
+          className={"bg-[var(--bg-card)] border rounded-lg p-4 space-y-3 " + (dragActive ? "border-[var(--accent-hover)] border-2" : "border-[var(--border-color)]")}
           onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
           onDragLeave={() => setDragActive(false)}
           onDrop={handleDrop}
@@ -352,7 +352,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
             {breadcrumb.map((b, i) => (
               <span key={i} className="flex items-center gap-1">
                 {i > 0 && <span className="text-[var(--text-muted)]">/</span>}
-                <button onClick={() => goToBreadcrumb(i)} className="hover:text-cyan-500 hover:underline">
+                <button onClick={() => goToBreadcrumb(i)} className="hover:text-[var(--accent-hover)] hover:underline">
                   {b.name}
                 </button>
               </span>
@@ -373,7 +373,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
             {canWrite && (
               <>
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
-                <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50">
+                <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium disabled:opacity-50">
                   + Wgraj pliki
                 </button>
                 <input ref={setFolderInputRef} type="file" multiple className="hidden" onChange={handleFolderSelect} />
@@ -389,9 +389,9 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
           {downloadProgress && <p className="text-xs text-[var(--text-muted)]">{downloadProgress}</p>}
           {progress && uploading && <p className="text-xs text-[var(--text-muted)]">{progress}</p>}
           {selected.size > 0 && (
-            <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-800 rounded p-2 text-sm">
+            <div className="flex items-center gap-2 bg-[var(--accent-hover)]/10 border border-[var(--accent-text)] rounded p-2 text-sm">
               <span>Zaznaczono: {selected.size}</span>
-              <button onClick={bulkDownload} className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs">Pobierz (ZIP)</button>
+              <button onClick={bulkDownload} className="px-2 py-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-xs">Pobierz (ZIP)</button>
               <button onClick={bulkDelete} className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Usuń</button>
               <button onClick={clearSelection} className="px-2 py-1 border border-[var(--border-color)] rounded text-xs">Anuluj zaznaczenie</button>
             </div>
@@ -421,7 +421,7 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
                         <td className="p-2 text-right font-mono">{formatSize(f.size)}</td>
                         <td className="p-2 text-[var(--text-secondary)]">{formatDate(f.lastModified)}</td>
                         <td className="p-2 whitespace-nowrap">
-                          <button onClick={() => downloadFile(f)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Pobierz</button>
+                          <button onClick={() => downloadFile(f)} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs mr-2">Pobierz</button>
                           {canWrite && <button onClick={() => removeItem(f)} className="text-red-500 hover:text-red-400 text-xs">✕</button>}
                         </td>
                       </tr>
@@ -493,11 +493,11 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
                       </td>
                       <td className={cell}>
                         {item.isFolder ? (
-                          <button onClick={() => openFolder(item)} className="hover:text-cyan-500 hover:underline flex items-center gap-1">
+                          <button onClick={() => openFolder(item)} className="hover:text-[var(--accent-hover)] hover:underline flex items-center gap-1">
                             📁 {item.name}
                           </button>
                         ) : (
-                          <button onClick={() => (isOfficeFile(item.name) ? editFile(item) : previewFile(item))} className="hover:text-cyan-500 hover:underline flex items-center gap-1">
+                          <button onClick={() => (isOfficeFile(item.name) ? editFile(item) : previewFile(item))} className="hover:text-[var(--accent-hover)] hover:underline flex items-center gap-1">
                             📄 {item.name}
                           </button>
                         )}
@@ -505,9 +505,9 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
                       <td className={cell + " text-right font-mono text-[var(--text-muted)]"}>{item.isFolder ? "—" : formatSize(item.size)}</td>
                       {viewMode !== "compact" && <td className="p-2 text-[var(--text-secondary)]">{formatDate(item.lastModified)}</td>}
                       <td className={cell + " whitespace-nowrap"}>
-                        <button onClick={() => (item.isFolder ? downloadFolder(item) : downloadFile(item))} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Pobierz</button>
-                        {canWrite && !item.isFolder && isOfficeFile(item.name) && <button onClick={() => editFile(item)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Edytuj online</button>}
-                        {canWrite && <button onClick={() => shareItem(item)} className="text-cyan-600 hover:text-cyan-500 text-xs mr-2">Udostępnij</button>}
+                        <button onClick={() => (item.isFolder ? downloadFolder(item) : downloadFile(item))} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs mr-2">Pobierz</button>
+                        {canWrite && !item.isFolder && isOfficeFile(item.name) && <button onClick={() => editFile(item)} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs mr-2">Edytuj online</button>}
+                        {canWrite && <button onClick={() => shareItem(item)} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs mr-2">Udostępnij</button>}
                         {canWrite && viewMode !== "compact" && <button onClick={() => renameItem(item)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs mr-2">Zmień nazwę</button>}
                         {canWrite && viewMode !== "compact" && <button onClick={() => moveItem(item)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs mr-2">Przenieś</button>}
                         <button onClick={() => showDetails(item)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-xs mr-2">Szczegóły</button>
@@ -531,9 +531,9 @@ export function DriveModule({ onHome, onNavigate, currentModule }: { onHome: () 
             className="fixed z-50 bg-[var(--bg-card)] border border-[var(--border-color)] rounded shadow-lg py-1 flex flex-col whitespace-nowrap"
             style={{ left: menuPos.x, top: menuPos.y, transform: "translate(-50%, -100%)" }}
           >
-            <button onClick={() => { setTileMenuId(null); menuItem.isFolder ? downloadFolder(menuItem) : downloadFile(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-cyan-600">Pobierz</button>
-            {canWrite && !menuItem.isFolder && isOfficeFile(menuItem.name) && <button onClick={() => { setTileMenuId(null); editFile(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-cyan-600">Edytuj online</button>}
-            {canWrite && <button onClick={() => { setTileMenuId(null); shareItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-cyan-600">Udostępnij</button>}
+            <button onClick={() => { setTileMenuId(null); menuItem.isFolder ? downloadFolder(menuItem) : downloadFile(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--accent)]">Pobierz</button>
+            {canWrite && !menuItem.isFolder && isOfficeFile(menuItem.name) && <button onClick={() => { setTileMenuId(null); editFile(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--accent)]">Edytuj online</button>}
+            {canWrite && <button onClick={() => { setTileMenuId(null); shareItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--accent)]">Udostępnij</button>}
             {canWrite && <button onClick={() => { setTileMenuId(null); renameItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]">Zmień nazwę</button>}
             {canWrite && <button onClick={() => { setTileMenuId(null); moveItem(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]">Przenieś</button>}
             <button onClick={() => { setTileMenuId(null); showDetails(menuItem); }} className="text-xs text-left px-3 py-1.5 hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]">Szczegóły</button>

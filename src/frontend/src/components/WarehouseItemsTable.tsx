@@ -114,7 +114,7 @@ export function WarehouseItemsTable({ items, categories, projects, movements, ac
         </div>
       )}
       {selected.size > 0 && (
-        <div className="flex items-center gap-2 bg-cyan-950/20 border border-cyan-800 rounded p-2 text-sm">
+        <div className="flex items-center gap-2 bg-[var(--accent-text)]/20 border border-[var(--accent-text)] rounded p-2 text-sm">
           <span className="text-[var(--text-primary)]">Zaznaczono: {selected.size}</span>
           <button onClick={bulkDelete} className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Usuń</button>
           <button onClick={() => setSelected(new Set())} className="px-2 py-1 border border-[var(--border-color)] rounded text-xs">Anuluj zaznaczenie</button>

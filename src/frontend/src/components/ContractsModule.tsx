@@ -114,7 +114,7 @@ export function ContractsModule({ onHome, onNavigate, currentModule }: { onHome:
               <div className="p-2 border-b border-[var(--border-color-light)]">
                 <button
                   onClick={() => { setForm(emptyForm); setSelected(null); setShowForm(true); }}
-                  className="w-full text-xs bg-cyan-600 hover:bg-cyan-500 text-white rounded px-2 py-1.5"
+                  className="w-full text-xs bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded px-2 py-1.5"
                 >
                   + Nowa umowa
                 </button>
@@ -128,7 +128,7 @@ export function ContractsModule({ onHome, onNavigate, currentModule }: { onHome:
                   <button
                     key={String(c.id)}
                     onClick={() => { setSelected(c); setShowForm(false); }}
-                    className={"w-full text-left p-3 border-b border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (selected?.id === c.id && !showForm ? "bg-cyan-500/10" : "")}
+                    className={"w-full text-left p-3 border-b border-[var(--border-color-light)] hover:bg-[var(--bg-page)] " + (selected?.id === c.id && !showForm ? "bg-[var(--accent-hover)]/10" : "")}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-sm text-[var(--text-primary)] truncate">{c.title}</p>
@@ -160,7 +160,7 @@ export function ContractsModule({ onHome, onNavigate, currentModule }: { onHome:
                 <label className="text-xs text-[var(--text-muted)]">Główne założenia</label>
                 <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={5} className="w-full border border-[var(--border-color)] rounded px-2 py-1 text-sm" />
                 <div className="flex gap-2 pt-2">
-                  <button onClick={submitForm} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm">Zapisz</button>
+                  <button onClick={submitForm} className="px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-sm">Zapisz</button>
                   <button onClick={() => { setShowForm(false); setSelected(null); }} className="px-3 py-1.5 border border-[var(--border-color)] rounded text-sm">Anuluj</button>
                 </div>
               </div>
@@ -195,7 +195,7 @@ export function ContractsModule({ onHome, onNavigate, currentModule }: { onHome:
                 />
                 {canWrite && (
                   <div className="flex justify-end gap-3 pt-2">
-                    <button onClick={() => startEdit(selected)} className="text-xs text-cyan-600 hover:underline">Edytuj</button>
+                    <button onClick={() => startEdit(selected)} className="text-xs text-[var(--accent)] hover:underline">Edytuj</button>
                     <button onClick={trashSelected} className="text-xs text-red-500 hover:underline">Usuń</button>
                   </div>
                 )}

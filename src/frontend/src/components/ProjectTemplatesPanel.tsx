@@ -180,10 +180,10 @@ export function ProjectTemplatesPanel({ actor }: { actor: any }) {
           </table>
           {unlocked && (
             <div className="flex gap-2">
-              <button onClick={() => addTask(t.key)} className="text-xs text-cyan-600 hover:underline">
+              <button onClick={() => addTask(t.key)} className="text-xs text-[var(--accent)] hover:underline">
                 + Dodaj czynność
               </button>
-              <button onClick={() => saveTemplate(t)} className="px-2 py-1 text-xs rounded bg-cyan-600 hover:bg-cyan-500 text-white ml-auto">
+              <button onClick={() => saveTemplate(t)} className="px-2 py-1 text-xs rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white ml-auto">
                 Zapisz szablon
               </button>
             </div>
@@ -210,7 +210,7 @@ export function ProjectTemplatesPanel({ actor }: { actor: any }) {
             onChange={(e) => setSchedStart(e.target.value)}
             className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm"
           />
-          <button onClick={generateSchedule} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-medium">
+          <button onClick={generateSchedule} className="px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-sm font-medium">
             Generuj
           </button>
         </div>

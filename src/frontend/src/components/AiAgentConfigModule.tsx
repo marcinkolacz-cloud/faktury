@@ -135,7 +135,7 @@ export function AiAgentConfigModule({ actor, onUnlockedChange }: { actor: any; o
         <div className="flex items-center justify-between flex-wrap gap-2">
           {header}
           <div className="flex gap-3">
-            <button onClick={() => setShowAudit((s) => !s)} className="text-xs text-cyan-600 hover:underline">
+            <button onClick={() => setShowAudit((s) => !s)} className="text-xs text-[var(--accent)] hover:underline">
               {showAudit ? "Ukryj historię zmian" : "Historia zmian"}
             </button>
             <button onClick={lock} className="text-xs text-[var(--text-secondary)] hover:underline">
@@ -221,7 +221,7 @@ export function AiAgentConfigModule({ actor, onUnlockedChange }: { actor: any; o
         <button
           onClick={unlock}
           disabled={unlocking || !passwordInput}
-          className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded text-sm font-medium"
+          className="px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-white rounded text-sm font-medium"
         >
           {unlocking ? "Sprawdzam…" : "Odblokuj"}
         </button>
@@ -242,7 +242,7 @@ function ConfigRow({ field, value, onSave }: { field: Field; value: string; onSa
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium text-[var(--text-primary)]">{field.label}</label>
           {dirty && (
-            <button onClick={() => onSave(local)} className="px-2 py-1 text-xs rounded bg-cyan-600 hover:bg-cyan-500 text-white">
+            <button onClick={() => onSave(local)} className="px-2 py-1 text-xs rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
               Zapisz
             </button>
           )}
@@ -272,7 +272,7 @@ function ConfigRow({ field, value, onSave }: { field: Field; value: string; onSa
         />
       )}
       {dirty && (
-        <button onClick={() => onSave(local)} className="px-2 py-1 text-xs rounded bg-cyan-600 hover:bg-cyan-500 text-white">
+        <button onClick={() => onSave(local)} className="px-2 py-1 text-xs rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
           Zapisz
         </button>
       )}

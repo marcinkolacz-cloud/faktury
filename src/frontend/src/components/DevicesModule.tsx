@@ -185,7 +185,7 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
           {canWrite && (
             <button
               onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(true); }}
-              className="px-3 py-1.5 text-sm rounded font-medium bg-cyan-600 text-white hover:bg-cyan-700"
+              className="px-3 py-1.5 text-sm rounded font-medium bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
             >
               Dodaj urządzenie
             </button>
@@ -213,11 +213,11 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
                 <div key={d.id} className="flex items-center justify-between gap-3 p-3 hover:bg-[var(--bg-card)] cursor-pointer" onClick={() => openDetail(d.id)}>
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-[var(--text-primary)]">
-                      <span className="font-mono text-cyan-600">{d.symbol}</span> — {d.name}
+                      <span className="font-mono text-[var(--accent)]">{d.symbol}</span> — {d.name}
                     </div>
                     <div className="text-xs text-[var(--text-secondary)] truncate">
                       {d.client}{d.location ? " · " + d.location : ""} · {ticketCount} zgłoszeń
-                      {d.supportPackage && <> · <span className="text-cyan-600">{d.supportPackage}</span></>}
+                      {d.supportPackage && <> · <span className="text-[var(--accent)]">{d.supportPackage}</span></>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -225,7 +225,7 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
                     {warranty === "soon" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Gwarancja wygasa wkrótce</span>}
                     {canWrite && (
                       <>
-                        <button onClick={(e) => { e.stopPropagation(); startEdit(d); }} className="text-xs text-cyan-500 hover:underline">Edytuj</button>
+                        <button onClick={(e) => { e.stopPropagation(); startEdit(d); }} className="text-xs text-[var(--accent-hover)] hover:underline">Edytuj</button>
                         <button onClick={(e) => { e.stopPropagation(); removeDevice(d.id); }} className="text-xs text-red-500 hover:underline">Usuń</button>
                       </>
                     )}
@@ -269,7 +269,7 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
             <textarea placeholder="Uwagi" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full px-3 py-2 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-page)] text-[var(--text-primary)]" />
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => { setShowForm(false); setEditingId(null); }} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] text-[var(--text-secondary)]">Anuluj</button>
-              <button onClick={submitForm} className="px-3 py-1.5 text-sm rounded bg-cyan-600 text-white hover:bg-cyan-700">Zapisz</button>
+              <button onClick={submitForm} className="px-3 py-1.5 text-sm rounded bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]">Zapisz</button>
             </div>
           </div>
         </div>
@@ -280,7 +280,7 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
           <div className="bg-[var(--bg-card)] rounded-lg p-4 w-full max-w-2xl space-y-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="font-medium text-[var(--text-primary)]">
-                <span className="font-mono text-cyan-600">{selected.symbol}</span> — {selected.name}
+                <span className="font-mono text-[var(--accent)]">{selected.symbol}</span> — {selected.name}
               </h2>
               <button onClick={() => setSelectedId(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">✕</button>
             </div>
@@ -365,7 +365,7 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
                     <span className="text-xs text-[var(--text-secondary)]">h :</span>
                     <input type="number" min="0" max="59" value={newServiceMinutes} onChange={(e) => setNewServiceMinutes(e.target.value)} className="w-16 px-2 py-1 text-xs rounded border border-[var(--border-color)] bg-[var(--bg-page)] text-[var(--text-primary)]" />
                     <span className="text-xs text-[var(--text-secondary)]">min</span>
-                    <button onClick={addServiceEntry} className="ml-auto px-2 py-1 text-xs rounded bg-cyan-600 text-white hover:bg-cyan-700">Dodaj</button>
+                    <button onClick={addServiceEntry} className="ml-auto px-2 py-1 text-xs rounded bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]">Dodaj</button>
                   </div>
                 </div>
               )}
@@ -373,7 +373,7 @@ export function DevicesModule({ onHome, onNavigate, currentModule }: { onHome: (
 
             <button
               onClick={() => onNavigate("documentation")}
-              className="mt-3 w-full text-sm px-3 py-2 rounded border border-[var(--border-color)] hover:border-cyan-400 text-cyan-600"
+              className="mt-3 w-full text-sm px-3 py-2 rounded border border-[var(--border-color)] hover:border-[var(--accent-text)] text-[var(--accent)]"
             >
               📖 Otwórz pełną dokumentację (osobny moduł, edytor pełnoekranowy)
             </button>

@@ -82,7 +82,7 @@ export function ExpenseRow({ rowNumber, expense, projectName, projects, actor, o
       <td className="p-2 text-[var(--text-primary)]">{expense.productService}</td>
       <td className="p-2 text-[var(--text-muted)]">{expense.supplier}</td>
       <td className="p-2">
-        <span className="text-xs font-mono text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded">{projectName}</span>
+        <span className="text-xs font-mono text-[var(--accent-hover)] bg-[var(--accent-light)] px-1.5 py-0.5 rounded">{projectName}</span>
       </td>
       <td className={"p-2 font-mono " + (missingDate ? "text-red-600 font-semibold" : "text-gray-500")}>
         {expense.orderDate || "brak daty"}
@@ -95,21 +95,21 @@ export function ExpenseRow({ rowNumber, expense, projectName, projects, actor, o
       <td className="p-2 text-[var(--text-muted)]">{expense.paidBy}</td>
       <td className="p-2 text-gray-500">{expense.note}</td>
       <td className="p-2 text-center">
-        <input type="checkbox" checked={expense.paid} onChange={() => canWrite && toggle("togglePaid")} disabled={!canWrite} className="accent-cyan-600" />
+        <input type="checkbox" checked={expense.paid} onChange={() => canWrite && toggle("togglePaid")} disabled={!canWrite} className="accent-[var(--accent)]" />
       </td>
       <td className="p-2 text-center">
-        <input type="checkbox" checked={ksefSent} onChange={() => canWrite && onToggleKsef(expense.id)} disabled={!canWrite} className="accent-cyan-600" />
+        <input type="checkbox" checked={ksefSent} onChange={() => canWrite && onToggleKsef(expense.id)} disabled={!canWrite} className="accent-[var(--accent)]" />
       </td>
       <td className="p-2 text-center">
-        <input type="checkbox" checked={expense.hasInvoice} onChange={() => canWrite && toggle("toggleHasInvoice")} disabled={!canWrite} className="accent-cyan-600" />
+        <input type="checkbox" checked={expense.hasInvoice} onChange={() => canWrite && toggle("toggleHasInvoice")} disabled={!canWrite} className="accent-[var(--accent)]" />
       </td>
       <td className="p-2 text-center">
-        <input type="checkbox" checked={expense.confirmed} onChange={() => canWrite && toggle("toggleConfirmed")} disabled={!canWrite} className="accent-cyan-600" />
+        <input type="checkbox" checked={expense.confirmed} onChange={() => canWrite && toggle("toggleConfirmed")} disabled={!canWrite} className="accent-[var(--accent)]" />
       </td>
       <td className="p-2 whitespace-nowrap">
         {canWrite && (
           <>
-            <button onClick={() => setEditing(true)} className="text-cyan-600 hover:text-cyan-700 text-xs mr-2">Edytuj</button>
+            <button onClick={() => setEditing(true)} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs mr-2">Edytuj</button>
             <button onClick={deleteRow} className="text-red-500 hover:text-red-600 text-xs">✕</button>
           </>
         )}

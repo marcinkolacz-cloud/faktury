@@ -28,9 +28,9 @@ type Chapter = { id: number; title: string; contentHtml: string; order: number }
 // into a data-num attribute that this CSS just displays verbatim.
 const COUNTER_CSS = `
 #doc-editor-content { font-family: Calibri, "Segoe UI", Arial, sans-serif; }
-#doc-editor-content p, #doc-editor-content div, #doc-editor-content li { font-family: Calibri, "Segoe UI", Arial, sans-serif; color: #000; font-weight: bold; font-size: 10pt; }
-#doc-editor-content ul { list-style: disc outside; padding-left: 24px; margin: 8px 0; }
-#doc-editor-content ol { list-style: decimal outside; padding-left: 24px; margin: 8px 0; }
+#doc-editor-content p, #doc-editor-content div, #doc-editor-content li { font-family: Calibri, "Segoe UI", Arial, sans-serif; color: #000; font-weight: normal; font-size: 10pt; margin: 0; }
+#doc-editor-content ul { list-style: disc outside; padding-left: 24px; margin: 0; }
+#doc-editor-content ol { list-style: decimal outside; padding-left: 24px; margin: 0; }
 #doc-editor-content li { list-style: inherit; display: list-item; }
 #doc-editor-content h1 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 14pt; color: #000; font-weight: bold; margin: 18px 0 10px; }
 #doc-editor-content h1::before { content: attr(data-num); }
@@ -384,11 +384,11 @@ function RailButton({ icon, label, onClick, active, disabled, title, badge }: {
       onClick={onClick}
       disabled={disabled}
       title={title || label}
-      className={`relative flex flex-col items-center gap-0.5 w-12 py-2 rounded-lg text-[10px] leading-tight disabled:opacity-40 transition-colors ${
-        active ? "bg-cyan-600 text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-card)]"
+      className={`relative flex flex-col items-center gap-1 w-16 py-2.5 rounded-lg text-[11px] leading-tight disabled:opacity-40 transition-colors ${
+        active ? "bg-[var(--accent)] text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
       }`}
     >
-      <span className="text-base leading-none">{icon}</span>
+      <span className="text-2xl leading-none">{icon}</span>
       <span className="text-center px-0.5">{label}</span>
       {badge && <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full bg-green-400" />}
     </button>
@@ -416,10 +416,16 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [editMode, setEditMode] = useState(false);
   const [fitToScreen, setFitToScreen] = useState(false);
   const [twoPageView, setTwoPageView] = useState(false);
+  useEffect(() => {
+    if (editMode) setTwoPageView(true);
+  }, [editMode]);
   const [showChainVersion, setShowChainVersion] = useState(false);
   const showChainVersionRef = useRef(false);
   useEffect(() => { showChainVersionRef.current = showChainVersion; }, [showChainVersion]);
   const [twoPageHtml, setTwoPageHtml] = useState("");
+  const twoPageIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const twoPageScrollRef = useRef(0);
+  const twoPageCaretFractionRef = useRef<number | null>(null);
   const [twoPageTick, setTwoPageTick] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
   // 210mm in CSS px at the standard 96dpi reference used everywhere else
@@ -427,6 +433,21 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // width so "Dopasuj do ekranu" only zooms (transform:scale), never
   // reflows text at a wider-than-A4 content width.
   const A4_WIDTH_PX = (210 * 96) / 25.4;
+  // Wysokość A4 w tych samych CSS px co A4_WIDTH_PX (96dpi) — używana do
+  // policzenia ile "wirtualnych" stron zajmuje bieżąca treść w ciągłym
+  // widoku (bez klikania "2 strony"), żeby powtórzyć nagłówek/stopkę na
+  // każdej z nich zamiast tylko raz na górze/dole całego dokumentu.
+  const A4_HEIGHT_PX = (297 * 96) / 25.4;
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const [contentHeightPx, setContentHeightPx] = useState(0);
+  useEffect(() => {
+    const el = pageRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setContentHeightPx(el.scrollHeight));
+    ro.observe(el);
+    setContentHeightPx(el.scrollHeight);
+    return () => ro.disconnect();
+  }, [activeId, editMode]);
   useEffect(() => {
     if (!fitToScreen) {
       setZoomLevel(100);
@@ -454,6 +475,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [canEdit, setCanEdit] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [removeBackupConfirm, setRemoveBackupConfirm] = useState(false);
+  const [removeBackupConfirmText, setRemoveBackupConfirmText] = useState("");
   const [savedFlash, setSavedFlash] = useState(false);
   const [driveSyncFlash, setDriveSyncFlash] = useState(false);
   const [driveSyncError, setDriveSyncError] = useState("");
@@ -469,6 +492,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [tableDraft, setTableDraft] = useState({ rows: 3, cols: 3, headerRow: false, colWidthCm: "", rowHeightCm: "" });
   const A4_USABLE_WIDTH_CM = 18.46; // 21cm - 1.27cm marginesy z każdej strony
   const tableInsertRangeRef = useRef<Range | null>(null);
+  const [showPlainPasteModal, setShowPlainPasteModal] = useState(false);
+  const [plainPasteText, setPlainPasteText] = useState("");
+  const plainPasteRangeRef = useRef<Range | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
@@ -963,11 +989,17 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       setBackupBusy(false);
     }
   };
-  const removeActiveBackup = async () => {
+  const requestRemoveBackup = () => {
     if (!active) return;
+    setRemoveBackupConfirm(true);
+    setRemoveBackupConfirmText("");
+  };
+  const confirmRemoveBackup = async () => {
+    if (!active || removeBackupConfirmText !== "DELETE") return;
     await actor.setChapterBackupEnabled(active.id, false);
     setChapterBackupFlags((m) => ({ ...m, [active.id]: false }));
     setActiveBackupLength(0);
+    setRemoveBackupConfirm(false);
   };
 
   useEffect(() => {
@@ -1076,6 +1108,44 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
 
   const exec = (command: string, value?: string) => {
     document.execCommand(command, false, value);
+    editorRef.current?.focus();
+    setDirty(true);
+  };
+
+  // execCommand("justifyLeft") w niektórych przeglądarkach potrafi nie
+  // usunąć zaszytego inline text-align:center (np. z wklejonego Worda) -
+  // stąd czasem tylko "justifyFull" wizualnie "naprawiał" to efektem
+  // ubocznym. Ta funkcja ustawia wyrównanie wprost na blokach zaznaczenia,
+  // z !important, więc zawsze wygrywa niezależnie od tego co tam już było.
+  const setAlignment = (align: "left" | "center" | "right" | "justify") => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
+    const range = sel.getRangeAt(0);
+    const startEl = range.startContainer.nodeType === 1 ? (range.startContainer as HTMLElement) : range.startContainer.parentElement;
+    const endEl = range.endContainer.nodeType === 1 ? (range.endContainer as HTMLElement) : range.endContainer.parentElement;
+    const isBlock = (el: HTMLElement) => ["P", "DIV", "H1", "H2", "H3", "H4", "LI"].includes(el.tagName);
+    const findBlock = (el: HTMLElement | null): HTMLElement | null => {
+      while (el && el !== editorRef.current) {
+        if (isBlock(el)) return el;
+        el = el.parentElement;
+      }
+      return null;
+    };
+    const startBlock = findBlock(startEl);
+    const endBlock = findBlock(endEl);
+    const blocks = new Set<HTMLElement>();
+    if (startBlock) blocks.add(startBlock);
+    if (endBlock) blocks.add(endBlock);
+    if (startBlock && endBlock && startBlock !== endBlock) {
+      // Zaznaczenie obejmuje kilka bloków - dodaj wszystkie pomiędzy nimi.
+      let node: Node | null = startBlock;
+      while (node && node !== endBlock) {
+        node = node.nextSibling;
+        if (node instanceof HTMLElement && isBlock(node)) blocks.add(node);
+      }
+    }
+    if (blocks.size === 0 && startBlock) blocks.add(startBlock);
+    blocks.forEach((el) => el.style.setProperty("text-align", align, "important"));
     editorRef.current?.focus();
     setDirty(true);
   };
@@ -1354,6 +1424,35 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       el.style.borderColor = "#000";
     });
     return doc.body.innerHTML;
+  };
+
+  // "Wklej czysty tekst" — otwiera modal z <textarea>. Wklejenie do
+  // zwykłego <textarea> samo w sobie odrzuca cały HTML ze schowka (Word
+  // zostawia tam tylko czysty tekst), więc to najprostszy pewny sposób na
+  // pozbycie się stylów/klas/nagłówków Worda bez próby ich "czyszczenia"
+  // z HTML. Każda linia trafia do dokumentu jako osobny akapit <p> w
+  // standardowym stylu "Normal" (bez dodatkowych klas/inline-style).
+  const openPlainPasteModal = () => {
+    const sel0 = window.getSelection();
+    plainPasteRangeRef.current = sel0 && sel0.rangeCount > 0 ? sel0.getRangeAt(0).cloneRange() : null;
+    setPlainPasteText("");
+    setShowPlainPasteModal(true);
+  };
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const insertPlainPasteText = () => {
+    const lines = plainPasteText.split(/\r\n|\r|\n/);
+    const html = lines.map((l) => `<p>${l.trim() ? escapeHtml(l) : "<br>"}</p>`).join("");
+    editorRef.current?.focus();
+    const savedRange = plainPasteRangeRef.current;
+    if (savedRange) {
+      const sel1 = window.getSelection();
+      sel1?.removeAllRanges();
+      sel1?.addRange(savedRange);
+    }
+    document.execCommand("insertHTML", false, html);
+    setDirty(true);
+    setShowPlainPasteModal(false);
   };
 
   const onEditorPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -1918,12 +2017,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   };
   const openPrintPreview = async () => {
     setPreviewPageCount(null);
-    setPreviewHtml(await buildChapterPreviewHtml(false, previewGridView));
+    setPreviewHtml(await buildChapterPreviewHtml(false, previewGridView, editMode && active ? new Set([active.id]) : undefined));
     setShowPrintPreview(true);
   };
   const refreshPrintPreview = async () => {
     setPreviewPageCount(null);
-    setPreviewHtml(await buildChapterPreviewHtml(false, previewGridView));
+    setPreviewHtml(await buildChapterPreviewHtml(false, previewGridView, editMode && active ? new Set([active.id]) : undefined));
   };
   // Real, JS-measured live "2 pages side by side" view - reuses the exact
   // same pagination engine as Podgląd wydruku/eksport (accurate margins,
@@ -1933,18 +2032,65 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // live contentEditable region is not feasible without risking caret/undo
   // breakage, so this renders alongside it instead of replacing it.
   useEffect(() => {
-    if (!twoPageView || !editMode || !active) { setTwoPageHtml(""); return; }
+    if (!twoPageView || !active) { setTwoPageHtml(""); return; }
     let cancelled = false;
     const run = async () => {
+      const win = twoPageIframeRef.current?.contentWindow;
+      if (win) twoPageScrollRef.current = win.scrollY;
+      // Pozycja kursora jako ułamek (0..1) całkowitej wysokości treści -
+      // przybliżenie, bo edytor (ciągły) i podgląd (spaginowany, z
+      // nagłówkami/stopkami) mają inną wysokość, ale wystarcza żeby
+      // podgląd "podążał" za miejscem edycji zamiast zostawać w miejscu.
+      twoPageCaretFractionRef.current = null;
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && editorRef.current) {
+        const range = sel.getRangeAt(0);
+        const anchorEl = sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? (sel.anchorNode as HTMLElement) : sel.anchorNode.parentElement) : null;
+        if (anchorEl && editorRef.current.contains(anchorEl)) {
+          const rects = range.getClientRects();
+          const rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
+          const editorTop = editorRef.current.getBoundingClientRect().top;
+          const scrollTop = commentAreaRef.current?.scrollTop || 0;
+          const caretOffset = rect.top - editorTop + scrollTop;
+          const total = editorRef.current.scrollHeight || 1;
+          twoPageCaretFractionRef.current = Math.max(0, Math.min(1, caretOffset / total));
+        }
+      }
       const html = await buildChapterPreviewHtml(false, true, new Set([active.id]));
       if (!cancelled) setTwoPageHtml(html);
     };
     const t = setTimeout(run, 500);
     return () => { cancelled = true; clearTimeout(t); };
   }, [twoPageView, editMode, active, twoPageTick]);
+  // Tryb bez edycji ("Edytuj" nieaktywne): zamiast surowego, ciągłego
+  // contentEditable z nakładkowym nagłówkiem/stopką (przybliżenie, które
+  // nachodzi na treść na 2+ stronie), pokazujemy dokładnie ten sam,
+  // realnie spaginowany HTML co w "Podgląd wydruku"/"2 strony".
+  const [readViewHtml, setReadViewHtml] = useState("");
+  useEffect(() => {
+    if (editMode || !active) { setReadViewHtml(""); return; }
+    let cancelled = false;
+    (async () => {
+      const html = await buildChapterPreviewHtml(false, true, new Set([active.id]));
+      if (!cancelled) setReadViewHtml(html);
+    })();
+    return () => { cancelled = true; };
+  }, [editMode, active]);
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      if (e.data && e.data.type === "docPreviewPageCount") setPreviewPageCount(e.data.count);
+      if (e.data && e.data.type === "docPreviewPageCount") {
+        setPreviewPageCount(e.data.count);
+        const win = twoPageIframeRef.current?.contentWindow;
+        if (win && e.source === win) {
+          const fraction = twoPageCaretFractionRef.current;
+          if (fraction !== null) {
+            const totalHeight = win.document.documentElement.scrollHeight;
+            win.scrollTo(0, fraction * totalHeight);
+          } else {
+            win.scrollTo(0, twoPageScrollRef.current);
+          }
+        }
+      }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
@@ -1977,17 +2123,20 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       <div className="max-w-[1600px] mx-auto p-4 space-y-4">
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
 
-        <div className="flex items-center gap-3 bg-[var(--bg-card)] border-b-2 border-cyan-600 px-4 py-3 rounded-t-lg flex-wrap">
-          <h1 className="text-lg font-bold text-cyan-600">📖 Dokumentacja</h1>
+        <div className="flex items-center gap-2.5 bg-[var(--bg-card)] border border-[var(--border-color)] px-4 py-3 rounded-2xl flex-wrap shadow-[var(--shadow-card)]">
+          <div className="flex items-center gap-2 mr-1">
+            <span className="w-7 h-7 rounded-lg bg-[var(--accent-light)] flex items-center justify-center text-sm shrink-0">📖</span>
+            <h1 className="text-base font-semibold text-[var(--text-primary)]">Dokumentacja</h1>
+          </div>
           <button
             onClick={() => onNavigate("manual#documentation")}
-            className="text-xs px-2 py-1 rounded border border-cyan-600 text-cyan-600 hover:bg-cyan-600 hover:text-white"
+            className="text-xs px-3 py-1.5 rounded-full border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
           >
             ❓ Pomoc
           </button>
-          <span className="text-[10px] text-[#f0c040]">
-            DEBUG poll#{pollTicks} deviceId={String(deviceId)} editMode={String(editMode)}
-            {lastPolled ? ` ostatni sukces: ${lastPolled.toLocaleTimeString()}` : " (brak sukcesu)"}
+          <span className="text-[10px] font-mono text-[var(--text-muted)] opacity-60">
+            poll#{pollTicks} deviceId={String(deviceId)} editMode={String(editMode)}
+            {lastPolled ? ` ok:${lastPolled.toLocaleTimeString()}` : " (brak)"}
             {pollError ? ` BLAD: ${pollError}` : ""}
           </span>
           {lockedBy && !editMode && (
@@ -2003,7 +2152,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           <select
             value={deviceId ?? ""}
             onChange={(e) => setDeviceId(e.target.value ? Number(e.target.value) : null)}
-            className="ml-2 bg-[var(--bg-hover)] text-[var(--text-primary)] border border-[var(--border-color)] rounded px-3 py-1.5 text-sm"
+            className="ml-2 bg-[var(--bg-page)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-lg px-3 py-1.5 text-sm"
           >
             {devices.map((d) => (
               <option key={String(d.id)} value={Number(d.id)}>{d.symbol} — {d.name}</option>
@@ -2018,21 +2167,21 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               setDevices(rows);
               setDeviceId(1000000000 + Number(newId));
             }}
-            className="ml-2 text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600"
+            className="ml-2 text-xs px-3 py-1.5 rounded-full border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
           >
             + Nowy folder
           </button>
           {books.length > 0 && (
-            <button onClick={addBook} className="ml-2 text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600">+ Nowa książka</button>
+            <button onClick={addBook} className="ml-2 text-xs px-3 py-1.5 rounded-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium">+ Nowa książka</button>
           )}
           {savedFlash && <span className="text-xs text-emerald-400">💾 Zapisano</span>}
-          {driveSyncFlash && <span className="text-xs text-cyan-400">☁️ Zsynchronizowano z Bartolini Drive</span>}
+          {driveSyncFlash && <span className="text-xs text-[var(--accent-text)]">☁️ Zsynchronizowano z Bartolini Drive</span>}
           {driveSyncError && <span className="text-xs text-amber-400">{driveSyncError}</span>}
           <div className="ml-auto flex gap-2">
-            <button onClick={exportPdfV2} disabled={chapters.length === 0} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600 disabled:opacity-40">
+            <button onClick={exportPdfV2} disabled={chapters.length === 0} className="text-xs px-3 py-1.5 rounded-full border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40">
               🖨 Eksportuj PDF
             </button>
-            <button onClick={exportWord} disabled={chapters.length === 0} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] hover:border-cyan-600 disabled:opacity-40">
+            <button onClick={exportWord} disabled={chapters.length === 0} className="text-xs px-3 py-1.5 rounded-full border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40">
               📄 Eksportuj Word
             </button>
           </div>
@@ -2041,14 +2190,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         {loading ? (
           <div className="text-sm text-[var(--text-muted)] p-6">Wczytywanie…</div>
         ) : (
-          <div className="flex bg-[var(--bg-card)] rounded-b-lg overflow-hidden" style={{ height: "calc(100vh - 150px)" }}>
+          <div className="flex bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-[var(--shadow-card)]" style={{ height: "calc(100vh - 150px)" }}>
             <div className="w-72 shrink-0 border-r border-[var(--border-color)] bg-[var(--bg-page)] p-3 space-y-1 overflow-auto">
               {books.map((book) => {
                 const bookChapters = chapters.filter((c) => chapterBook[c.id] === book.id);
                 const isExpanded = expandedBooks.has(book.id);
                 return (
                   <div key={book.id} className="mb-2">
-                    <div className="group flex items-center gap-1 rounded px-1 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[#1a2733]">
+                    <div className="group flex items-center gap-1 rounded-lg px-1 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
                       <span
                         onClick={() => setExpandedBooks((prev) => {
                           const next = new Set(prev);
@@ -2074,7 +2223,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                             onDragStart={() => canEdit && setDragId(ch.id)}
                             onDragOver={(e) => canEdit && e.preventDefault()}
                             onDrop={() => canEdit && handleDrop(ch.id)}
-                            className={"group flex items-center gap-1 rounded px-2 py-2 text-sm " + (canEdit ? "cursor-grab " : "") + (ch.id === activeId ? "bg-[#263238] text-[#4fc3f7]" : "hover:bg-[#1a2733]")}
+                            className={"group flex items-center gap-1 rounded-lg px-2 py-2 text-sm " + (canEdit ? "cursor-grab " : "") + (ch.id === activeId ? "bg-[var(--accent-light)] text-[var(--accent-text)] font-medium" : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]")}
                           >
                             <span className="text-[var(--text-muted)] text-xs">{canEdit ? "⠿" : ""}</span>
                             <input
@@ -2167,6 +2316,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       title="Dopasuj szerokość pola roboczego do szerokości ekranu"
                       onClick={() => setFitToScreen((v) => !v)}
                     />
+                    <RailButton icon="📖" label="2 strony" active={twoPageView} title="Podgląd podziału na strony" onClick={() => setTwoPageView((v) => !v)} />
                     <div className="flex flex-col items-center gap-0.5 w-12">
                       <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} title="Powiększ" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] hover:bg-[var(--bg-card)]">＋</button>
                       <button onClick={() => setZoomLevel(100)} title="Resetuj powiększenie" className="text-[10px] text-[var(--text-secondary)]">{zoomLevel}%</button>
@@ -2176,8 +2326,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       <>
                         <div className="w-8 h-px bg-[var(--border-color)] my-1" />
                         <RailButton icon="🔗" label="Zmienne" title="Zmienne referencyjne" onClick={() => setShowVarsPanel(true)} />
+                        <RailButton icon="🧹" label="Wklej tekst" title="Wklej jako zwykły tekst (bez formatowania Worda)" onClick={openPlainPasteModal} />
                         <RailButton icon="⚙️" label="Nagłówek" title="Nagłówek i stopka" onClick={openSettings} />
-                        <RailButton icon="📖" label="2 strony" active={twoPageView} title="Podgląd paginacji na żywo obok edytora" onClick={() => setTwoPageView((v) => !v)} />
                         <RailButton icon={autoSave ? "☑️" : "⬜"} label="Auto-zapis" active={autoSave} title="Auto-zapis (3s)" onClick={() => setAutoSave((v) => !v)} />
                       </>
                     )}
@@ -2200,7 +2350,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                           onClick={createOrUpdateActiveBackup}
                         />
                         {chapterBackupFlags[active.id] && (
-                          <RailButton icon="🗑" label="Usuń kopię" onClick={removeActiveBackup} />
+                          <RailButton icon="🗑" label="Usuń kopię" onClick={requestRemoveBackup} />
                         )}
                       </>
                     )}
@@ -2219,7 +2369,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                             else if (e.target.value) exec("formatBlock", e.target.value);
                             e.target.value = "";
                           }}
-                          className="text-xs h-8 rounded border border-[#ccc] px-1"
+                          className="text-xs h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] px-1"
                         >
                           <option value="" disabled>Styl</option>
                           <option value="<p>">Normal</option>
@@ -2231,7 +2381,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         <select
                           defaultValue=""
                           onChange={(e) => { if (e.target.value) exec("fontSize", e.target.value); e.target.value = ""; }}
-                          className="text-xs h-8 rounded border border-[#ccc] px-1"
+                          className="text-xs h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] px-1"
                           title="Wielkość czcionki"
                         >
                           <option value="" disabled>Rozmiar</option>
@@ -2243,41 +2393,45 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                           <option value="6">Duża+ (32px)</option>
                           <option value="7">Bardzo duża (48px)</option>
                         </select>
-                        <button onClick={() => exec("bold")} className="text-xs w-8 h-8 font-bold rounded border border-[#ccc]">B</button>
-                        <button onClick={() => exec("italic")} className="text-xs w-8 h-8 italic rounded border border-[#ccc]">I</button>
-                        <button onClick={() => exec("insertUnorderedList")} className="text-xs px-2 h-8 rounded border border-[#ccc]">• Lista</button>
-                        <button onClick={() => exec("justifyLeft")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛L</button>
-                        <button onClick={() => exec("justifyCenter")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛C</button>
-                        <button onClick={() => exec("justifyRight")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛R</button>
-                        <button onClick={() => exec("justifyFull")} className="text-xs px-2 h-8 rounded border border-[#ccc]">⬛J</button>
+                        <button onClick={() => exec("bold")} className="text-xs w-8 h-8 font-bold rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">B</button>
+                        <button onClick={() => exec("italic")} className="text-xs w-8 h-8 italic rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">I</button>
+                        <button onClick={() => exec("insertUnorderedList")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">• Lista</button>
+                        <button onClick={() => setAlignment("left")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⬛L</button>
+                        <button onClick={() => setAlignment("center")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⬛C</button>
+                        <button onClick={() => setAlignment("right")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⬛R</button>
+                        <button onClick={() => setAlignment("justify")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⬛J</button>
                         <span className="w-px h-5 bg-[#ccc] mx-1" />
-                        <button onClick={insertImage} disabled={imageUploading} className="text-xs px-2 h-8 rounded border border-[#ccc] disabled:opacity-50">
+                        <button onClick={insertImage} disabled={imageUploading} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] disabled:opacity-50">
                           {imageUploading ? "⏳ Przesyłam na Drive…" : "🖼 Obraz"}
                         </button>
-                        <button onClick={insertPageBreak} className="text-xs px-2 h-8 rounded border border-[#ccc]">⏎ Podział strony</button>
-                        <button onClick={insertTable} className="text-xs px-2 h-8 rounded border border-[#ccc]">🔲 Tabela</button>
-                        <button onClick={insertWordDoc} disabled={wordImporting} className="text-xs px-2 h-8 rounded border border-[#ccc] disabled:opacity-50">
+                        <button onClick={insertPageBreak} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">⏎ Podział strony</button>
+                        <button onClick={insertTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">🔲 Tabela</button>
+                        <button onClick={insertWordDoc} disabled={wordImporting} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] disabled:opacity-50">
                           {wordImporting ? "Importuję…" : "📄 Import z Worda"}
                         </button>
-                        <button onClick={addComment} className="text-xs px-2 h-8 rounded border border-[#ccc]">💬 Komentarz</button>
+                        <button onClick={addComment} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">💬 Komentarz</button>
                         {selectedTableEl && (
                           <>
                             <span className="w-px h-5 bg-[#ccc] mx-1" />
-                            <button onClick={addTableRow} className="text-xs px-2 h-8 rounded border border-[#ccc]">+Wiersz</button>
-                            <button onClick={removeTableRow} className="text-xs px-2 h-8 rounded border border-[#ccc]">-Wiersz</button>
-                            <button onClick={addTableColumn} className="text-xs px-2 h-8 rounded border border-[#ccc]">+Kolumna</button>
-                            <button onClick={removeTableColumn} className="text-xs px-2 h-8 rounded border border-[#ccc]">-Kolumna</button>
-                            <button onClick={openResizeTable} className="text-xs px-2 h-8 rounded border border-[#ccc]">📐 Rozmiar</button>
-                            <button onClick={deleteTable} className="text-xs px-2 h-8 rounded border border-[#ccc] text-red-600">🗑 Usuń tabelę</button>
+                            <button onClick={addTableRow} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">+Wiersz</button>
+                            <button onClick={removeTableRow} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">-Wiersz</button>
+                            <button onClick={addTableColumn} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">+Kolumna</button>
+                            <button onClick={removeTableColumn} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">-Kolumna</button>
+                            <button onClick={openResizeTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">📐 Rozmiar</button>
+                            <button onClick={deleteTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] text-red-600">🗑 Usuń tabelę</button>
                           </>
                         )}
-                        <span className="text-[10px] text-[#999]">(albo przeciągnij plik na edytor)</span>
+                        <span className="text-[10px] text-[var(--text-muted)]">(albo przeciągnij plik na edytor)</span>
                     </div>
                   )}
                   <div className="flex-1 flex overflow-hidden">
                   <div ref={commentAreaRef} className={"relative overflow-auto bg-[var(--bg-page)] py-6 " + ((twoPageView && editMode) ? "w-1/2 shrink-0 border-r border-[var(--border-color)]" : "flex-1")}>
+                  {!editMode && active && (
+                    <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none" }} />
+                  )}
                     <div
-                      className="mx-auto bg-white text-black shadow-lg relative"
+                      ref={pageRef}
+                      className={"mx-auto bg-[var(--paper-bg)] text-black shadow-lg relative " + (!editMode ? "hidden" : "")}
                       style={{
                         width: "210mm",
                         maxWidth: "210mm",
@@ -2293,32 +2447,30 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         Ładowanie treści rozdziału…
                       </div>
                     )}
-                    {hfSettings.enableHeader && (
+                    {Array.from({ length: Math.max(1, Math.ceil(contentHeightPx / A4_HEIGHT_PX)) - 1 }).map((_, pageIdx) => (
                       <div
-                        className="absolute top-0 left-[1.27cm] right-[1.27cm] box-border pointer-events-none select-none flex items-end justify-between pb-1.5 text-[#888] border-b border-[#ccc]"
-                        style={{ height: `${hfSettings.headerHeightCm}cm`, fontSize: `${hfSettings.headerFontSize}pt` }}
-                        title="Nagłówek — edytuj przez ⚙️ Nagłówek/stopka"
+                        key={pageIdx}
+                        className="absolute left-0 right-0 box-border pointer-events-none select-none text-center"
+                        style={{ top: (pageIdx + 1) * A4_HEIGHT_PX - 10 }}
+                        title="Tu fizycznie kończy się strona A4 (przybliżenie - patrz dokładny podgląd po prawej)"
                       >
-                        <span className="flex-1 whitespace-pre-line">{hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`}</span>
-                        <span className="flex-1 text-center whitespace-pre-line">{hfSettings.headerTextCenter}</span>
-                        <span className="flex-1 text-right whitespace-pre-line">{hfSettings.headerTextRight}</span>
+                        <div className="border-t-2 border-dashed border-[#4fc3f7]" />
+                        <span className="inline-block -mt-2.5 px-2 bg-[var(--paper-bg)] text-[10px] text-[#4fc3f7]">
+                          — koniec strony {pageIdx + 1} —
+                        </span>
                       </div>
-                    )}
-                    {hfSettings.enableFooter && (
-                      <div
-                        className="absolute bottom-0 left-[1.27cm] right-[1.27cm] box-border pointer-events-none select-none flex items-center justify-between pt-1.5 text-[#888] border-t border-[#ccc]"
-                        style={{ height: `${hfSettings.footerHeightCm}cm`, fontSize: `${hfSettings.footerFontSize}pt` }}
-                        title="Stopka — edytuj przez ⚙️ Nagłówek/stopka"
-                      >
-                        <span>{hfSettings.footerTextLeft}</span>
-                        <span>{hfSettings.footerText || "Bartolini Air Simulation"}</span>
-                        <span>{hfSettings.footerTextRight}</span>
-                      </div>
-                    )}
+                    ))}
                     <div
                       id="doc-editor-content"
                       ref={editorRef}
                       contentEditable={editMode && canEdit}
+                      onFocus={() => {
+                        // Wymusza <p> jako tag przy Enter (nie <div>/inny),
+                        // żeby akapit wpisany Enterem miał te same,
+                        // jednakowe odstępy co akapit wklejony przez
+                        // "Wklej tekst" (ta sama reguła CSS margin:0 wyżej).
+                        try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (e) {}
+                      }}
                       onKeyDown={(e) => {
                         // Browsers move focus to the next tabbable element
                         // on Tab by default, which is useless inside a
@@ -2400,7 +2552,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       <div
                         onMouseDown={startResizeDrag}
                         title="Przeciągnij, żeby zmienić rozmiar"
-                        className="absolute w-4 h-4 rounded-full bg-cyan-500 border-2 border-white shadow z-10 cursor-nwse-resize"
+                        className="absolute w-4 h-4 rounded-full bg-[var(--accent)] border-2 border-white shadow z-10 cursor-nwse-resize"
                         style={{ top: handlePos.top, left: handlePos.left }}
                       />
                     )}
@@ -2421,7 +2573,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                             onBlur={(e) => saveCommentDraft(e.target.value)}
                             rows={3}
                             disabled={!editMode || !canEdit}
-                            className="w-full text-xs p-1.5 rounded border border-amber-300 bg-white text-[#333]"
+                            className="w-full text-xs p-1.5 rounded border border-amber-300 bg-white text-[var(--text-secondary)]"
                             placeholder="Wpisz komentarz…"
                           />
                           {editMode && canEdit && (
@@ -2435,8 +2587,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   </div>
                   {twoPageView && editMode && (
                     <div className="w-1/2 shrink-0 overflow-auto bg-[#888] flex flex-col">
-                      <div className="text-[10px] text-white bg-[#555] px-3 py-1.5">📖 Podgląd stron na żywo (jak w Podglądzie wydruku, odśwież. co 0,5s po edycji)</div>
-                      <iframe title="Podgląd stron" srcDoc={twoPageHtml} className="flex-1 w-full" style={{ border: "none" }} />
+                      <div className="text-[10px] text-white bg-[#555] px-3 py-1.5">📖 Podgląd podziału na strony{editMode ? " (odśwież. co 0,5s po edycji)" : ""}</div>
+                      <iframe
+                        ref={twoPageIframeRef}
+                        title="Podgląd stron"
+                        srcDoc={twoPageHtml}
+                        className="flex-1 w-full"
+                        style={{ border: "none" }}
+                      />
                     </div>
                   )}
                   </div>
@@ -2460,20 +2618,20 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       {showSettings && (
         <div className="fixed inset-0 z-[400]" onClick={() => setShowSettings(false)}>
           <div
-            className="absolute bg-white text-[#1a1a1a] rounded-lg shadow-2xl flex flex-col overflow-hidden"
+            className="absolute bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg shadow-2xl flex flex-col overflow-hidden"
             style={{ left: hfWinRect.x, top: hfWinRect.y, width: hfWinRect.width, height: hfWinRect.height }}
             onClick={(e) => e.stopPropagation()}
           >
             <div
               onMouseDown={onHfWinDragStart}
-              className="flex items-center justify-between px-4 py-2 border-b border-[#e0e0e0] bg-[#f5f5f5] cursor-move shrink-0"
+              className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-color)] bg-[var(--bg-hover)] cursor-move shrink-0"
             >
-              <h3 className="font-semibold text-[#1a1a8c] text-sm">⚙️ Nagłówek i stopka dokumentu</h3>
-              <button onClick={() => setShowSettings(false)} className="text-xs px-2 py-1 rounded border border-[#ccc]">✕</button>
+              <h3 className="font-semibold text-[var(--accent-text)] text-sm">⚙️ Nagłówek i stopka dokumentu</h3>
+              <button onClick={() => setShowSettings(false)} className="text-xs px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">✕</button>
             </div>
             <div className="p-5 space-y-3 overflow-y-auto flex-1">
-            <div className="rounded-md border border-cyan-300 bg-cyan-50 p-2.5 text-xs text-[#333] leading-relaxed">
-              <p className="font-semibold text-cyan-800 mb-1">ⓘ Jak to działa</p>
+            <div className="rounded-md border border-[var(--accent)]/30 bg-[var(--accent-light)] p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+              <p className="font-semibold text-[var(--accent-text)] mb-1">ⓘ Jak to działa</p>
               <p className="mb-1">
                 Te ustawienia są wspólne dla <b>całej instrukcji tego urządzenia</b> (nie per rozdział) i identyczne w podglądzie wydruku,
                 eksporcie PDF i eksporcie Word.
@@ -2485,106 +2643,106 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             </div>
 
             <div>
-              <div className="text-xs text-[#666] mb-1">Tekst nagłówka (pusty = domyślnie nazwa urządzenia)</div>
-              <div className="text-[11px] font-semibold text-[#888] mb-1">Strony nieparzyste</div>
+              <div className="text-xs text-[var(--text-secondary)] mb-1">Tekst nagłówka (pusty = domyślnie nazwa urządzenia)</div>
+              <div className="text-[11px] font-semibold text-[var(--text-muted)] mb-1">Strony nieparzyste</div>
               <div className="grid grid-cols-3 gap-2 mb-2">
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Lewo
                   <textarea rows={5}
                     value={hfDraft.headerText}
                     onChange={(e) => setHfDraft((d) => ({ ...d, headerText: e.target.value }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                     placeholder="np. Bartolini Air Simulation"
                   />
                 </label>
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Środek
                   <textarea rows={5}
                     value={hfDraft.headerTextCenter}
                     onChange={(e) => setHfDraft((d) => ({ ...d, headerTextCenter: e.target.value }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                   />
                 </label>
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Prawo
                   <textarea rows={5}
                     value={hfDraft.headerTextRight}
                     onChange={(e) => setHfDraft((d) => ({ ...d, headerTextRight: e.target.value }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                   />
                 </label>
               </div>
-              <div className="text-[11px] font-semibold text-[#888] mb-1">Strony parzyste (puste = jak nieparzyste)</div>
+              <div className="text-[11px] font-semibold text-[var(--text-muted)] mb-1">Strony parzyste (puste = jak nieparzyste)</div>
               <div className="grid grid-cols-3 gap-2">
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Lewo
                   <textarea rows={5}
                     value={hfDraft.headerTextEvenLeft}
                     onChange={(e) => setHfDraft((d) => ({ ...d, headerTextEvenLeft: e.target.value }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                   />
                 </label>
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Środek
                   <textarea rows={5}
                     value={hfDraft.headerTextEvenCenter}
                     onChange={(e) => setHfDraft((d) => ({ ...d, headerTextEvenCenter: e.target.value }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                   />
                 </label>
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Prawo
                   <textarea rows={5}
                     value={hfDraft.headerTextEvenRight}
                     onChange={(e) => setHfDraft((d) => ({ ...d, headerTextEvenRight: e.target.value }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                   />
                 </label>
               </div>
             </div>
 
             <div>
-              <div className="text-xs text-[#666] mb-1">Tekst stopki</div>
+              <div className="text-xs text-[var(--text-secondary)] mb-1">Tekst stopki</div>
               <div className="grid grid-cols-3 gap-2">
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Lewo
                   <textarea rows={5}
                     value={hfDraft.footerTextLeft}
                     onChange={(e) => setHfDraft((d) => ({ ...d, footerTextLeft: e.target.value }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                   />
                 </label>
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Środek
                   <textarea rows={5}
                     value={hfDraft.footerText}
                     onChange={(e) => setHfDraft((d) => ({ ...d, footerText: e.target.value }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                     placeholder="Bartolini Air Simulation"
                   />
                 </label>
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Prawo
                   <textarea rows={5}
                     value={hfDraft.footerTextRight}
                     onChange={(e) => setHfDraft((d) => ({ ...d, footerTextRight: e.target.value }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                   />
                 </label>
               </div>
             </div>
 
-            <div className="text-xs text-[#666]">
+            <div className="text-xs text-[var(--text-secondary)]">
               Logo w nagłówku
               <div className="flex items-center gap-2 mt-1">
                 {hfDraft.logoDataUri ? (
                   <img src={hfDraft.logoDataUri} alt="logo" className="h-6" />
                 ) : (
-                  <span className="text-[10px] text-[#999]">domyślne logo Bartolini</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">domyślne logo Bartolini</span>
                 )}
-                <button onClick={() => hfLogoInputRef.current?.click()} className="text-xs px-2 py-1 rounded border border-[#ccc]">Zmień…</button>
+                <button onClick={() => hfLogoInputRef.current?.click()} className="text-xs px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Zmień…</button>
                 {hfDraft.logoDataUri && (
-                  <button onClick={() => setHfDraft((d) => ({ ...d, logoDataUri: "" }))} className="text-xs px-2 py-1 rounded border border-[#ccc]">Przywróć domyślne</button>
+                  <button onClick={() => setHfDraft((d) => ({ ...d, logoDataUri: "" }))} className="text-xs px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Przywróć domyślne</button>
                 )}
               </div>
               <input ref={hfLogoInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={onHfLogoSelected} />
@@ -2607,32 +2765,32 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               Pokaż numerację stron w stopce (Word: prawdziwa, aktualizuje się automatycznie)
             </label>
 
-            <div className="border-t border-[#eee] pt-3">
-              <div className="text-xs font-semibold text-[#1a1a8c] mb-2">Wymiary i wygląd</div>
+            <div className="border-t border-[var(--border-color)] pt-3">
+              <div className="text-xs font-semibold text-[var(--accent-text)] mb-2">Wymiary i wygląd</div>
               <div className="grid grid-cols-2 gap-3">
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Wysokość nagłówka (cm)
                   <input type="number" min={0.5} step={0.05} value={hfDraft.headerHeightCm}
                     onChange={(e) => setHfDraft((d) => ({ ...d, headerHeightCm: parseFloat(e.target.value) || 0.5 }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1" />
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1" />
                 </label>
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Wysokość stopki (cm)
                   <input type="number" min={0.5} step={0.05} value={hfDraft.footerHeightCm}
                     onChange={(e) => setHfDraft((d) => ({ ...d, footerHeightCm: parseFloat(e.target.value) || 0.5 }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1" />
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1" />
                 </label>
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Czcionka nagłówka (pt)
                   <input type="number" min={6} max={18} step={0.5} value={hfDraft.headerFontSize}
                     onChange={(e) => setHfDraft((d) => ({ ...d, headerFontSize: parseFloat(e.target.value) || 9 }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1" />
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1" />
                 </label>
-                <label className="block text-xs text-[#666]">
+                <label className="block text-xs text-[var(--text-secondary)]">
                   Czcionka stopki (pt)
                   <input type="number" min={6} max={18} step={0.5} value={hfDraft.footerFontSize}
                     onChange={(e) => setHfDraft((d) => ({ ...d, footerFontSize: parseFloat(e.target.value) || 9 }))}
-                    className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1" />
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1" />
                 </label>
               </div>
               <label className="flex items-center gap-2 text-xs mt-2">
@@ -2646,8 +2804,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setShowSettings(false)} className="px-3 py-1.5 text-sm rounded border border-[#ccc]">Anuluj</button>
-              <button onClick={saveSettings} className="px-3 py-1.5 text-sm rounded bg-cyan-600 hover:bg-cyan-500 text-white">Zapisz</button>
+              <button onClick={() => setShowSettings(false)} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Anuluj</button>
+              <button onClick={saveSettings} className="px-3 py-1.5 text-sm rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">Zapisz</button>
             </div>
             </div>
             <div
@@ -2662,24 +2820,24 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
 
       {showTableModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setShowTableModal(false)}>
-          <div className="bg-white text-[#1a1a1a] rounded-lg p-5 w-full max-w-xs space-y-3" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-[#1a1a8c]">🔲 {tableModalMode === "resize" ? "Zmień rozmiar tabeli" : "Wstaw tabelę"}</h3>
-            <label className="block text-xs text-[#666]">
+          <div className="bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg p-5 w-full max-w-xs space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-[var(--accent-text)]">🔲 {tableModalMode === "resize" ? "Zmień rozmiar tabeli" : "Wstaw tabelę"}</h3>
+            <label className="block text-xs text-[var(--text-secondary)]">
               Liczba wierszy
               <input
                 type="number" min={1} max={30}
                 value={tableDraft.rows}
                 onChange={(e) => setTableDraft((d) => ({ ...d, rows: parseInt(e.target.value, 10) || 1 }))}
-                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
               />
             </label>
-            <label className="block text-xs text-[#666]">
+            <label className="block text-xs text-[var(--text-secondary)]">
               Liczba kolumn
               <input
                 type="number" min={1} max={12}
                 value={tableDraft.cols}
                 onChange={(e) => setTableDraft((d) => ({ ...d, cols: parseInt(e.target.value, 10) || 1 }))}
-                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
               />
             </label>
             <label className="flex items-center gap-2 text-xs">
@@ -2690,23 +2848,23 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               />
               Pierwszy wiersz jako nagłówek (pogrubiony, wyszarzone tło)
             </label>
-            <label className="block text-xs text-[#666]">
+            <label className="block text-xs text-[var(--text-secondary)]">
               Szerokość kolumny (cm, puste = auto)
               <input
                 type="number" min={0} step={0.1}
                 value={tableDraft.colWidthCm}
                 onChange={(e) => setTableDraft((d) => ({ ...d, colWidthCm: e.target.value }))}
-                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                 placeholder="np. 10"
               />
             </label>
-            <label className="block text-xs text-[#666]">
+            <label className="block text-xs text-[var(--text-secondary)]">
               Wysokość wiersza (cm, puste = auto)
               <input
                 type="number" min={0} step={0.1}
                 value={tableDraft.rowHeightCm}
                 onChange={(e) => setTableDraft((d) => ({ ...d, rowHeightCm: e.target.value }))}
-                className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm mt-1"
+                className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                 placeholder="np. 1.5"
               />
             </label>
@@ -2722,8 +2880,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               );
             })()}
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setShowTableModal(false)} className="px-3 py-1.5 text-sm rounded border border-[#ccc]">Anuluj</button>
-              <button onClick={confirmInsertTable} className="px-3 py-1.5 text-sm rounded bg-cyan-600 hover:bg-cyan-500 text-white">{tableModalMode === "resize" ? "Zastosuj" : "Wstaw"}</button>
+              <button onClick={() => setShowTableModal(false)} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Anuluj</button>
+              <button onClick={confirmInsertTable} className="px-3 py-1.5 text-sm rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">{tableModalMode === "resize" ? "Zastosuj" : "Wstaw"}</button>
             </div>
           </div>
         </div>
@@ -2737,11 +2895,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           <div
             className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] flex-wrap gap-2 select-none"
           >
-            <h2 className="text-sm font-bold text-[#4fc3f7]">
+            <h2 className="text-sm font-bold text-[var(--accent-text)]">
               Podglad wydruku - rozdzialy: {selectedForPrint.size}{previewPageCount != null ? ` — stron: ${previewPageCount}` : ""}
             </h2>
             <div className="flex items-center gap-2">
-              <button onClick={refreshPrintPreview} className="text-xs px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white">
+              <button onClick={refreshPrintPreview} className="text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
                 Odswiez
               </button>
               <button
@@ -2749,12 +2907,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   const w = window.open("", "_blank", "width=1000,height=900");
                   if (w) { w.document.write(previewHtml); w.document.close(); }
                 }}
-                className="text-xs px-3 py-1.5 rounded border border-[#666] text-[var(--text-secondary)]"
+                className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] text-[var(--text-secondary)]"
                 title="Otwiera podglad w osobnym oknie przegladarki - mozna je przeciagnac poza glowne okno, np. na drugi monitor"
               >
                 ⇱ Otworz w oknie
               </button>
-              <button onClick={() => setShowPrintPreview(false)} className="text-xs px-3 py-1.5 rounded border border-[#666] text-[var(--text-secondary)]">
+              <button onClick={() => setShowPrintPreview(false)} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)] text-[var(--text-secondary)]">
                 Zamknij
               </button>
             </div>
@@ -2793,29 +2951,86 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         />
       )}
       {deleteTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setDeleteTarget(null)}>
-          <div className="bg-white text-[#1a1a1a] rounded-lg p-5 w-full max-w-sm space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[500]" onClick={() => setDeleteTarget(null)}>
+          <div className="bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg p-5 w-full max-w-sm space-y-3" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold text-red-600">Usunąć rozdział?</h3>
             <p className="text-sm">
               Rozdział „<strong>{deleteTarget.title}</strong>” trafi do kosza administratora (odwracalne, ale wymaga admina żeby przywrócić).
             </p>
-            <p className="text-xs text-[#666]">Wpisz <strong>DELETE</strong> żeby potwierdzić:</p>
+            <p className="text-xs text-[var(--text-secondary)]">Wpisz <strong>DELETE</strong> żeby potwierdzić:</p>
             <input
               autoFocus
               value={deleteConfirmText}
               onChange={(e) => setDeleteConfirmText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && confirmDelete()}
-              className="w-full border border-[#ccc] rounded px-2 py-1.5 text-sm"
+              className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm"
               placeholder="DELETE"
             />
             <div className="flex justify-end gap-2 pt-1">
-              <button onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 text-sm rounded border border-[#ccc]">Anuluj</button>
+              <button onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Anuluj</button>
               <button
                 onClick={confirmDelete}
                 disabled={deleteConfirmText !== "DELETE"}
                 className="px-3 py-1.5 text-sm rounded bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white"
               >
                 Usuń do kosza
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {removeBackupConfirm && active && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[500]" onClick={() => setRemoveBackupConfirm(false)}>
+          <div className="bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg p-5 w-full max-w-sm space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-red-500">Usunąć kopię onchain?</h3>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Kopia zapasowa rozdziału „<strong>{active.title}</strong>” zostanie usunięta z kanistra. Treść na OneDrive pozostaje bez zmian.
+            </p>
+            <p className="text-xs text-[var(--text-muted)]">Wpisz <strong>DELETE</strong> żeby potwierdzić:</p>
+            <input
+              autoFocus
+              value={removeBackupConfirmText}
+              onChange={(e) => setRemoveBackupConfirmText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && confirmRemoveBackup()}
+              className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm"
+              placeholder="DELETE"
+            />
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setRemoveBackupConfirm(false)} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Anuluj</button>
+              <button
+                onClick={confirmRemoveBackup}
+                disabled={removeBackupConfirmText !== "DELETE"}
+                className="px-3 py-1.5 text-sm rounded bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white"
+              >
+                Usuń kopię
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showPlainPasteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[500]" onClick={() => setShowPlainPasteModal(false)}>
+          <div className="bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg p-5 w-full max-w-lg space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold">🧹 Wklej jako zwykły tekst</h3>
+            <p className="text-xs text-[var(--text-muted)]">
+              Wklej tekst poniżej (Ctrl+V) — cały format Worda zostanie odrzucony, każda linia trafi do dokumentu jako zwykły akapit "Normal".
+            </p>
+            <textarea
+              autoFocus
+              value={plainPasteText}
+              onChange={(e) => setPlainPasteText(e.target.value)}
+              rows={10}
+              className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm font-mono"
+              placeholder="Wklej tutaj..."
+            />
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setShowPlainPasteModal(false)} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Anuluj</button>
+              <button
+                onClick={insertPlainPasteText}
+                disabled={!plainPasteText.trim()}
+                className="px-3 py-1.5 text-sm rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-white"
+              >
+                Wstaw jako Normal
               </button>
             </div>
           </div>

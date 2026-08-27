@@ -40,25 +40,29 @@ export function HomeScreen({ onSelectModule }: { onSelectModule: (m: string) => 
       >
         v.{__BUILD_HASH__}
       </div>
-      <div className="max-w-5xl w-full space-y-6">
-        <div className="flex items-center gap-4 justify-center">
-          <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-10" />
+      <div className="max-w-5xl w-full space-y-8">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-9" />
+          <div>
+            <h1 className="text-xl font-semibold text-[var(--text-primary)]">Wybierz moduł</h1>
+            <p className="text-sm text-[var(--text-muted)] mt-0.5">Bartolini Air Simulation — panel wewnętrzny</p>
+          </div>
         </div>
         {allowedModules === null ? (
-          <p className="text-center text-gray-500">Ładowanie...</p>
+          <p className="text-center text-[var(--text-muted)]">Ładowanie...</p>
         ) : visibleTiles.length === 0 ? (
-          <p className="text-center text-gray-500">Brak dostępnych modułów. Skontaktuj się z administratorem.</p>
+          <p className="text-center text-[var(--text-muted)]">Brak dostępnych modułów. Skontaktuj się z administratorem.</p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {allTiles.map((t) => (
               <button
                 key={t.id}
                 onClick={() => onSelectModule(t.id)}
-                className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 text-left shadow-sm hover:shadow-md hover:border-cyan-400 hover:-translate-y-0.5 transition-all flex flex-col gap-1"
+                className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 text-left shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] hover:border-[var(--accent)] hover:-translate-y-0.5 transition-all flex flex-col gap-2"
               >
-                <span className="text-2xl leading-none">{t.icon}</span>
+                <span className="w-10 h-10 rounded-xl bg-[var(--accent-light)] flex items-center justify-center text-lg leading-none">{t.icon}</span>
                 <h2 className="text-sm font-semibold text-[var(--text-primary)] leading-tight">{t.title}</h2>
-                <p className="text-xs text-gray-500 leading-snug line-clamp-2">{t.desc}</p>
+                <p className="text-xs text-[var(--text-muted)] leading-snug line-clamp-2">{t.desc}</p>
               </button>
             ))}
           </div>

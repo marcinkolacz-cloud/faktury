@@ -106,7 +106,7 @@ export function ProjectExpensesImport({ actor, onChange }: { actor: any; onChang
       <button
         onClick={() => fileInputRef.current?.click()}
         disabled={importing}
-        className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50"
+        className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium disabled:opacity-50"
       >
         {importing ? "Importowanie..." : "📥 Importuj zakupy z Excel"}
       </button>

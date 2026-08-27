@@ -75,7 +75,7 @@ export function StockMovementRow({ rowNumber, movement, itemName, projects, acto
       <td className="p-2 text-right font-mono">{movement.quantity}</td>
       <td className="p-2">
         {currentProjectName ? (
-          <span className="text-xs font-mono text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded">{currentProjectName}</span>
+          <span className="text-xs font-mono text-[var(--accent-hover)] bg-[var(--accent-light)] px-1.5 py-0.5 rounded">{currentProjectName}</span>
         ) : (
           <span className="text-[var(--text-secondary)]">—</span>
         )}
@@ -84,7 +84,7 @@ export function StockMovementRow({ rowNumber, movement, itemName, projects, acto
       <td className="p-2 whitespace-nowrap">
         {canWrite && (
           <>
-            <button onClick={() => setEditing(true)} className="text-cyan-600 hover:text-cyan-700 text-xs mr-2">Edytuj</button>
+            <button onClick={() => setEditing(true)} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs mr-2">Edytuj</button>
             <button onClick={remove} className="text-red-500 hover:text-red-600 text-xs">✕</button>
           </>
         )}

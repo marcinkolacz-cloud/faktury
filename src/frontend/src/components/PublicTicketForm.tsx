@@ -172,13 +172,13 @@ export function PublicTicketForm() {
       <div className="flex gap-1">
         <button
           onClick={() => setLang("pl")}
-          className={"px-2 py-0.5 text-xs rounded " + (lang === "pl" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
+          className={"px-2 py-0.5 text-xs rounded " + (lang === "pl" ? "bg-[var(--accent)] text-white" : "text-[var(--text-muted)]")}
         >
           PL
         </button>
         <button
           onClick={() => setLang("en")}
-          className={"px-2 py-0.5 text-xs rounded " + (lang === "en" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
+          className={"px-2 py-0.5 text-xs rounded " + (lang === "en" ? "bg-[var(--accent)] text-white" : "text-[var(--text-muted)]")}
         >
           EN
         </button>
@@ -197,13 +197,13 @@ export function PublicTicketForm() {
           <img src="/bartolini-logo.png" alt="Bartolini Air" className="h-10 mx-auto" />
           <h1 className="text-lg font-semibold text-[var(--text-primary)]">{t.thanksTitle}</h1>
           <p className="text-[var(--text-muted)] text-sm">{t.thanksBody}</p>
-          <div className="bg-cyan-950/10 border border-cyan-800/30 rounded p-3 space-y-1">
+          <div className="bg-[var(--accent-text)]/10 border border-[var(--accent-text)]/30 rounded p-3 space-y-1">
             <p className="text-xs text-[var(--text-muted)]">
               {lang === "pl" ? "Numer zgłoszenia (zapisz, żeby sprawdzić status):" : "Tracking number (save it to check status):"}
             </p>
             <p className="font-mono text-sm font-semibold text-[var(--text-primary)] select-all">{trackingToken}</p>
           </div>
-          <a href={"/status?token=" + trackingToken} className="text-xs text-cyan-600 hover:underline">
+          <a href={"/status?token=" + trackingToken} className="text-xs text-[var(--accent)] hover:underline">
             {lang === "pl" ? "Sprawdź status zgłoszenia →" : "Check ticket status →"}
           </a>
         </div>
@@ -256,7 +256,7 @@ export function PublicTicketForm() {
               ))}
             </ul>
           )}
-          {uploadProgress && <p className="text-[10px] text-cyan-600 mt-1">{uploadProgress}</p>}
+          {uploadProgress && <p className="text-[10px] text-[var(--accent)] mt-1">{uploadProgress}</p>}
         </div>
         <input
           value={honeypot}
@@ -267,13 +267,13 @@ export function PublicTicketForm() {
           aria-hidden="true"
         />
         {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button onClick={submit} disabled={sending} className="w-full px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50">
+        <button onClick={submit} disabled={sending} className="w-full px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium disabled:opacity-50">
           {sending ? t.sending : t.submit}
         </button>
         
         <a
           href="/status"
-          className="block text-center text-sm font-medium text-cyan-700 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded px-3 py-2 transition-colors"
+          className="block text-center text-sm font-medium text-[var(--accent-hover)] bg-[var(--accent-light)] hover:bg-[var(--accent-light)] border border-[var(--accent-light)] rounded px-3 py-2 transition-colors"
         >
           {lang === "pl" ? "📋 Masz już numer zgłoszenia? Sprawdź status" : "📋 Already have a ticket number? Check status"}
         </a>

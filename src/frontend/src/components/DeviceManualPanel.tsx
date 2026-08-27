@@ -184,7 +184,7 @@ export function DeviceManualPanel({ actor, deviceId, deviceLabel }: { actor: any
       <div className="flex" style={{ minHeight: 300 }}>
         <div className="w-48 shrink-0 border-r border-[var(--border-color-light)] bg-[var(--bg-page)] p-2 space-y-1">
           {chapters.map((ch) => (
-            <div key={ch.id} className={"group flex items-center gap-1 rounded px-2 py-1.5 text-xs cursor-pointer " + (ch.id === activeId ? "bg-cyan-600 text-white" : "hover:bg-[var(--bg-card)]")}>
+            <div key={ch.id} className={"group flex items-center gap-1 rounded px-2 py-1.5 text-xs cursor-pointer " + (ch.id === activeId ? "bg-[var(--accent)] text-white" : "hover:bg-[var(--bg-card)]")}>
               <span onClick={() => setActiveId(ch.id)} className="flex-1 truncate">{ch.title}</span>
               <button onClick={() => moveChapter(ch.id, "up")} className="opacity-0 group-hover:opacity-100 text-[10px]">↑</button>
               <button onClick={() => moveChapter(ch.id, "down")} className="opacity-0 group-hover:opacity-100 text-[10px]">↓</button>
@@ -224,7 +224,7 @@ export function DeviceManualPanel({ actor, deviceId, deviceLabel }: { actor: any
                     <button
                       onClick={saveChapter}
                       disabled={!dirty}
-                      className="text-xs px-3 h-7 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white"
+                      className="text-xs px-3 h-7 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-white"
                     >
                       💾 Zapisz
                     </button>

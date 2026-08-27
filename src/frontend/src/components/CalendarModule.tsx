@@ -12,7 +12,7 @@ const TYPE_LABELS: Record<string, string> = {
   task: "Zadanie",
 };
 const TYPE_COLORS: Record<string, string> = {
-  meeting: "bg-cyan-500/10 text-cyan-600 border-cyan-800/30",
+  meeting: "bg-[var(--accent-hover)]/10 text-[var(--accent)] border-[var(--accent-text)]/30",
   trip: "bg-amber-500/10 text-amber-600 border-amber-800/30",
   importantDate: "bg-red-500/10 text-red-500 border-red-800/30",
   task: "bg-emerald-500/10 text-emerald-600 border-emerald-800/30",
@@ -371,7 +371,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
               </div>
             )}
             {eventNotifyResult && <p className="text-[10px] text-[var(--text-muted)]">{eventNotifyResult}</p>}
-            <button onClick={addEvent} disabled={!title.trim() || !startDate} className="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50">
+            <button onClick={addEvent} disabled={!title.trim() || !startDate} className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium disabled:opacity-50">
               Dodaj
             </button>
           </div>
@@ -403,7 +403,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                   <button
                     key={dayStr}
                     onClick={() => setSelectedDay(selectedDay === dayStr ? null : dayStr)}
-                    className={"min-h-[64px] rounded p-1 text-left align-top border overflow-hidden " + (dayStr === todayStr ? "border-cyan-600" : "border-transparent") + (selectedDay === dayStr ? " bg-cyan-500/10" : " hover:bg-[var(--bg-hover)]")}
+                    className={"min-h-[64px] rounded p-1 text-left align-top border overflow-hidden " + (dayStr === todayStr ? "border-[var(--accent)]" : "border-transparent") + (selectedDay === dayStr ? " bg-[var(--accent-hover)]/10" : " hover:bg-[var(--bg-hover)]")}
                   >
                     <span className="text-[10px] text-[var(--text-primary)]">{d}</span>
                     <div className="space-y-0.5 mt-0.5">
@@ -433,7 +433,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
               Pokaż przeszłe
             </label>
             {selectedDay && (
-              <button onClick={() => setSelectedDay(null)} className="text-xs text-cyan-600 hover:underline">
+              <button onClick={() => setSelectedDay(null)} className="text-xs text-[var(--accent)] hover:underline">
                 Dzień: {formatDate(selectedDay)} — wyczyść
               </button>
             )}
@@ -459,7 +459,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
   <div className="mt-1">
     <p className={"text-xs text-[var(--text-secondary)] whitespace-pre-wrap " + (descExpanded[String(e.id)] ? "" : "line-clamp-3")}>{e.description}</p>
     {e.description.length > 150 && (
-      <button onClick={() => setDescExpanded((prev) => ({ ...prev, [String(e.id)]: !prev[String(e.id)] }))} className="text-[10px] text-cyan-600 hover:underline mt-0.5">
+      <button onClick={() => setDescExpanded((prev) => ({ ...prev, [String(e.id)]: !prev[String(e.id)] }))} className="text-[10px] text-[var(--accent)] hover:underline mt-0.5">
         {descExpanded[String(e.id)] ? "Pokaż mniej" : "Pokaż więcej"}
       </button>
     )}
@@ -470,13 +470,13 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                           <button
                             key={String(note.id)}
                             onClick={() => setViewNoteId(viewNoteId === String(note.id) ? null : String(note.id))}
-                            className={"text-[10px] px-2 py-0.5 rounded-full border hover:bg-[var(--bg-hover)] " + (viewNoteId === String(note.id) ? "border-cyan-600 text-cyan-600 bg-cyan-500/10" : "border-[var(--border-color)] text-[var(--text-secondary)] bg-[var(--bg-page)]")}
+                            className={"text-[10px] px-2 py-0.5 rounded-full border hover:bg-[var(--bg-hover)] " + (viewNoteId === String(note.id) ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-hover)]/10" : "border-[var(--border-color)] text-[var(--text-secondary)] bg-[var(--bg-page)]")}
                           >
                             📝 {note.title}
                           </button>
                         ))}
                         {canWrite && (
-                          <button onClick={() => setAddingNoteFor(addingNoteFor === String(e.id) ? null : String(e.id))} className="text-[10px] px-2 py-0.5 rounded-full border border-dashed border-[var(--border-color)] text-cyan-600 hover:bg-[var(--bg-hover)]">
+                          <button onClick={() => setAddingNoteFor(addingNoteFor === String(e.id) ? null : String(e.id))} className="text-[10px] px-2 py-0.5 rounded-full border border-dashed border-[var(--border-color)] text-[var(--accent)] hover:bg-[var(--bg-hover)]">
                             + Notatka
                           </button>
                         )}
@@ -490,7 +490,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                                 <input value={editNoteTitle} onChange={(ev) => setEditNoteTitle(ev.target.value)} className="w-full text-xs font-medium border border-[var(--border-color)] rounded px-1.5 py-1" />
                                 <textarea value={editNoteContent} onChange={(ev) => setEditNoteContent(ev.target.value)} rows={6} className="w-full text-xs border border-[var(--border-color)] rounded px-1.5 py-1 whitespace-pre-wrap font-mono" />
                                 <div className="flex gap-2">
-                                  <button onClick={() => saveEditNote(e.id, note.id)} className="text-xs text-cyan-600 hover:underline">Zapisz</button>
+                                  <button onClick={() => saveEditNote(e.id, note.id)} className="text-xs text-[var(--accent)] hover:underline">Zapisz</button>
                                   <button onClick={() => setEditingNoteId(null)} className="text-xs text-[var(--text-muted)] hover:underline">Anuluj</button>
                                 </div>
                               </div>
@@ -527,7 +527,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                             className="w-full text-xs border border-[var(--border-color)] bg-[var(--bg-card)] rounded px-1.5 py-1 whitespace-pre-wrap font-mono"
                           />
                           <div className="flex gap-2">
-                            <button onClick={async () => { await addNote(e.id); setAddingNoteFor(null); }} className="text-xs px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded">Dodaj</button>
+                            <button onClick={async () => { await addNote(e.id); setAddingNoteFor(null); }} className="text-xs px-2 py-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded">Dodaj</button>
                             <button onClick={() => setAddingNoteFor(null)} className="text-xs text-[var(--text-muted)] hover:underline">Anuluj</button>
                           </div>
                           {renderNoteNotifyPicker(String(e.id))}
@@ -555,7 +555,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                                   <input value={editNoteTitle} onChange={(ev) => setEditNoteTitle(ev.target.value)} className="w-full text-xs font-medium border border-[var(--border-color)] rounded px-1.5 py-1" />
                                   <textarea value={editNoteContent} onChange={(ev) => setEditNoteContent(ev.target.value)} rows={6} className="w-full text-xs border border-[var(--border-color)] rounded px-1.5 py-1 whitespace-pre-wrap font-mono" />
                                   <div className="flex gap-2">
-                                    <button onClick={() => saveEditNote(e.id, note.id)} className="text-xs text-cyan-600 hover:underline">Zapisz</button>
+                                    <button onClick={() => saveEditNote(e.id, note.id)} className="text-xs text-[var(--accent)] hover:underline">Zapisz</button>
                                     <button onClick={() => setEditingNoteId(null)} className="text-xs text-[var(--text-muted)] hover:underline">Anuluj</button>
                                   </div>
                                 </div>
@@ -593,7 +593,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                                 rows={4}
                                 className="w-full text-xs border border-[var(--border-color)] bg-[var(--bg-page)] rounded px-1.5 py-1 whitespace-pre-wrap font-mono"
                               />
-                              <button onClick={() => addNote(e.id)} className="text-xs px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded">+ Dodaj notatkę</button>
+                              <button onClick={() => addNote(e.id)} className="text-xs px-2 py-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded">+ Dodaj notatkę</button>
                               {renderNoteNotifyPicker(String(e.id))}
                             </div>
                           )}
@@ -602,7 +602,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                         <p className="text-[10px] font-medium text-[var(--text-muted)] uppercase pt-1">Załączniki</p>
                         {(attachmentsByEvent[String(e.id)] || []).map(([itemId, name]) => (
                           <div key={itemId} className="flex items-center justify-between text-xs">
-                            <button onClick={() => downloadAttachment(itemId, name)} className="text-cyan-600 hover:underline truncate">📎 {name}</button>
+                            <button onClick={() => downloadAttachment(itemId, name)} className="text-[var(--accent)] hover:underline truncate">📎 {name}</button>
                             {canWrite && <button onClick={() => removeAttachment(e.id, itemId)} className="text-red-500 hover:text-red-400 ml-2 shrink-0">✕</button>}
                           </div>
                         ))}
@@ -610,7 +610,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                           <p className="text-[10px] text-[var(--text-muted)]">Brak załączników.</p>
                         )}
                         {canWrite && (
-                          <label className="text-xs text-cyan-600 cursor-pointer hover:underline inline-block mt-1">
+                          <label className="text-xs text-[var(--accent)] cursor-pointer hover:underline inline-block mt-1">
                             {uploadingFor === String(e.id) ? "Wgrywanie..." : "+ Dodaj plik"}
                             <input
                               type="file"

@@ -217,19 +217,19 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
         <TopBar currentModule={currentModule} onNavigate={onNavigate} onHome={onHome} actor={actor} />
         <h1 className="text-xl font-semibold">📘 Dziennik użytkowania</h1>
 
-        <div className="border border-cyan-500/30 rounded-lg overflow-hidden max-w-3xl">
+        <div className="border border-[var(--accent-hover)]/30 rounded-lg overflow-hidden max-w-3xl">
           <button
             type="button"
             onClick={() => setShowHelp((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-left"
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-[var(--accent-hover)]/10 hover:bg-[var(--accent-hover)]/20 text-left"
           >
-            <span className="text-sm font-medium text-cyan-700 dark:text-cyan-400">❓ Jak sprawdzać wpisy i zarządzać instruktorami</span>
-            <span className="text-cyan-600 text-xs shrink-0">{showHelp ? "▲ zwiń" : "▼ rozwiń"}</span>
+            <span className="text-sm font-medium text-[var(--accent-hover)] dark:text-[var(--accent-text)]">❓ Jak sprawdzać wpisy i zarządzać instruktorami</span>
+            <span className="text-[var(--accent)] text-xs shrink-0">{showHelp ? "▲ zwiń" : "▼ rozwiń"}</span>
           </button>
           {showHelp && (
             <div className="p-3 space-y-2 bg-[var(--bg-card)]">
-              <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
-                <p className="font-semibold text-cyan-700 dark:text-cyan-400 mb-1">📋 Zakładka „Wpisy"</p>
+              <div className="rounded-md border border-[var(--accent-hover)]/30 bg-[var(--accent-hover)]/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="font-semibold text-[var(--accent-hover)] dark:text-[var(--accent-text)] mb-1">📋 Zakładka „Wpisy"</p>
                 <p>Podgląd wszystkich sesji ze wszystkich urządzeń, zapisanych przez instruktorów na publicznej stronie /dziennik. Filtruj po nazwisku i zakresie dat, kliknij miniaturę podpisu żeby powiększyć. „📊 Eksportuj do Excel" zapisuje aktualnie przefiltrowaną listę do pliku .xlsx.</p>
               </div>
               <div className="rounded-md border border-fuchsia-400/40 bg-fuchsia-500/10 p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
@@ -252,13 +252,13 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
         <div className="flex gap-2 border-b border-[var(--border-color)]">
           <button
             onClick={() => setTab("entries")}
-            className={"px-3 py-2 text-sm " + (tab === "entries" ? "border-b-2 border-cyan-600 text-cyan-600 font-medium" : "text-[var(--text-muted)]")}
+            className={"px-3 py-2 text-sm " + (tab === "entries" ? "border-b-2 border-[var(--accent)] text-[var(--accent)] font-medium" : "text-[var(--text-muted)]")}
           >
             Wpisy ({entries.length})
           </button>
           <button
             onClick={() => setTab("instructors")}
-            className={"px-3 py-2 text-sm " + (tab === "instructors" ? "border-b-2 border-cyan-600 text-cyan-600 font-medium" : "text-[var(--text-muted)]")}
+            className={"px-3 py-2 text-sm " + (tab === "instructors" ? "border-b-2 border-[var(--accent)] text-[var(--accent)] font-medium" : "text-[var(--text-muted)]")}
           >
             Instruktorzy ({instructors.length})
           </button>
@@ -285,7 +285,7 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                 <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} className="border border-[var(--border-color)] rounded px-2 py-1.5 text-sm bg-[var(--bg-page)] text-[var(--text-primary)]" />
               </label>
               {(filterName || filterFrom || filterTo) && (
-                <button onClick={() => { setFilterName(""); setFilterFrom(""); setFilterTo(""); }} className="text-xs text-cyan-600 hover:underline mb-1.5">
+                <button onClick={() => { setFilterName(""); setFilterFrom(""); setFilterTo(""); }} className="text-xs text-[var(--accent)] hover:underline mb-1.5">
                   Wyczyść filtry
                 </button>
               )}
@@ -348,7 +348,7 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                       ) : "—"}
                     </td>
                     <td className="py-2 pr-3 text-right whitespace-nowrap">
-                      <button onClick={() => startEdit(e)} className="text-xs text-cyan-600 hover:underline mr-2">✏ Edytuj</button>
+                      <button onClick={() => startEdit(e)} className="text-xs text-[var(--accent)] hover:underline mr-2">✏ Edytuj</button>
                       <button
                         onClick={async () => { await actor.trashLogbookEntry(e.id); reload(); }}
                         className="text-xs text-red-500 hover:underline"
@@ -408,7 +408,7 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                             </button>
                             <div className="flex gap-2">
                               <button onClick={() => { setEditingId(null); setEditDraft(null); }} className="text-xs px-3 py-1.5 rounded border border-[var(--border-color)]">Anuluj</button>
-                              <button onClick={saveEdit} disabled={editSaving} className="text-xs px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-50">
+                              <button onClick={saveEdit} disabled={editSaving} className="text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white disabled:opacity-50">
                                 {editSaving ? "Zapisywanie…" : "💾 Zapisz"}
                               </button>
                             </div>
@@ -445,7 +445,7 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                 className="w-full border border-[var(--border-color)] rounded px-3 py-2 text-sm bg-[var(--bg-page)]"
               />
               {addError && <p className="text-red-600 text-xs">{addError}</p>}
-              <button onClick={addInstructor} className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-medium">
+              <button onClick={addInstructor} className="px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-sm font-medium">
                 + Dodaj (PIN wygeneruje się automatycznie)
               </button>
             </div>
@@ -479,7 +479,7 @@ export function LogbookModule({ onHome, onNavigate, currentModule }: { onHome: (
                         {i.active ? <span className="text-green-600">Aktywny</span> : <span className="text-[var(--text-muted)]">Nieaktywny</span>}
                       </td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">
-                        <button onClick={() => resetPin(i.email)} className="text-xs text-cyan-600 hover:underline mr-3">Reset PIN</button>
+                        <button onClick={() => resetPin(i.email)} className="text-xs text-[var(--accent)] hover:underline mr-3">Reset PIN</button>
                         <button onClick={() => toggleActive(i.email, i.active)} className="text-xs text-[var(--text-muted)] hover:underline">
                           {i.active ? "Dezaktywuj" : "Aktywuj"}
                         </button>

@@ -104,11 +104,11 @@ export function AdminPanel({ actor }: { actor: any }) {
             <option value="write">Zapis (Write)</option>
             <option value="admin">Admin</option>
           </select>
-          <button onClick={generateCode} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-medium">
+          <button onClick={generateCode} className="px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-sm font-medium">
             Wygeneruj kod
           </button>
           {lastCode && (
-            <span className="font-mono text-sm bg-cyan-50 text-cyan-700 px-2 py-1 rounded">
+            <span className="font-mono text-sm bg-[var(--accent-light)] text-[var(--accent-hover)] px-2 py-1 rounded">
               {lastCode}
             </span>
           )}

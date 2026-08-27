@@ -24,6 +24,7 @@ mixin (
   docHeaderFooterSettings : Map.Map<Text, Types.DocHeaderFooterSettings>,
   deviceManualVariables : Map.Map<Nat, [Types.ManualVariable]>,
   deviceManualChapterBackupEnabled : Map.Map<Nat, Bool>,
+  deviceManualChapterBackupTrash : Map.Map<Nat, (Text, Int)>,
   docFolders : Map.Map<Nat, (Text, Principal, Int)>,
   accessRoles : Map.Map<Principal, Types.Role>,
   moduleAccess : Map.Map<Principal, [Text]>,
@@ -674,9 +675,15 @@ mixin (
       case (?_) {
         deviceManualChapterBackupEnabled.add(chapterId, enabled);
         if (not enabled) {
-          // Wyłączenie kopii = kasujemy zawartość backupu, żeby nie zalegały śmieci
+          // Wyłączenie kopii = kopia trafia do kosza admina (nie kasujemy
+          // trwale od razu), a treść bieżącego rozdziału jest czyszczona.
           switch (deviceManualChapters.get(chapterId)) {
-            case (?ch) { deviceManualChapters.add(chapterId, { ch with contentHtml = "" }); };
+            case (?ch) {
+              if (Text.size(ch.contentHtml) > 0) {
+                deviceManualChapterBackupTrash.add(chapterId, (ch.contentHtml, Time.now()));
+              };
+              deviceManualChapters.add(chapterId, { ch with contentHtml = "" });
+            };
             case null {};
           };
         };
@@ -684,6 +691,41 @@ mixin (
       };
       case null { false };
     };
+  };
+
+  public query ({ caller }) func listTrashedChapterBackups() : async [(Nat, Text, Int)] {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Tylko admin ma dostęp do kosza") };
+    var result = List.empty<(Nat, Text, Int)>();
+    for ((id, (_, ts)) in deviceManualChapterBackupTrash.entries()) {
+      let title = switch (deviceManualChapters.get(id)) {
+        case (?ch) { ch.title };
+        case null { "(usunięty rozdział #" # Nat.toText(id) # ")" };
+      };
+      result.add((id, title, ts));
+    };
+    List.toArray(result);
+  };
+
+  public shared ({ caller }) func restoreChapterBackup(chapterId : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Tylko admin ma dostęp do kosza") };
+    switch (deviceManualChapterBackupTrash.get(chapterId)) {
+      case (?(content, _)) {
+        switch (deviceManualChapters.get(chapterId)) {
+          case (?ch) { deviceManualChapters.add(chapterId, { ch with contentHtml = content }); };
+          case null {};
+        };
+        deviceManualChapterBackupEnabled.add(chapterId, true);
+        deviceManualChapterBackupTrash.remove(chapterId);
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func permanentlyDeleteChapterBackup(chapterId : Nat) : async Bool {
+    if (not AccessLib.isAdmin(accessRoles, caller)) { Runtime.trap("Tylko admin ma dostęp do kosza") };
+    deviceManualChapterBackupTrash.remove(chapterId);
+    true;
   };
 
   public query ({ caller }) func getChapterBackupEnabled(chapterId : Nat) : async Bool {

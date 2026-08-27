@@ -179,7 +179,7 @@ function highlight(text: string) {
   const parts = text.split(/(„[^”]+”)/g);
   return parts.map((part, i) =>
     part.startsWith("„") && part.endsWith("”") ? (
-      <span key={i} className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 font-medium text-[13px]">
+      <span key={i} className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-[var(--accent-hover)]/10 text-[var(--accent-hover)] dark:text-[var(--accent-text)] font-medium text-[13px]">
         {part.slice(1, -1)}
       </span>
     ) : (
@@ -234,7 +234,7 @@ export function ManualModule({ onHome, onNavigate, currentModule, initialAnchor 
               onClick={() => { setOpenIds((prev) => new Set(prev).add(s.id)); refs.current[s.id]?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
               className={
                 "block w-full text-left px-2 py-1 text-xs rounded hover:bg-[var(--bg-card)] " +
-                (initialAnchor === s.id ? "text-cyan-600 font-medium" : "text-[var(--text-secondary)]")
+                (initialAnchor === s.id ? "text-[var(--accent)] font-medium" : "text-[var(--text-secondary)]")
               }
             >
               {s.icon} {s.title}
@@ -271,7 +271,7 @@ export function ManualModule({ onHome, onNavigate, currentModule, initialAnchor 
                   ref={(el) => { refs.current[s.id] = el; }}
                   className={
                     "bg-[var(--bg-card)] border rounded-lg scroll-mt-4 overflow-hidden " +
-                    (initialAnchor === s.id ? "border-cyan-500" : "border-[var(--border-color)]")
+                    (initialAnchor === s.id ? "border-[var(--accent-hover)]" : "border-[var(--border-color)]")
                   }
                 >
                   <button

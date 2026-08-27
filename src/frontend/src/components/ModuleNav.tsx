@@ -27,7 +27,7 @@ export function ModuleNav({ current, onNavigate, actor }: { current: string; onN
           className={
             "px-3 py-1.5 text-sm rounded font-medium transition-colors " +
             (current === t.id
-              ? "bg-cyan-600 text-white"
+              ? "bg-[var(--accent)] text-white"
               : "border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-page)]")
           }
         >

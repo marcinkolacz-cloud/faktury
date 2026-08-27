@@ -203,13 +203,13 @@ export function TicketStatusPage() {
           <div className="flex gap-1">
             <button
               onClick={() => setLang("pl")}
-              className={"px-2 py-0.5 text-xs rounded " + (lang === "pl" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
+              className={"px-2 py-0.5 text-xs rounded " + (lang === "pl" ? "bg-[var(--accent)] text-white" : "text-[var(--text-muted)]")}
             >
               PL
             </button>
             <button
               onClick={() => setLang("en")}
-              className={"px-2 py-0.5 text-xs rounded " + (lang === "en" ? "bg-cyan-600 text-white" : "text-[var(--text-muted)]")}
+              className={"px-2 py-0.5 text-xs rounded " + (lang === "en" ? "bg-[var(--accent)] text-white" : "text-[var(--text-muted)]")}
             >
               EN
             </button>
@@ -227,7 +227,7 @@ export function TicketStatusPage() {
           <button
             onClick={() => lookup(tokenInput)}
             disabled={loading}
-            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50"
+            className="px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium disabled:opacity-50"
           >
             {loading ? t.checking : t.check}
           </button>
@@ -239,7 +239,7 @@ export function TicketStatusPage() {
               <h2 className="font-semibold text-[var(--text-primary)]">{ticket.subject}</h2>
               <p className="text-xs text-[var(--text-muted)]">{t.createdLabel} {formatDate(ticket.createdAt, lang)}</p>
             </div>
-            <div className="inline-block px-2 py-1 rounded text-xs text-white bg-cyan-600">
+            <div className="inline-block px-2 py-1 rounded text-xs text-white bg-[var(--accent)]">
               {STATUS_LABELS[lang][statusFromVariant(ticket.status)] || "—"}
             </div>
             <p className="text-sm text-[var(--text-secondary)] bg-[var(--bg-page)] rounded p-3">{ticket.description}</p>
@@ -250,7 +250,7 @@ export function TicketStatusPage() {
                   <button
                     key={String(a.id)}
                     onClick={() => downloadAttachment(a)}
-                    className="block text-xs text-cyan-600 hover:underline"
+                    className="block text-xs text-[var(--accent)] hover:underline"
                   >
                     📎 {a.name} ({(Number(a.size) / 1024).toFixed(0)} KB)
                   </button>
@@ -271,7 +271,7 @@ export function TicketStatusPage() {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingAttachment}
-                className="text-xs text-cyan-600 hover:underline disabled:opacity-50"
+                className="text-xs text-[var(--accent)] hover:underline disabled:opacity-50"
               >
                 {uploadingAttachment ? "Wgrywanie..." : "📎 Dodaj załącznik (max 5MB)"}
               </button>
@@ -281,7 +281,7 @@ export function TicketStatusPage() {
               <div className="space-y-2">
                 <p className="text-xs font-medium text-[var(--text-muted)]">{t.repliesLabel}</p>
                 {ticket.replies.map((r: any, idx: number) => (
-                  <div key={idx} className="text-sm bg-cyan-500/10 rounded p-2">
+                  <div key={idx} className="text-sm bg-[var(--accent-hover)]/10 rounded p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-[var(--text-primary)]">{r.author}</p>
                       <p className="text-[10px] text-[var(--text-muted)]">{formatDate(r.createdAt, lang)}</p>
@@ -312,7 +312,7 @@ export function TicketStatusPage() {
               <button
                 onClick={sendReply}
                 disabled={sendingReply || !replyMessage.trim()}
-                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium disabled:opacity-50 text-sm"
+                className="px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium disabled:opacity-50 text-sm"
               >
                 {sendingReply ? t.sending : t.send}
               </button>

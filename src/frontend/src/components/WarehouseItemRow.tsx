@@ -149,7 +149,7 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
         <td className="p-1"><input value={form.serialNo} onChange={(e) => setForm({ ...form, serialNo: e.target.value })} className={c} /></td>
         <td className="p-1">
           <input value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} placeholder="Link do zdjęcia/strony" className={c} />
-          <button type="button" onClick={() => setPickerOpen(true)} className="text-cyan-600 text-[10px] hover:underline mt-0.5">Wybierz z Dysku</button>
+          <button type="button" onClick={() => setPickerOpen(true)} className="text-[var(--accent)] text-[10px] hover:underline mt-0.5">Wybierz z Dysku</button>
           {pickerOpen && (
             <DriveFilePicker
               actor={actor}
@@ -196,7 +196,7 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
       <td className="p-2">{canWrite && <input type="checkbox" checked={selected} onChange={onToggleSelect} />}</td>
       <td className="p-2 text-[var(--text-primary)]">{item.name}</td>
       <td className="p-2">
-        <span className="text-xs font-mono text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded">{item.category}</span>
+        <span className="text-xs font-mono text-[var(--accent-hover)] bg-[var(--accent-light)] px-1.5 py-0.5 rounded">{item.category}</span>
       </td>
       <td className="p-2 text-gray-500">{item.model}</td>
       <td className="p-2 text-gray-500">{item.serialNo}</td>
@@ -204,12 +204,12 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
         {item.link.startsWith("drive:") ? (
           <DriveThumbnail link={item.link} actor={actor} />
         ) : item.link ? (
-          <a href={item.link} target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline">Link</a>
+          <a href={item.link} target="_blank" rel="noreferrer" className="text-[var(--accent)] hover:underline">Link</a>
         ) : (
           <span className="text-[var(--text-secondary)]">—</span>
         )}
         {item.category === "Z faktur KSeF" && item.serialNo && (
-          <button onClick={() => showReadableInvoice(item.serialNo)} className="text-cyan-600 hover:underline block text-[10px] mt-0.5">📄 Podgląd</button>
+          <button onClick={() => showReadableInvoice(item.serialNo)} className="text-[var(--accent)] hover:underline block text-[10px] mt-0.5">📄 Podgląd</button>
         )}
       </td>
       <td className="p-2 text-gray-500">{item.location}</td>
@@ -221,7 +221,7 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
       <td className="p-2 whitespace-nowrap">
         {canWrite && (
           <>
-            <button onClick={() => setEditing(true)} className="text-cyan-600 hover:text-cyan-700 text-xs mr-2">Edytuj</button>
+            <button onClick={() => setEditing(true)} className="text-[var(--accent)] hover:text-[var(--accent-hover)] text-xs mr-2">Edytuj</button>
             <button onClick={remove} className="text-red-500 hover:text-red-600 text-xs">✕</button>
           </>
         )}
@@ -233,7 +233,7 @@ export function WarehouseItemRow({ rowNumber, item, categories, projects, moveme
           <div className="flex items-center justify-between p-3 border-b sticky top-0 bg-white">
             <span className="font-medium text-sm text-gray-800">Podgląd faktury</span>
             <div className="flex items-center gap-2">
-              <button onClick={() => printInvoiceHtml(readableHtml || "")} className="text-cyan-600 hover:underline text-sm">🖨️ Zapisz jako / Drukuj</button>
+              <button onClick={() => printInvoiceHtml(readableHtml || "")} className="text-[var(--accent)] hover:underline text-sm">🖨️ Zapisz jako / Drukuj</button>
               <button onClick={() => setReadableHtml(null)} className="text-gray-600 hover:text-gray-900 text-xl leading-none px-2">✕</button>
             </div>
           </div>

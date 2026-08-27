@@ -1678,7 +1678,7 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white shadow-lg flex items-center justify-center text-2xl"
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white shadow-lg flex items-center justify-center text-2xl"
         title="Czat z Agentem AI"
       >
         💬
@@ -1729,7 +1729,7 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
                   <div className="text-[var(--text-secondary)]">{new Date(Number(a.archivedAt) / 1_000_000).toLocaleString("pl-PL")}</div>
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  <button onClick={() => restoreArchived(a.id)} className="px-2 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white">
+                  <button onClick={() => restoreArchived(a.id)} className="px-2 py-1 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
                     Przywróć
                   </button>
                   <button onClick={() => deleteArchived(a.id)} className="px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50">
@@ -1762,7 +1762,7 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
                   <div
                     className={
                       "max-w-[80%] px-3 py-2 rounded-lg text-sm whitespace-pre-wrap " +
-                      (isUser ? "bg-cyan-600 text-white" : "bg-[var(--bg-page)] text-[var(--text-primary)] border border-[var(--border-color-light)]")
+                      (isUser ? "bg-[var(--accent)] text-white" : "bg-[var(--bg-page)] text-[var(--text-primary)] border border-[var(--border-color-light)]")
                     }
                   >
                     {m.content}
@@ -1825,7 +1825,7 @@ export function FloatingAgentChat({ actor }: { actor: any }) {
             <button
               onClick={send}
               disabled={!ready || busy || !!pendingConfirm || !input.trim()}
-              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded text-sm font-medium"
+              className="px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50 text-white rounded text-sm font-medium"
             >
               Wyślij
             </button>

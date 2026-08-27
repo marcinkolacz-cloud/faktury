@@ -134,10 +134,10 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
                       <td className="p-2 text-right font-mono">{inv.netAmount.toFixed(2)} {inv.currency}</td>
                       <td className="p-2 text-right font-mono">{inv.grossAmount.toFixed(2)} {inv.currency}</td>
                       <td className="p-2">
-                        <button onClick={() => toggleDetails(inv.ksefNumber)} className="text-cyan-600 hover:underline text-[10px] mr-2">
+                        <button onClick={() => toggleDetails(inv.ksefNumber)} className="text-[var(--accent)] hover:underline text-[10px] mr-2">
                           {expandedId === inv.ksefNumber ? "Zwiń" : "Pozycje"}
                         </button>
-                        <button onClick={() => showReadableInvoice(inv.ksefNumber)} className="text-cyan-600 hover:underline text-[10px]">📄 Podgląd</button>
+                        <button onClick={() => showReadableInvoice(inv.ksefNumber)} className="text-[var(--accent)] hover:underline text-[10px]">📄 Podgląd</button>
                       </td>
                     </tr>
                     {expandedId === inv.ksefNumber && (
@@ -186,7 +186,7 @@ export function KsefTeamView({ onHome, onNavigate, currentModule, actor }: { onH
             <div className="flex items-center justify-between p-3 border-b sticky top-0 bg-white">
               <span className="font-medium text-sm text-gray-800">Podgląd faktury</span>
               <div className="flex items-center gap-2">
-                <button onClick={() => printInvoiceHtml(readableHtml || "")} className="text-cyan-600 hover:underline text-sm">🖨️ Zapisz jako / Drukuj</button>
+                <button onClick={() => printInvoiceHtml(readableHtml || "")} className="text-[var(--accent)] hover:underline text-sm">🖨️ Zapisz jako / Drukuj</button>
                 <button onClick={() => setReadableHtml(null)} className="text-gray-600 hover:text-gray-900 text-xl leading-none px-2">✕</button>
               </div>
             </div>

@@ -71,8 +71,10 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
       onClick={onClick}
       title={collapsed ? label : undefined}
       className={
-        "w-full flex items-center gap-2 px-3 py-2 text-sm rounded font-medium transition-colors text-left " +
-        (currentModule === id ? "bg-cyan-600 text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]")
+        "w-full flex items-center gap-2.5 px-3 py-2 text-[13px] rounded-lg font-medium transition-colors text-left " +
+        (currentModule === id
+          ? "bg-[var(--accent-light)] text-[var(--accent-text)]"
+          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]")
       }
     >
       <span className="text-base leading-none shrink-0">{icon}</span>
@@ -92,31 +94,40 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
       className="fixed inset-y-0 left-0 z-40 flex flex-col bg-[var(--bg-card)] border-r border-[var(--border-color)] overflow-y-auto overflow-x-hidden"
       style={{ width }}
     >
-      <div className="flex items-center gap-2 px-3 py-3 border-b border-[var(--border-color)]">
-        <label className="flex items-center gap-2 cursor-pointer select-none" title="Zwiń/rozwiń menu">
+      <div className="px-3 py-4 border-b border-[var(--border-color)]">
+        <button onClick={onHome} className="w-full flex items-center gap-2.5 group">
+          <div className="w-8 h-8 rounded-lg bg-[var(--accent)] flex items-center justify-center text-white text-base shrink-0">🧾</div>
+          {!collapsed && (
+            <div className="text-left min-w-0">
+              <div className="text-sm font-bold text-[var(--text-primary)] leading-tight truncate">Open<span className="text-[var(--accent)]">SaaS</span></div>
+              <div className="text-[10px] text-[var(--text-muted)] leading-tight truncate">Bartolini Air Simulation</div>
+            </div>
+          )}
+        </button>
+        <label className="flex items-center gap-2 cursor-pointer select-none mt-3" title="Zwiń/rozwiń menu">
           <input
             type="checkbox"
             checked={!collapsed}
             onChange={(e) => setCollapsed(!e.target.checked)}
-            className="w-4 h-4 accent-cyan-600 shrink-0"
+            className="w-3.5 h-3.5 accent-[var(--accent)] shrink-0"
           />
-          {!collapsed && <span className="text-xs text-[var(--text-secondary)]">Menu</span>}
+          {!collapsed && <span className="text-[11px] text-[var(--text-muted)]">Rozwinięte menu</span>}
         </label>
       </div>
 
-      <div className="flex-1 flex flex-col gap-1 p-2">
+      <div className="flex-1 flex flex-col gap-1 p-2.5">
         <NavBtn id="home" icon="🏠" label="Menu główne" onClick={onHome} />
         {isAdmin && <NavBtn id="admin" icon="🛡️" label="Admin" onClick={() => onNavigate("admin")} />}
-        <div className="h-px bg-[var(--border-color)] my-1" />
+        <div className="h-px bg-[var(--border-color)] my-2" />
         {GROUPS.map((g) => {
           const groupTabs = tabs.filter((t) => t.group === g);
           if (groupTabs.length === 0) return null;
           return (
-            <div key={g} className="mt-1">
+            <div key={g} className="mt-2">
               {!collapsed && (
-                <div className="px-3 pb-1 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{g}</div>
+                <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">{g}</div>
               )}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-0.5">
                 {groupTabs.map((t) => (
                   <NavBtn key={t.id} id={t.id} icon={t.icon} label={t.label} onClick={() => onNavigate(t.id)} />
                 ))}
@@ -126,7 +137,7 @@ export function TopBar({ currentModule, onNavigate, onHome, actor, expenses, pay
         })}
       </div>
 
-      <div className="p-2 border-t border-[var(--border-color)] flex flex-col gap-1">
+      <div className="p-2.5 border-t border-[var(--border-color)] flex flex-col gap-0.5">
         {expenses && payments && projects && onDataChange && (
           <div className={collapsed ? "flex justify-center" : ""}>
             <ImportExport expenses={expenses} payments={payments} projects={projects} actor={actor} onChange={onDataChange} />

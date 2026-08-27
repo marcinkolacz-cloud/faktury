@@ -45,7 +45,7 @@ export function InfoTip({ text }: { text: string }) {
         onMouseEnter={open}
         onMouseLeave={close}
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); show ? close() : open(); }}
-        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-cyan-600 text-white text-[12px] font-bold leading-none ml-1.5 shadow-sm hover:bg-cyan-500 ring-2 ring-cyan-600/20 align-middle"
+        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[var(--accent)] text-white text-[12px] font-bold leading-none ml-1.5 shadow-sm hover:bg-[var(--accent-hover)] ring-2 ring-[var(--accent)]/20 align-middle"
         aria-label="Pomoc"
       >
         ?
@@ -58,7 +58,7 @@ export function InfoTip({ text }: { text: string }) {
             left: pos.left,
             transform: pos.below ? "translate(-50%, 0)" : "translate(-50%, -100%)",
           }}
-          className="z-[9999] w-64 p-2.5 rounded-md bg-[var(--bg-card)] border-2 border-cyan-600 text-[12px] leading-relaxed text-[var(--text-primary)] shadow-xl"
+          className="z-[9999] w-64 p-2.5 rounded-md bg-[var(--bg-card)] border-2 border-[var(--accent)] text-[12px] leading-relaxed text-[var(--text-primary)] shadow-xl"
           onClick={(e) => e.stopPropagation()}
           onMouseEnter={() => setShow(true)}
           onMouseLeave={close}

@@ -35,7 +35,7 @@ export function WelcomeBackModal({ actor }: { actor: any }) {
         <ul className="space-y-2 text-sm">
           {items.map((it, i) => (
             <li key={i} className="flex items-start gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded shrink-0 mt-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-[var(--accent-hover)] bg-[var(--accent-light)] px-1.5 py-0.5 rounded shrink-0 mt-0.5">
                 {KIND_LABELS[kindKey(it.kind)] ?? kindKey(it.kind)}
               </span>
               <span className="text-[var(--text-primary)]">
@@ -45,7 +45,7 @@ export function WelcomeBackModal({ actor }: { actor: any }) {
           ))}
         </ul>
         <div className="flex justify-end pt-2">
-          <button onClick={close} className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-sm font-medium">
+          <button onClick={close} className="px-4 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded text-sm font-medium">
             Rozumiem
           </button>
         </div>

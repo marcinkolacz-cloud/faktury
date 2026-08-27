@@ -25,9 +25,10 @@ export function TrashView({ actor }: { actor: any }) {
   const [ticketsTrashed, setTicketsTrashed] = useState<any[]>([]);
   const [manualChapters, setManualChapters] = useState<any[]>([]);
   const [logbookEntries, setLogbookEntries] = useState<any[]>([]);
+  const [chapterBackups, setChapterBackups] = useState<any[]>([]);
 
   const reload = async () => {
-    const [e, p, a, w, s, ce, cn, pr, tk, mc, lb] = await Promise.all([
+    const [e, p, a, w, s, ce, cn, pr, tk, mc, lb, cb] = await Promise.all([
       actor.listTrashedExpenses(),
       actor.listTrashedAdvancePayments(),
       actor.listTrashedTicketAttachments(),
@@ -39,6 +40,7 @@ export function TrashView({ actor }: { actor: any }) {
       actor.listTrashedTickets(),
       actor.listTrashedDeviceManualChapters(),
       actor.listTrashedLogbookEntries(),
+      actor.listTrashedChapterBackups(),
     ]);
     setExpenses(e);
     setPayments(p);
@@ -51,6 +53,7 @@ export function TrashView({ actor }: { actor: any }) {
     setTicketsTrashed(tk);
     setManualChapters(mc);
     setLogbookEntries(lb);
+    setChapterBackups((cb as any[]).map(([id, title]) => ({ id, title })));
     setLoading(false);
   };
 
@@ -127,6 +130,7 @@ export function TrashView({ actor }: { actor: any }) {
     { key: "tickets", label: "Zgłoszenia", items: ticketsTrashed, getName: (i) => i.subject + " — " + i.clientName, restoreFn: "restoreTicket", permDeleteFn: "permanentlyDeleteTicket" },
     { key: "manualChapters", label: "Dokumentacja", items: manualChapters, getName: (i) => i.title, restoreFn: "restoreDeviceManualChapter", permDeleteFn: "permanentlyDeleteDeviceManualChapter" },
     { key: "logbookEntries", label: "Dziennik użytkowania", items: logbookEntries, getName: (i) => i.dataText + " — " + i.instruktorName, restoreFn: "restoreLogbookEntry", permDeleteFn: "permanentlyDeleteLogbookEntry" },
+    { key: "chapterBackups", label: "Kopie on-chain dokumentacji", items: chapterBackups, getName: (i) => i.title, restoreFn: "restoreChapterBackup", permDeleteFn: "permanentlyDeleteChapterBackup" },
   ];
 
   const totalCount = categories.reduce((s, c) => s + c.items.length, 0);
@@ -151,7 +155,7 @@ export function TrashView({ actor }: { actor: any }) {
               <span className="text-[10px] text-[var(--text-muted)]">zaznacz wszystkie</span>
               {catSelected.size > 0 && (
                 <>
-                  <button onClick={() => bulkRestore(cat)} disabled={bulkProcessing} className="text-[10px] px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded disabled:opacity-50">
+                  <button onClick={() => bulkRestore(cat)} disabled={bulkProcessing} className="text-[10px] px-2 py-0.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded disabled:opacity-50">
                     Przywróć zaznaczone ({catSelected.size})
                   </button>
                   {isAdmin && (
@@ -169,7 +173,7 @@ export function TrashView({ actor }: { actor: any }) {
                   <span className="truncate text-[var(--text-secondary)]">{cat.getName(item)}</span>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button onClick={() => restore(cat.restoreFn, item.id)} className="text-xs text-cyan-600 hover:underline">Przywróć</button>
+                  <button onClick={() => restore(cat.restoreFn, item.id)} className="text-xs text-[var(--accent)] hover:underline">Przywróć</button>
                   {isAdmin && (
                     <button onClick={() => permDelete(cat.permDeleteFn, item.id)} className="text-xs text-red-500 hover:underline">Usuń trwale</button>
                   )}

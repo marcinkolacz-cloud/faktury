@@ -298,8 +298,8 @@ export function ManualVariablesPanel({
 
         <div className="flex-1 overflow-auto p-4">
           <>
-            <div className="mb-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs text-[var(--text-secondary)] leading-relaxed">
-                <p className="font-semibold text-cyan-600 dark:text-cyan-400 mb-1">ⓘ Jak to działa</p>
+            <div className="mb-3 rounded-lg border border-[var(--accent-hover)]/30 bg-[var(--accent-hover)]/10 p-3 text-xs text-[var(--text-secondary)] leading-relaxed">
+                <p className="font-semibold text-[var(--accent)] dark:text-[var(--accent-text)] mb-1">ⓘ Jak to działa</p>
                 <p className="mb-1">
                   To narzędzie nie jest częścią dokumentu — nie jest drukowane ani widoczne w podglądzie/eksporcie.
                   W kolumnie <b>Aktualna wartość</b> wpisz tekst dokładnie tak, jak wygląda teraz w dokumencie
@@ -309,7 +309,7 @@ export function ManualVariablesPanel({
                   Kliknij <b>Wstaw</b> przy wierszu albo zaznacz kilka i <b>Wstaw zaznaczone</b>. Jeśli tekst wystąpi więcej niż raz,
                   pojawi się lista wystąpień do ręcznego wyboru, które podmienić.
                 </p>
-                <p className="text-cyan-700 dark:text-cyan-300 font-medium">
+                <p className="text-[var(--accent-hover)] dark:text-[var(--accent)] font-medium">
                   ⚡ Po udanej podmianie „Nowa wartość” automatycznie wskakuje do kolumny „Aktualna wartość” i staje się nowym punktem
                   odniesienia — kolejna podmiana tej samej zmiennej działa już na niej, bez przepisywania.
                 </p>
@@ -319,10 +319,10 @@ export function ManualVariablesPanel({
                 </p>
               </div>
               <div className="flex items-center gap-2 mb-2">
-                <button onClick={saveList} disabled={!dirty || busy === "save-list"} className="text-xs px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white">
+                <button onClick={saveList} disabled={!dirty || busy === "save-list"} className="text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-white">
                   {busy === "save-list" ? "Zapisywanie…" : "💾 Zapisz listę"}
                 </button>
-                <button onClick={insertSelected} disabled={selected.size === 0} className="text-xs px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white">
+                <button onClick={insertSelected} disabled={selected.size === 0} className="text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-white">
                   Wstaw zaznaczone ({selected.size})
                 </button>
               </div>
@@ -360,7 +360,7 @@ export function ManualVariablesPanel({
                         <button
                           onClick={() => doInsert(v)}
                           disabled={busy === v.key || !v.currentValue || !(drafts[v.key] ?? "")}
-                          className="text-[11px] px-2 py-1 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white mr-1"
+                          className="text-[11px] px-2 py-1 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-white mr-1"
                         >
                           {busy === v.key ? "…" : "Wstaw"}
                         </button>
@@ -413,7 +413,7 @@ export function ManualVariablesPanel({
             </div>
             <div className="flex justify-end gap-2 px-4 py-3 border-t border-[var(--border-color)]">
               <button onClick={() => setConflict(null)} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">Anuluj</button>
-              <button onClick={confirmConflict} className="text-xs px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white">Podmień zaznaczone</button>
+              <button onClick={confirmConflict} className="text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">Podmień zaznaczone</button>
             </div>
           </div>
         </div>

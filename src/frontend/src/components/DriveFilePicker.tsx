@@ -38,7 +38,7 @@ export function DriveFilePicker({ actor, onSelect, onClose }: { actor: any; onSe
               <button
                 key={String(f.id)}
                 onClick={() => onSelect(f.id, f.name)}
-                className="border border-[var(--border-color)] rounded p-2 hover:border-cyan-500 text-left space-y-1"
+                className="border border-[var(--border-color)] rounded p-2 hover:border-[var(--accent-hover)] text-left space-y-1"
               >
                 <div className="h-16 w-full bg-[var(--bg-hover)] rounded flex items-center justify-center text-[var(--text-muted)] text-xs">
                   📷
