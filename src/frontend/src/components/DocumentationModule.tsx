@@ -1195,6 +1195,34 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     setCommentPopup((p) => (p ? { ...p, top, left, lineWidth } : p));
   };
 
+  // Przewija już załadowany iframe podglądu "2 strony" do miejsca kursora,
+  // natychmiast — bez czekania na przebudowę/przeładowanie treści (samo
+  // przestawienie kursora, bez zmiany tekstu, generuje identyczny HTML co
+  // poprzednio, więc iframe się nie przeładowuje i tick nic nie daje).
+  const scrollTwoPageToCaret = () => {
+    if (!twoPageView) return;
+    const win = twoPageIframeRef.current?.contentWindow;
+    if (!win || !editorRef.current) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const anchorEl = sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? (sel.anchorNode as HTMLElement) : sel.anchorNode.parentElement) : null;
+    if (!anchorEl || !editorRef.current.contains(anchorEl)) return;
+    const range = sel.getRangeAt(0);
+    const rects = range.getClientRects();
+    const rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
+    const editorTop = editorRef.current.getBoundingClientRect().top;
+    const scrollTop = commentAreaRef.current?.scrollTop || 0;
+    const caretOffset = rect.top - editorTop + scrollTop;
+    const total = editorRef.current.scrollHeight || 1;
+    const fraction = Math.max(0, Math.min(1, caretOffset / total));
+    try {
+      const totalHeight = win.document.documentElement.scrollHeight;
+      win.scrollTo({ top: fraction * totalHeight, behavior: "smooth" });
+    } catch {
+      // iframe jeszcze nie załadowany / cross-origin - nic nie robimy
+    }
+  };
+
   const onEditorClick = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.tagName === "IMG") {
@@ -1217,10 +1245,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       commentAnchorElRef.current = null;
       setCommentPopup(null);
     }
-    // Klik tylko przestawia kursor (bez wpisywania tekstu), więc onInput
-    // się nie odpala — bez tego podgląd "2 strony" zostawał na starej
-    // stronie zamiast podążać za miejscem, w którym kliknął operator.
-    if (twoPageView) setTwoPageTick((t) => t + 1);
+    scrollTwoPageToCaret();
   };
 
   const addComment = () => {
@@ -2509,9 +2534,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       onClick={onEditorClick}
                       onKeyUp={(e) => {
                         // Nawigacja klawiaturą (strzałki/Home/End/PgUp/PgDn)
-                        // też przesuwa kursor bez odpalenia onInput.
-                        if (twoPageView && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
-                          setTwoPageTick((t) => t + 1);
+                        // też przesuwa kursor bez zmiany treści.
+                        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
+                          scrollTwoPageToCaret();
                         }
                       }}
                       onPaste={onEditorPaste}
