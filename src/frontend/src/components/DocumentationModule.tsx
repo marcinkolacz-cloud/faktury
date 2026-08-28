@@ -1270,11 +1270,17 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     if (editMode || !active) { setReadViewHtml(""); return; }
     let cancelled = false;
     (async () => {
-      const html = await buildChapterPreviewHtml(false, true, new Set([active.id]));
-      if (!cancelled) setReadViewHtml(html);
+      try {
+        const html = await buildChapterPreviewHtml(false, true, new Set([active.id]));
+        if (!cancelled) setReadViewHtml(html);
+      } catch (e) {
+        console.error("[podgląd rozdziału] budowanie nie powiodło się:", e);
+        if (!cancelled) setReadViewHtml("");
+      }
     })();
     return () => { cancelled = true; };
-  }, [editMode, active]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, active?.id, active?.contentHtml]);
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.data && e.data.type === "docPreviewPageCount") {
