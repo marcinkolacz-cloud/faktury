@@ -1,0 +1,56 @@
+diff --git a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+index e096a93..71c83f3 100755
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -556,6 +556,27 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
+   const contentH = PAGE_H_PX - headerHPx - footerHPx;
+   const breakOffsets = computeBreakOffsets(view, contentH);
+   const totalPages = breakOffsets.length + 1;
++  // TYMCZASOWE (diagnostyka 4-vs-3-stron, do usunięcia po ustaleniu przyczyny):
++  // widoczny licznik sumy wysokości bloków / ich liczby, żeby porównać 1:1
++  // z tym samym licznikiem w podglądzie bez potrzeby DevTools.
++  {
++    let totalH = 0;
++    let blockCount = 0;
++    view.state.doc.forEach((_node: any, offset: number) => {
++      const domNode = view.nodeDOM(offset);
++      if (!(domNode instanceof HTMLElement) || domNode.classList.contains(PAGE_BREAK_CLASS)) return;
++      totalH += domNode.getBoundingClientRect().height;
++      blockCount += 1;
++    });
++    let badge = document.getElementById("doc-debug-badge");
++    if (!badge) {
++      badge = document.createElement("div");
++      badge.id = "doc-debug-badge";
++      badge.style.cssText = "position:fixed;top:4px;right:4px;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;opacity:0.9;white-space:pre;";
++      document.body.appendChild(badge);
++    }
++    badge.textContent = `EDYTOR  Σ=${Math.round(totalH)}px  bloków=${blockCount}  contentH=${contentH}  strony=${totalPages}`;
++  }
+   const decos: Decoration[] = [];
+   breakOffsets.forEach((offset, i) => {
+     const endingPage = i + 1;
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index d46a821..607627c 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -1245,6 +1245,19 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+           });
+           flush();
+           if (pages.length === 0) pages = [''];
++          // TYMCZASOWE (diagnostyka 4-vs-3-stron, do usunięcia po ustaleniu przyczyny)
++          (function(){
++            var totalH = 0, blockCount = 0;
++            units.forEach(function(el){
++              if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) return;
++              totalH += el.getBoundingClientRect().height;
++              blockCount += 1;
++            });
++            var badge = document.createElement('div');
++            badge.style.cssText = 'position:fixed;top:4px;right:4px;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;opacity:0.9;white-space:pre;';
++            badge.textContent = 'PODGLĄD Σ=' + Math.round(totalH) + 'px  bloków=' + blockCount + '  contentH=' + PAGE_H + '  strony=' + pages.length;
++            document.body.appendChild(badge);
++          })();
+           pagesEl.innerHTML = pages.map(function(html, i){
+             var isFirst = i === 0;
+             var isOdd = (i + 1) % 2 === 1;
