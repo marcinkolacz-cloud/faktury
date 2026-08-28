@@ -1337,6 +1337,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             poll#{pollTicks} deviceId={String(deviceId)} editMode={String(editMode)}
             {lastPolled ? ` ok:${lastPolled.toLocaleTimeString()}` : " (brak)"}
             {pollError ? ` BLAD: ${pollError}` : ""}
+            {" | podglad: activeId="}{String(activeId)}{" chapters="}{chapters.length}{" active="}{active ? "tak" : "NIE"}{" htmlLen="}{readViewHtml.length}
           </span>
           {lockedBy && !editMode && (
             <span className="text-xs text-amber-500 font-semibold">
