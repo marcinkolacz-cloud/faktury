@@ -4,6 +4,7 @@ import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { setDriveActor, warmDriveToken } from "../lib/oneDriveConfig";
 import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive } from "../lib/documentationDriveSync";
+import { isTocHeadingTitle } from "../lib/headingNumbering";
 import { ManualVariablesPanel } from "./ManualVariablesPanel";
 import { DocumentationEditorTiptapPoC } from "./DocumentationEditorTiptapPoC";
 
@@ -79,7 +80,7 @@ function numberHeadingsForExport(chapters: Chapter[], includeIds?: Set<number>):
     const doc = new DOMParser().parseFromString(ch.contentHtml, "text/html");
     repairTableBorders(doc.body);
     doc.body.querySelectorAll("h1, h2, h3").forEach((el) => {
-      if (/^table of contents$|^spis tre[śs]ci$/i.test((el.textContent || "").trim())) {
+      if (isTocHeadingTitle(el.textContent || "")) {
         return;
       }
       if (el.tagName === "H1") {

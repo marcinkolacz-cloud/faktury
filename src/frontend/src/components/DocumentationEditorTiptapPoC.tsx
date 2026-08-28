@@ -16,6 +16,7 @@ const TableRow = TiptapTableRow.extend({
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import ImageExt from "@tiptap/extension-image";
+import { isTocHeadingTitle } from "../lib/headingNumbering";
 import { Extension, Mark, Node, mergeAttributes } from "@tiptap/core";
 import TextAlign from "@tiptap/extension-text-align";
 import { TextStyle } from "@tiptap/extension-text-style";
@@ -125,7 +126,6 @@ const CommentMark = Mark.create({
 });
 
 // --- Numeracja nagłówków h1/h2/h3 (§2 inventory) ---
-const EXCLUDED_TITLES = ["spis treści", "table of contents"];
 
 const NumberedHeading = HeadingExt.extend({
   addAttributes() {
@@ -147,8 +147,8 @@ function computeHeadingNumbers(doc: any, h1Offset: number) {
     if (node.type.name !== "heading") return;
     const level = node.attrs.level;
     if (level < 1 || level > 3) return;
-    const text = (node.textContent || "").trim().toLowerCase();
-    if (EXCLUDED_TITLES.includes(text)) return;
+    const text = (node.textContent || "").trim();
+    if (isTocHeadingTitle(text)) return;
     counters[level - 1] += 1;
     for (let i = level; i < 3; i++) counters[i] = 0;
     nums.set(pos, counters.slice(0, level).join("."));
@@ -186,21 +186,6 @@ const HeadingNumbering = Extension.create<{ h1OffsetBefore: number }>({
   },
 });
 
-export function numberHeadingsForExport(html: string, h1OffsetBefore = 0): string {
-  const div = document.createElement("div");
-  div.innerHTML = html;
-  const counters = [h1OffsetBefore, 0, 0];
-  div.querySelectorAll("h1,h2,h3").forEach((el) => {
-    const level = Number(el.tagName.substring(1));
-    const text = (el.textContent || "").trim().toLowerCase();
-    if (EXCLUDED_TITLES.includes(text)) return;
-    counters[level - 1] += 1;
-    for (let i = level; i < 3; i++) counters[i] = 0;
-    const num = counters.slice(0, level).join(".");
-    el.textContent = `${num}. ${el.textContent}`;
-  });
-  return div.innerHTML;
-}
 
 // --- Wklejanie / import z Worda (§8 inventory) ---
 function sanitizePastedHtml(html: string): string {
