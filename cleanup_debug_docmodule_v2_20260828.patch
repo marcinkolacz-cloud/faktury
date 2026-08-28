@@ -1,0 +1,52 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 16d841f..2721761 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -446,7 +446,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   const A4_USABLE_WIDTH_CM = 18.46; // 21cm - 1.27cm marginesy z każdej strony
+   const [previewHtml, setPreviewHtml] = useState("");
+   const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
+-  const [paginationError, setPaginationError] = useState<string>("");
+   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
+   // all-selected so behavior matches the previous always-everything
+   // export; only truly NEW chapter ids get auto-added as selected, so a
+@@ -1140,7 +1139,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+       </head><body>
+       <div id="measure" class="page-content">${body}</div>
+       <div id="pages" class="${gridView ? "pages-grid" : ""}"></div>
+-      <script>document.getElementById('pages').innerHTML = '<div style="padding:24px;font-family:sans-serif;color:#0a0;font-size:13px;">KANAREK: skrypt w iframe dziala. Za chwile paginacja to zastapi.</div>';</script>
+       <script>
+       (function(){
+         // Small safety buffer (print mode only): without it, a page whose
+@@ -1308,7 +1306,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     const onMsg = (e: MessageEvent) => {
+       if (e.data && e.data.type === "docPreviewPageCount") {
+         setPreviewPageCount(e.data.count);
+-        setPaginationError(e.data.error || "");
+       }
+     };
+     window.addEventListener("message", onMsg);
+@@ -1357,8 +1354,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+             poll#{pollTicks} deviceId={String(deviceId)} editMode={String(editMode)}
+             {lastPolled ? ` ok:${lastPolled.toLocaleTimeString()}` : " (brak)"}
+             {pollError ? ` BLAD: ${pollError}` : ""}
+-            {" | podglad: activeId="}{String(activeId)}{" chapters="}{chapters.length}{" active="}{active ? "tak" : "NIE"}{" htmlLen="}{readViewHtml.length}
+-            {paginationError ? ` | BLAD PAGINACJI: ${paginationError}` : ""}
+           </span>
+           {lockedBy && !editMode && (
+             <span className="text-xs text-amber-500 font-semibold">
+@@ -1529,14 +1524,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                     )}
+                     <div className="w-8 h-px bg-[var(--border-color)] my-1" />
+                     <RailButton icon="🖨" label="Podgląd" onClick={openPrintPreview} />
+-                    <RailButton
+-                      icon="📋"
+-                      label="Debug HTML"
+-                      title="Kopiuje surowy HTML aktywnego rozdziału do schowka (do diagnozy)"
+-                      onClick={() => {
+-                        if (active) navigator.clipboard.writeText(active.contentHtml || "");
+-                      }}
+-                    />
+                     <RailButton
+                       icon="🖥"
+                       label="Dopasuj"

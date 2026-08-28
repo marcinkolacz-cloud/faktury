@@ -1,0 +1,45 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 9873830..07d1890 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -1180,7 +1180,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+         .page-header>span:nth-child(3){text-align:right;}
+         .page-footer{position:absolute;left:1.27cm;right:1.27cm;bottom:0;height:${hfSettings.footerHeightCm}cm;box-sizing:border-box;padding:6px 0;font-size:${hfSettings.footerFontSize}pt;color:#555;${hfSettings.footerBorder ? "border-top:1px solid #ccc;" : ""}display:flex;align-items:center;justify-content:space-between;}
+         .page-content{padding:0;line-height:1.625;font-size:15px;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
+-        .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:-16px;font-size:8pt;color:#999;text-align:center;}
++        .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:6px;font-size:8pt;color:#999;text-align:center;}
+         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
+         ${forPrint ? "@page{size:A4;margin:0;} body{background:#fff;} .sheet{box-shadow:none;margin:0;} .sheet + .sheet{page-break-before:always;} .page-number{display:none;}" : ""}
+         img{max-width:100%;}
+@@ -1337,10 +1337,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   // nachodzi na treść na 2+ stronie), pokazujemy dokładnie ten sam,
+   // realnie spaginowany HTML co w "Podgląd wydruku"/"2 strony".
+   const [readViewHtml, setReadViewHtml] = useState("");
++  const [readViewLoading, setReadViewLoading] = useState(false);
+   useEffect(() => {
+     if (editMode) return;
+     if (!active) { setReadViewHtml(""); return; }
+     let cancelled = false;
++    setReadViewLoading(true);
+     (async () => {
+       try {
+         const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active]);
+@@ -1348,6 +1350,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+       } catch {
+         // Zostaw poprzednio wyrenderowaną treść zamiast czyścić do pustego -
+         // pusty ekran jest gorszy niż lekko nieaktualny podgląd.
++      } finally {
++        if (!cancelled) setReadViewLoading(false);
+       }
+     })();
+     return () => { cancelled = true; };
+@@ -1639,6 +1643,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                     {paginationError && (
+                       <div className="text-xs text-red-500 font-mono text-center mb-1">BLAD PAGINACJI: {paginationError}</div>
+                     )}
++                    {readViewLoading && (
++                      <div className="text-xs text-[var(--text-muted)] text-center mb-2">⏳ Wczytywanie podglądu…</div>
++                    )}
+                     <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none" }} />
+                     </>
+                   )}

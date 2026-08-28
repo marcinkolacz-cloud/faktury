@@ -1,0 +1,57 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index fe32237..0d2c5f2 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -436,6 +436,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   const [savedFlash, setSavedFlash] = useState(false);
+   const [driveSyncFlash, setDriveSyncFlash] = useState(false);
+   const [driveSyncError, setDriveSyncError] = useState("");
++  const [saveDebug, setSaveDebug] = useState("");
+   const [dragId, setDragId] = useState<number | null>(null);
+   const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
+   const [lockedBy, setLockedBy] = useState<string | null>(null);
+@@ -989,6 +990,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     if (!active) return;
+     if (savingRef.current) return;
+     savingRef.current = true;
++    setSaveDebug(`start htmlLen=${(tiptapHtmlRef.current || "").length} @ ${new Date().toLocaleTimeString()}`);
+     try {
+     // Strip the live-preview data-num attributes before persisting —
+     // Tiptap's HeadingNumbering extension writes them as real node
+@@ -1000,8 +1002,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     } catch (e: any) {
+       setDriveSyncError("Nie udalo sie zapisac na Bartolini Drive: " + (e?.message || String(e)));
+       setTimeout(() => setDriveSyncError(""), 5000);
++      setSaveDebug(`BLAD odDrive: ${e?.message || String(e)} @ ${new Date().toLocaleTimeString()}`);
+       return;
+     }
++    setSaveDebug(`drive OK, wolam updateDeviceManualChapterMeta @ ${new Date().toLocaleTimeString()}`);
+     await actor.updateDeviceManualChapterMeta(active.id, active.title, "");
+     setDirty(false);
+     setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: html } : c)));
+@@ -1011,6 +1015,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+       setDriveSyncFlash(true);
+       setTimeout(() => setDriveSyncFlash(false), 1500);
+     }
++    setSaveDebug(`OK zapisano @ ${new Date().toLocaleTimeString()}`);
++    } catch (e: any) {
++      setSaveDebug(`WYJATEK: ${e?.message || String(e)} @ ${new Date().toLocaleTimeString()}`);
+     } finally {
+       savingRef.current = false;
+     }
+@@ -1026,6 +1033,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   useEffect(() => {
+     if (!autoSave || !editMode) return;
+     const interval = window.setInterval(() => {
++      setSaveDebug(`tick dirty=${dirtyRef.current} saving=${savingRef.current} @ ${new Date().toLocaleTimeString()}`);
+       if (dirtyRef.current && !savingRef.current) saveChapter(true);
+     }, 3000);
+     return () => window.clearInterval(interval);
+@@ -1401,6 +1409,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+           {savedFlash && <span className="text-xs text-emerald-400">💾 Zapisano</span>}
+           {driveSyncFlash && <span className="text-xs text-[var(--accent-text)]">☁️ Zsynchronizowano z Bartolini Drive</span>}
+           {driveSyncError && <span className="text-xs text-amber-400">{driveSyncError}</span>}
++          {editMode && <span className="text-[10px] font-mono text-[var(--text-muted)] opacity-70">{saveDebug}</span>}
+           <div className="ml-auto flex gap-2">
+             <button onClick={exportPdfV2} disabled={chapters.length === 0} className="text-xs px-3 py-1.5 rounded-full border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40">
+               🖨 Eksportuj PDF

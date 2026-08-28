@@ -1,0 +1,71 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index da5c698..2e2a354 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -805,6 +805,23 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+       actor.releaseEditLock(activeId).catch(() => {});
+     }
+   };
++  // Switching the sidebar's active chapter remounts the Tiptap editor on
++  // a new key - any not-yet-saved edits in tiptapHtmlRef would just be
++  // discarded with no flush at all if we called setActiveId directly
++  // while still editing. Route every chapter switch through here so it
++  // behaves the same as clicking "Edytuj" to exit (flush, then switch).
++  const switchActiveChapter = async (id: number) => {
++    if (id === activeId) return;
++    if (editMode && dirty) {
++      try { await saveChapter(true); } catch { /* saveChapter already surfaces its own error */ }
++    }
++    if (editMode) {
++      setEditMode(false);
++      tiptapHtmlRef.current = "";
++      if (activeId !== null) actor.releaseEditLock(activeId).catch(() => {});
++    }
++    setActiveId(id);
++  };
+   useEffect(() => {
+     if (!editMode || activeId === null) return;
+     const interval = setInterval(() => {
+@@ -1007,7 +1024,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     }
+     setSaveDebug(`drive OK, wolam updateDeviceManualChapterMeta @ ${new Date().toLocaleTimeString()}`);
+     await actor.updateDeviceManualChapterMeta(active.id, active.title, "");
+-    setDirty(false);
++    // Only clear `dirty` if nothing changed WHILE this save was in flight -
++    // syncChapterToDrive is several sequential network round-trips, so if
++    // the person kept typing during it, `html` here is already stale and
++    // clearing dirty would silently drop those newer keystrokes (next
++    // autosave tick would then see dirty=false and never send them).
++    if (tiptapHtmlRef.current === html || !tiptapHtmlRef.current) setDirty(false);
+     setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: html } : c)));
+     setSavedFlash(true);
+     setTimeout(() => setSavedFlash(false), 1200);
+@@ -1383,7 +1405,18 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+           )}
+           <select
+             value={deviceId ?? ""}
+-            onChange={(e) => setDeviceId(e.target.value ? Number(e.target.value) : null)}
++            onChange={async (e) => {
++              const next = e.target.value ? Number(e.target.value) : null;
++              if (editMode && dirty) {
++                try { await saveChapter(true); } catch { /* saveChapter already surfaces its own error */ }
++              }
++              if (editMode) {
++                setEditMode(false);
++                tiptapHtmlRef.current = "";
++                if (activeId !== null) actor.releaseEditLock(activeId).catch(() => {});
++              }
++              setDeviceId(next);
++            }}
+             className="ml-2 bg-[var(--bg-page)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-lg px-3 py-1.5 text-sm"
+           >
+             {devices.map((d) => (
+@@ -1476,7 +1509,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                                 className="flex-1 min-w-0 bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-1 text-xs text-[var(--text-primary)]"
+                               />
+                             ) : (
+-                              <span onClick={() => setActiveId(ch.id)} className="flex-1 truncate">
++                              <span onClick={() => switchActiveChapter(ch.id)} className="flex-1 truncate">
+                                 {ch.title}
+                                 {chapterBackupFlags[ch.id] && <span className="text-green-400 ml-1" title="Kopia backend aktywna">✓</span>}
+                               </span>

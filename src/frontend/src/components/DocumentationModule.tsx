@@ -436,6 +436,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [savedFlash, setSavedFlash] = useState(false);
   const [driveSyncFlash, setDriveSyncFlash] = useState(false);
   const [driveSyncError, setDriveSyncError] = useState("");
+  // Guards silentReload/activeId-change re-fetches from clobbering a just-
+  // saved chapter with a stale copy read back from OneDrive - Graph reads
+  // right after a write aren't guaranteed immediately consistent, so a
+  // poll landing in that window can overwrite fresh local content with the
+  // old file for up to this many ms after our own successful save.
+  const recentlySavedRef = useRef<{ id: number; until: number }>({ id: -1, until: 0 });
+  const RECENT_SAVE_GUARD_MS = 20000;
   const [dragId, setDragId] = useState<number | null>(null);
   const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
   const [lockedBy, setLockedBy] = useState<string | null>(null);
@@ -594,7 +601,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // — saveChapter/eksport czytają stąd).
   const tiptapHtmlRef = useRef<string>("");
   const [tiptapRemountTick, setTiptapRemountTick] = useState(0);
-  const autoSaveTimer = useRef<number | null>(null);
   const savingRef = useRef(false);
   const commentAreaRef = useRef<HTMLDivElement>(null);
 
@@ -703,7 +709,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       const mapped = rows.map((r: any) => ({ id: Number(r.id), title: r.title, order: Number(r.order) }));
       const nextActive = mapped.find((c: any) => c.id === activeIdRef.current) ? activeIdRef.current : (mapped.length ? mapped[0].id : null);
       setActiveId(nextActive);
-      if (nextActive !== null && !editMode) {
+      if (nextActive !== null && !editMode && !(recentlySavedRef.current.id === nextActive && Date.now() < recentlySavedRef.current.until)) {
         const content = await fetchChapterContent(nextActive);
         setChapters((prev) => prev.map((c) => (c.id === nextActive ? { ...c, contentHtml: content } : c)));
       }
@@ -740,6 +746,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // single oversized query call across a large documentation set.
   useEffect(() => {
     if (!actor || activeId === null || !deviceLabel) return;
+    if (recentlySavedRef.current.id === activeId && Date.now() < recentlySavedRef.current.until) return;
     let cancelled = false;
     setLoadingChapterContent(true);
     fetchChapterContent(activeId).then((content) => {
@@ -795,12 +802,32 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       setLockBusyMsg("Nie udalo sie sprawdzic blokady edycji: " + String((e as any)?.message || e));
     }
   };
-  const exitEditMode = () => {
+  const exitEditMode = async () => {
+    if (dirty) {
+      try { await saveChapter(true); } catch { /* saveChapter already surfaces its own error */ }
+    }
     setEditMode(false);
     tiptapHtmlRef.current = "";
     if (activeId !== null) {
       actor.releaseEditLock(activeId).catch(() => {});
     }
+  };
+  // Switching the sidebar's active chapter remounts the Tiptap editor on
+  // a new key - any not-yet-saved edits in tiptapHtmlRef would just be
+  // discarded with no flush at all if we called setActiveId directly
+  // while still editing. Route every chapter switch through here so it
+  // behaves the same as clicking "Edytuj" to exit (flush, then switch).
+  const switchActiveChapter = async (id: number) => {
+    if (id === activeId) return;
+    if (editMode && dirty) {
+      try { await saveChapter(true); } catch { /* saveChapter already surfaces its own error */ }
+    }
+    if (editMode) {
+      setEditMode(false);
+      tiptapHtmlRef.current = "";
+      if (activeId !== null) actor.releaseEditLock(activeId).catch(() => {});
+    }
+    setActiveId(id);
   };
   useEffect(() => {
     if (!editMode || activeId === null) return;
@@ -1001,7 +1028,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       return;
     }
     await actor.updateDeviceManualChapterMeta(active.id, active.title, "");
-    setDirty(false);
+    // Only clear `dirty` if nothing changed WHILE this save was in flight -
+    // syncChapterToDrive is several sequential network round-trips, so if
+    // the person kept typing during it, `html` here is already stale and
+    // clearing dirty would silently drop those newer keystrokes (next
+    // autosave tick would then see dirty=false and never send them).
+    if (tiptapHtmlRef.current === html || !tiptapHtmlRef.current) setDirty(false);
+    recentlySavedRef.current = { id: active.id, until: Date.now() + RECENT_SAVE_GUARD_MS };
     setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: html } : c)));
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1200);
@@ -1014,13 +1047,20 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }
   };
 
-  // Auto-save: 3s after the last edit, only while enabled + edit mode on.
+  const dirtyRef = useRef(dirty);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+
+  // Auto-save: retries every 3s while dirty + enabled + edit mode on, not
+  // just once on the dirty:false->true transition - a single failed save
+  // (e.g. transient OneDrive/token error) used to leave `dirty` stuck true
+  // forever with no further retry scheduled, silently losing edits.
   useEffect(() => {
-    if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
-    if (!autoSave || !dirty || !editMode) return;
-    autoSaveTimer.current = window.setTimeout(() => { saveChapter(true); }, 3000);
-    return () => { if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current); };
-  }, [dirty, autoSave, editMode]);
+    if (!autoSave || !editMode) return;
+    const interval = window.setInterval(() => {
+      if (dirtyRef.current && !savingRef.current) saveChapter(true);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [autoSave, editMode]);
 
   const getChaptersForExport = async (): Promise<Chapter[]> => {
     const liveHtml = active && tiptapHtmlRef.current ? tiptapHtmlRef.current.replace(/\s*data-num="[^"]*"/g, "") : null;
@@ -1099,11 +1139,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     const CONTENT_H_MM = 297 - headerHeightMm - footerHeightMm;
     const MM_TO_PX = 96 / 25.4;
     const contentWidthPx = Math.round(CONTENT_W_MM * MM_TO_PX);
-    // #doc-editor-content itself adds Tailwind "p-8" (32px all sides) on
-    // top of the outer .sheet padding above - the actual usable width/
-    // height for content is the outer box minus this inner padding too.
-    const INNER_PAD_PX = 32;
-    const innerContentWidthPx = contentWidthPx - INNER_PAD_PX * 2;
+    // Live editor's .ProseMirror IS the sheet itself (794px = 210mm) with
+    // padding:48px (=1.27cm) left/right and no further inner padding layer -
+    // no separate "p-8" wrapper exists post-Tiptap-migration. Preview/PDF
+    // must use the exact same usable width/height or text wraps differently
+    // and pagination diverges from what the editor shows.
+    const innerContentWidthPx = contentWidthPx;
     // The preview is a standalone iframe (no access to the app's own
     // stylesheet), but chapter HTML relies on COUNTER_CSS's rules (font,
     // default bold weight, table border/background via CSS vars, list
@@ -1112,7 +1153,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // supply light-theme fallback values for the vars it references, so
     // tables/lists/fonts/colors render the same as in the editor.
     const previewCounterCss = COUNTER_CSS.replace(/#doc-editor-content/g, ".page-content");
-    const contentHeightPx = Math.round(CONTENT_H_MM * MM_TO_PX) - INNER_PAD_PX * 2;
+    const contentHeightPx = Math.round(CONTENT_H_MM * MM_TO_PX);
     return `<html><head><meta charset="utf-8"/><title>Podgląd wydruku</title>
       <style>
         @page { size: A4; margin: 0; }
@@ -1125,8 +1166,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         .page-header>span:nth-child(2){text-align:center;}
         .page-header>span:nth-child(3){text-align:right;}
         .page-footer{position:absolute;left:1.27cm;right:1.27cm;bottom:0;height:${hfSettings.footerHeightCm}cm;box-sizing:border-box;padding:6px 0;font-size:${hfSettings.footerFontSize}pt;color:#555;${hfSettings.footerBorder ? "border-top:1px solid #ccc;" : ""}display:flex;align-items:center;justify-content:space-between;}
-        .page-content{padding:32px;line-height:1.625;font-size:15px;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
-        .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:-16px;font-size:8pt;color:#999;text-align:center;}
+        .page-content{padding:0;line-height:1.625;font-size:15px;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
+        .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:6px;font-size:8pt;color:#999;text-align:center;}
         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
         ${forPrint ? "@page{size:A4;margin:0;} body{background:#fff;} .sheet{box-shadow:none;margin:0;} .sheet + .sheet{page-break-before:always;} .page-number{display:none;}" : ""}
         img{max-width:100%;}
@@ -1136,7 +1177,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       </head><body>
       <div id="measure" class="page-content">${body}</div>
       <div id="pages" class="${gridView ? "pages-grid" : ""}"></div>
-      <script>document.getElementById('pages').innerHTML = '<div style="padding:24px;font-family:sans-serif;color:#0a0;font-size:13px;">KANAREK: skrypt w iframe dziala. Za chwile paginacja to zastapi.</div>';</script>
       <script>
       (function(){
         // Small safety buffer (print mode only): without it, a page whose
@@ -1284,10 +1324,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // nachodzi na treść na 2+ stronie), pokazujemy dokładnie ten sam,
   // realnie spaginowany HTML co w "Podgląd wydruku"/"2 strony".
   const [readViewHtml, setReadViewHtml] = useState("");
+  const [readViewLoading, setReadViewLoading] = useState(false);
   useEffect(() => {
     if (editMode) return;
     if (!active) { setReadViewHtml(""); return; }
     let cancelled = false;
+    setReadViewLoading(true);
     (async () => {
       try {
         const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active]);
@@ -1295,6 +1337,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       } catch {
         // Zostaw poprzednio wyrenderowaną treść zamiast czyścić do pustego -
         // pusty ekran jest gorszy niż lekko nieaktualny podgląd.
+      } finally {
+        if (!cancelled) setReadViewLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -1353,8 +1397,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             poll#{pollTicks} deviceId={String(deviceId)} editMode={String(editMode)}
             {lastPolled ? ` ok:${lastPolled.toLocaleTimeString()}` : " (brak)"}
             {pollError ? ` BLAD: ${pollError}` : ""}
-            {" | podglad: activeId="}{String(activeId)}{" chapters="}{chapters.length}{" active="}{active ? "tak" : "NIE"}{" htmlLen="}{readViewHtml.length}
-            {paginationError ? ` | BLAD PAGINACJI: ${paginationError}` : ""}
           </span>
           {lockedBy && !editMode && (
             <span className="text-xs text-amber-500 font-semibold">
@@ -1368,7 +1410,18 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           )}
           <select
             value={deviceId ?? ""}
-            onChange={(e) => setDeviceId(e.target.value ? Number(e.target.value) : null)}
+            onChange={async (e) => {
+              const next = e.target.value ? Number(e.target.value) : null;
+              if (editMode && dirty) {
+                try { await saveChapter(true); } catch { /* saveChapter already surfaces its own error */ }
+              }
+              if (editMode) {
+                setEditMode(false);
+                tiptapHtmlRef.current = "";
+                if (activeId !== null) actor.releaseEditLock(activeId).catch(() => {});
+              }
+              setDeviceId(next);
+            }}
             className="ml-2 bg-[var(--bg-page)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-lg px-3 py-1.5 text-sm"
           >
             {devices.map((d) => (
@@ -1461,7 +1514,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                                 className="flex-1 min-w-0 bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-1 text-xs text-[var(--text-primary)]"
                               />
                             ) : (
-                              <span onClick={() => setActiveId(ch.id)} className="flex-1 truncate">
+                              <span onClick={() => switchActiveChapter(ch.id)} className="flex-1 truncate">
                                 {ch.title}
                                 {chapterBackupFlags[ch.id] && <span className="text-green-400 ml-1" title="Kopia backend aktywna">✓</span>}
                               </span>
@@ -1526,14 +1579,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     <div className="w-8 h-px bg-[var(--border-color)] my-1" />
                     <RailButton icon="🖨" label="Podgląd" onClick={openPrintPreview} />
                     <RailButton
-                      icon="📋"
-                      label="Debug HTML"
-                      title="Kopiuje surowy HTML aktywnego rozdziału do schowka (do diagnozy)"
-                      onClick={() => {
-                        if (active) navigator.clipboard.writeText(active.contentHtml || "");
-                      }}
-                    />
-                    <RailButton
                       icon="🖥"
                       label="Dopasuj"
                       active={fitToScreen}
@@ -1581,7 +1626,15 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   <div className="flex-1 flex overflow-hidden">
                   <div ref={commentAreaRef} className="relative overflow-auto bg-[var(--bg-page)] py-6 flex-1">
                   {!editMode && active && (
+                    <>
+                    {paginationError && (
+                      <div className="text-xs text-red-500 font-mono text-center mb-1">BLAD PAGINACJI: {paginationError}</div>
+                    )}
+                    {readViewLoading && (
+                      <div className="text-xs text-[var(--text-muted)] text-center mb-2">⏳ Wczytywanie podglądu…</div>
+                    )}
                     <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none" }} />
+                    </>
                   )}
                   {editMode && canEdit && active && (
                     <div className="mx-auto" style={{ maxWidth: 900, transform: `scale(${zoomLevel / 100})`, transformOrigin: "top center" }}>
@@ -1855,6 +1908,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           >
             <h2 className="text-sm font-bold text-[var(--accent-text)]">
               Podglad wydruku - rozdzialy: {selectedForPrint.size}{previewPageCount != null ? ` — stron: ${previewPageCount}` : ""}
+              {paginationError ? ` | BLAD PAGINACJI: ${paginationError}` : ""}
             </h2>
             <div className="flex items-center gap-2">
               <button onClick={refreshPrintPreview} className="text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">

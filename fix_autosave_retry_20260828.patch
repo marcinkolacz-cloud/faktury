@@ -1,0 +1,47 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 21fb94c..0298ab5 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -593,7 +593,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   // — saveChapter/eksport czytają stąd).
+   const tiptapHtmlRef = useRef<string>("");
+   const [tiptapRemountTick, setTiptapRemountTick] = useState(0);
+-  const autoSaveTimer = useRef<number | null>(null);
+   const savingRef = useRef(false);
+   const commentAreaRef = useRef<HTMLDivElement>(null);
+ 
+@@ -795,7 +794,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     }
+   };
+   const exitEditMode = async () => {
+-    if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+     if (dirty) {
+       try { await saveChapter(true); } catch { /* saveChapter already surfaces its own error */ }
+     }
+@@ -1017,13 +1015,20 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     }
+   };
+ 
+-  // Auto-save: 3s after the last edit, only while enabled + edit mode on.
++  const dirtyRef = useRef(dirty);
++  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
++
++  // Auto-save: retries every 3s while dirty + enabled + edit mode on, not
++  // just once on the dirty:false->true transition - a single failed save
++  // (e.g. transient OneDrive/token error) used to leave `dirty` stuck true
++  // forever with no further retry scheduled, silently losing edits.
+   useEffect(() => {
+-    if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+-    if (!autoSave || !dirty || !editMode) return;
+-    autoSaveTimer.current = window.setTimeout(() => { saveChapter(true); }, 3000);
+-    return () => { if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current); };
+-  }, [dirty, autoSave, editMode]);
++    if (!autoSave || !editMode) return;
++    const interval = window.setInterval(() => {
++      if (dirtyRef.current && !savingRef.current) saveChapter(true);
++    }, 3000);
++    return () => window.clearInterval(interval);
++  }, [autoSave, editMode]);
+ 
+   const getChaptersForExport = async (): Promise<Chapter[]> => {
+     const liveHtml = active && tiptapHtmlRef.current ? tiptapHtmlRef.current.replace(/\s*data-num="[^"]*"/g, "") : null;

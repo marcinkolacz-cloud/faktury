@@ -1,0 +1,41 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 0298ab5..fe32237 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -446,6 +446,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   const A4_USABLE_WIDTH_CM = 18.46; // 21cm - 1.27cm marginesy z każdej strony
+   const [previewHtml, setPreviewHtml] = useState("");
+   const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
++  const [paginationError, setPaginationError] = useState<string>("");
+   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
+   // all-selected so behavior matches the previous always-everything
+   // export; only truly NEW chapter ids get auto-added as selected, so a
+@@ -1312,6 +1313,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     const onMsg = (e: MessageEvent) => {
+       if (e.data && e.data.type === "docPreviewPageCount") {
+         setPreviewPageCount(e.data.count);
++        setPaginationError(e.data.error || "");
+       }
+     };
+     window.addEventListener("message", onMsg);
+@@ -1578,7 +1580,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                   <div className="flex-1 flex overflow-hidden">
+                   <div ref={commentAreaRef} className="relative overflow-auto bg-[var(--bg-page)] py-6 flex-1">
+                   {!editMode && active && (
++                    <>
++                    {paginationError && (
++                      <div className="text-xs text-red-500 font-mono text-center mb-1">BLAD PAGINACJI: {paginationError}</div>
++                    )}
+                     <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none" }} />
++                    </>
+                   )}
+                   {editMode && canEdit && active && (
+                     <div className="mx-auto" style={{ maxWidth: 900, transform: `scale(${zoomLevel / 100})`, transformOrigin: "top center" }}>
+@@ -1852,6 +1859,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+           >
+             <h2 className="text-sm font-bold text-[var(--accent-text)]">
+               Podglad wydruku - rozdzialy: {selectedForPrint.size}{previewPageCount != null ? ` — stron: ${previewPageCount}` : ""}
++              {paginationError ? ` | BLAD PAGINACJI: ${paginationError}` : ""}
+             </h2>
+             <div className="flex items-center gap-2">
+               <button onClick={refreshPrintPreview} className="text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">
