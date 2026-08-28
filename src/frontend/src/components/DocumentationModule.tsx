@@ -1064,7 +1064,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // to be an exact preview of what exportWord()/exportPdf() will
   // produce, so it must use the same chapter set and the same
   // numberHeadingsForExport() numbering as Word.
-  const buildChapterPreviewHtml = async (forPrint: boolean = false, gridView: boolean = false, selectedOverride?: Set<number>): Promise<string> => {
+  const buildChapterPreviewHtml = async (forPrint: boolean = false, gridView: boolean = false, selectedOverride?: Set<number>, chaptersOverride?: Chapter[]): Promise<string> => {
     const selectedSet = selectedOverride || selectedForPrint;
     const selected = chapters.filter((c) => selectedSet.has(c.id));
     if (selected.length === 0) {
@@ -1082,7 +1082,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
     const footerLeftHtml = hfSettings.footerTextLeft.trim();
     const footerRightHtml = hfSettings.footerTextRight.trim();
-    const numbered = numberHeadingsForExport(await getChaptersForExport(), selectedSet);
+    // chaptersOverride: caller already has fully-loaded chapter content in
+    // hand (e.g. the single currently-active chapter in the read view) and
+    // wants to skip getChaptersForExport()'s async "fetch missing content
+    // from Drive" step entirely — that step is only needed for multi-
+    // chapter export/print where some chapters may never have been opened.
+    const numbered = numberHeadingsForExport(chaptersOverride || (await getChaptersForExport()), selectedSet);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     // A4 usable content box in mm (must match .page-header/.page-footer
     // heights below): width 210 - 2*1.27cm margins, height 297 - header
@@ -1271,10 +1276,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     let cancelled = false;
     (async () => {
       try {
-        const html = await buildChapterPreviewHtml(false, true, new Set([active.id]));
+        const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active]);
         if (!cancelled) setReadViewHtml(html);
-      } catch (e) {
-        console.error("[podgląd rozdziału] budowanie nie powiodło się:", e);
+      } catch {
         if (!cancelled) setReadViewHtml("");
       }
     })();
