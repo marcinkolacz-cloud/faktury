@@ -1285,14 +1285,16 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // realnie spaginowany HTML co w "Podgląd wydruku"/"2 strony".
   const [readViewHtml, setReadViewHtml] = useState("");
   useEffect(() => {
-    if (editMode || !active) { setReadViewHtml(""); return; }
+    if (editMode) return;
+    if (!active) { setReadViewHtml(""); return; }
     let cancelled = false;
     (async () => {
       try {
         const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active]);
         if (!cancelled) setReadViewHtml(html);
       } catch {
-        if (!cancelled) setReadViewHtml("");
+        // Zostaw poprzednio wyrenderowaną treść zamiast czyścić do pustego -
+        // pusty ekran jest gorszy niż lekko nieaktualny podgląd.
       }
     })();
     return () => { cancelled = true; };
