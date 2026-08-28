@@ -22,10 +22,9 @@ type Chapter = { id: number; title: string; contentHtml: string; order: number }
 // flat sibling headings, and contentEditable output from the browser
 // isn't always perfectly flat (Enter/formatBlock edge cases can nest
 // things unexpectedly), which caused numbers to drift (e.g. showing
-// "2.4" instead of "2.1"). applyLiveHeadingNumbers() below computes the
-// same numbering as the proven-correct Word export (numberHeadingsForExport)
-// via querySelectorAll, which is immune to nesting depth, and writes it
-// into a data-num attribute that this CSS just displays verbatim.
+// "2.4" instead of "2.1"). Live numbering is written by Tiptap's own
+// HeadingNumbering extension (real node attribute, immune to nesting
+// depth) into a data-num attribute that this CSS just displays verbatim.
 const COUNTER_CSS = `
 #doc-editor-content { font-family: Calibri, "Segoe UI", Arial, sans-serif; }
 #doc-editor-content p, #doc-editor-content div, #doc-editor-content li { font-family: Calibri, "Segoe UI", Arial, sans-serif; color: #000; font-weight: normal; font-size: 10pt; margin: 0; }
@@ -54,28 +53,6 @@ function repairTableBorders(container: HTMLElement) {
   container.querySelectorAll<HTMLElement>("td, th").forEach((cell) => {
     if (cell.style.borderWidth && !cell.style.borderStyle) {
       cell.style.borderStyle = "solid";
-    }
-  });
-}
-
-function applyLiveHeadingNumbers(container: HTMLElement, h1Start: number) {
-  let h1 = h1Start;
-  let h2 = 0;
-  let h3 = 0;
-  container.querySelectorAll("h1, h2, h3").forEach((el) => {
-    if (/^table of contents$|^spis tre[śs]ci$/i.test((el.textContent || "").trim())) {
-      el.removeAttribute("data-num");
-      return;
-    }
-    if (el.tagName === "H1") {
-      h1 += 1; h2 = 0; h3 = 0;
-      el.setAttribute("data-num", `${h1}. `);
-    } else if (el.tagName === "H2") {
-      h2 += 1; h3 = 0;
-      el.setAttribute("data-num", `${h1}.${h2}. `);
-    } else {
-      h3 += 1;
-      el.setAttribute("data-num", `${h1}.${h2}.${h3}. `);
     }
   });
 }
@@ -610,11 +587,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [lastPolled, setLastPolled] = useState<Date | null>(null);
   const [pollTicks, setPollTicks] = useState(0);
   const [pollError, setPollError] = useState<string>("");
-  const editorRef = useRef<HTMLDivElement | null>(null);
   // Trzyma najświeższy HTML z Tiptap (edytor jest teraz komponentem
   // kontrolowanym z zewnątrz, nie ma już bezpośredniego DOM-u contentEditable
-  // do odczytu przez editorRef.current.innerHTML — saveChapter/eksport
-  // czytają stąd).
+  // — saveChapter/eksport czytają stąd).
   const tiptapHtmlRef = useRef<string>("");
   const [tiptapRemountTick, setTiptapRemountTick] = useState(0);
   const autoSaveTimer = useRef<number | null>(null);
@@ -768,9 +743,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     fetchChapterContent(activeId).then((content) => {
       if (cancelled) return;
       setChapters((prev) => prev.map((c) => (c.id === activeId ? { ...c, contentHtml: content } : c)));
-      if (!editMode && editorRef.current && activeIdRef.current === activeId) {
-        editorRef.current.innerHTML = content || "<p></p>";
-      }
       setLoadingChapterContent(false);
     });
     return () => { cancelled = true; };
@@ -785,9 +757,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     fetchChapterContent(activeId).then((content) => {
       if (cancelled) return;
       setChapters((prev) => prev.map((c) => (c.id === activeId ? { ...c, contentHtml: content } : c)));
-      if (!editMode && editorRef.current && activeIdRef.current === activeId) {
-        editorRef.current.innerHTML = content || "<p></p>";
-      }
       setLoadingChapterContent(false);
     });
     return () => { cancelled = true; };
@@ -893,26 +862,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   useEffect(() => {
     setEditMode(false);
     setDirty(false);
-    if (editorRef.current) {
-      editorRef.current.innerHTML = active?.contentHtml || "<p></p>";
-      repairTableBorders(editorRef.current);
-      applyLiveHeadingNumbers(editorRef.current, h1Offset);
-    }
   }, [activeId]);
-  // Keep the read-only view in sync with background poll updates (e.g. a
-  // coworker saved the chapter while we're just looking at it, not
-  // editing). Intentionally scoped to !editMode: while actively editing,
-  // the lock guarantees nobody else can be writing, and we must never
-  // overwrite the user's own in-progress unsaved keystrokes.
-  useEffect(() => {
-    if (editMode) return;
-    if (editorRef.current) {
-      editorRef.current.innerHTML = active?.contentHtml || "<p></p>";
-      repairTableBorders(editorRef.current);
-      applyLiveHeadingNumbers(editorRef.current, h1Offset);
-    }
-  }, [active?.contentHtml, editMode]);
-
   const addChapter = async (targetBookId: number) => {
     const title = (newChapterTitles[targetBookId] || "").trim();
     if (!title || deviceId === null) return;
