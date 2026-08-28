@@ -446,6 +446,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const A4_USABLE_WIDTH_CM = 18.46; // 21cm - 1.27cm marginesy z każdej strony
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
+  const [paginationError, setPaginationError] = useState<string>("");
   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
   // all-selected so behavior matches the previous always-everything
   // export; only truly NEW chapter ids get auto-added as selected, so a
@@ -1177,6 +1178,17 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           markers.forEach(function(marker){ hoistToTop(marker, container); });
         }
         function paginate(){
+          try {
+            paginateInner();
+          } catch (e) {
+            // Cokolwiek poszlo nie tak w mierzeniu/paginacji - pokaz cala
+            // tresc jako jedna nieformatowana "strone" zamiast pustego ekranu.
+            pagesEl.innerHTML = '<div class="sheet"><div class="page-content">' + (measure ? measure.innerHTML : '') + '</div></div>';
+            try { if (measure && measure.parentNode) measure.remove(); } catch (e2) {}
+            try { parent.postMessage({ type: 'docPreviewPageCount', count: 1, error: String(e && e.message || e) }, '*'); } catch (e3) {}
+          }
+        }
+        function paginateInner(){
           hoistPageBreaks(measure);
           function collectUnits(el){
             if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) return [el];
@@ -1289,6 +1301,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     const onMsg = (e: MessageEvent) => {
       if (e.data && e.data.type === "docPreviewPageCount") {
         setPreviewPageCount(e.data.count);
+        setPaginationError(e.data.error || "");
       }
     };
     window.addEventListener("message", onMsg);
@@ -1338,6 +1351,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             {lastPolled ? ` ok:${lastPolled.toLocaleTimeString()}` : " (brak)"}
             {pollError ? ` BLAD: ${pollError}` : ""}
             {" | podglad: activeId="}{String(activeId)}{" chapters="}{chapters.length}{" active="}{active ? "tak" : "NIE"}{" htmlLen="}{readViewHtml.length}
+            {paginationError ? ` | BLAD PAGINACJI: ${paginationError}` : ""}
           </span>
           {lockedBy && !editMode && (
             <span className="text-xs text-amber-500 font-semibold">
