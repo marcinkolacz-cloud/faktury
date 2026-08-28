@@ -1136,6 +1136,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       </head><body>
       <div id="measure" class="page-content">${body}</div>
       <div id="pages" class="${gridView ? "pages-grid" : ""}"></div>
+      <script>document.getElementById('pages').innerHTML = '<div style="padding:24px;font-family:sans-serif;color:#0a0;font-size:13px;">KANAREK: skrypt w iframe dziala. Za chwile paginacja to zastapi.</div>';</script>
       <script>
       (function(){
         // Small safety buffer (print mode only): without it, a page whose
