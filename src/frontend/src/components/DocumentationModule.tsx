@@ -796,6 +796,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   };
   const exitEditMode = () => {
     setEditMode(false);
+    tiptapHtmlRef.current = "";
     if (activeId !== null) {
       actor.releaseEditLock(activeId).catch(() => {});
     }
@@ -863,6 +864,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   useEffect(() => {
     setEditMode(false);
     setDirty(false);
+    tiptapHtmlRef.current = "";
   }, [activeId]);
   const addChapter = async (targetBookId: number) => {
     const title = (newChapterTitles[targetBookId] || "").trim();
