@@ -1523,6 +1523,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     <div className="w-8 h-px bg-[var(--border-color)] my-1" />
                     <RailButton icon="🖨" label="Podgląd" onClick={openPrintPreview} />
                     <RailButton
+                      icon="📋"
+                      label="Debug HTML"
+                      title="Kopiuje surowy HTML aktywnego rozdziału do schowka (do diagnozy)"
+                      onClick={() => {
+                        if (active) navigator.clipboard.writeText(active.contentHtml || "");
+                      }}
+                    />
+                    <RailButton
                       icon="🖥"
                       label="Dopasuj"
                       active={fitToScreen}
