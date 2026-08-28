@@ -7,17 +7,29 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.17.3",
     "@icp-sdk/auth": "^7.1.0",
     "@icp-sdk/core": "^5.4.0",
+    "@tiptap/extension-heading": "^3.30.5",
+    "@tiptap/extension-image": "^3.30.5",
+    "@tiptap/extension-table": "^3.30.5",
+    "@tiptap/extension-table-cell": "^3.30.5",
+    "@tiptap/extension-table-header": "^3.30.5",
+    "@tiptap/extension-table-row": "^3.30.5",
+    "@tiptap/extension-text-align": "^3.30.5",
+    "@tiptap/extension-text-style": "^3.30.5",
+    "@tiptap/react": "^3.30.5",
+    "@tiptap/starter-kit": "^3.30.5",
     "docx": "^9.7.1",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "tiptap-pagination-plus": "^3.1.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -28,6 +40,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.5.4",
     "oxlint": "^1.71.0",
+    "patch-package": "^8.0.1",
     "postcss": "^8.5.20",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",

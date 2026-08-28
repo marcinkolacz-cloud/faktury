@@ -4,8 +4,8 @@ import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { setDriveActor, warmDriveToken } from "../lib/oneDriveConfig";
 import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive } from "../lib/documentationDriveSync";
-import { convertDocxToHtml } from "../lib/docxImport";
 import { ManualVariablesPanel } from "./ManualVariablesPanel";
+import { DocumentationEditorTiptapPoC } from "./DocumentationEditorTiptapPoC";
 
 // SECURITY / DESIGN NOTE: the Agent AI chat (FloatingAgentChat.tsx) is
 // intentionally never given any tool referencing device manual/documentation
@@ -414,42 +414,18 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const activeIdRef = useRef<number | null>(null);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
   const [loading, setLoading] = useState(true);
-  const [loadingChapterContent, setLoadingChapterContent] = useState(false);
+  const [, setLoadingChapterContent] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [fitToScreen, setFitToScreen] = useState(false);
-  const [twoPageView, setTwoPageView] = useState(false);
-  useEffect(() => {
-    if (editMode) setTwoPageView(true);
-  }, [editMode]);
   const [showChainVersion, setShowChainVersion] = useState(false);
   const showChainVersionRef = useRef(false);
   useEffect(() => { showChainVersionRef.current = showChainVersion; }, [showChainVersion]);
-  const [twoPageHtml, setTwoPageHtml] = useState("");
-  const twoPageIframeRef = useRef<HTMLIFrameElement | null>(null);
-  const twoPageScrollRef = useRef(0);
-  const twoPageCaretFractionRef = useRef<number | null>(null);
-  const [twoPageTick, setTwoPageTick] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
   // 210mm in CSS px at the standard 96dpi reference used everywhere else
   // in this file (print preview, export) - must stay ONE authoritative
   // width so "Dopasuj do ekranu" only zooms (transform:scale), never
   // reflows text at a wider-than-A4 content width.
   const A4_WIDTH_PX = (210 * 96) / 25.4;
-  // Wysokość A4 w tych samych CSS px co A4_WIDTH_PX (96dpi) — używana do
-  // policzenia ile "wirtualnych" stron zajmuje bieżąca treść w ciągłym
-  // widoku (bez klikania "2 strony"), żeby powtórzyć nagłówek/stopkę na
-  // każdej z nich zamiast tylko raz na górze/dole całego dokumentu.
-  const A4_HEIGHT_PX = (297 * 96) / 25.4;
-  const pageRef = useRef<HTMLDivElement | null>(null);
-  const [contentHeightPx, setContentHeightPx] = useState(0);
-  useEffect(() => {
-    const el = pageRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setContentHeightPx(el.scrollHeight));
-    ro.observe(el);
-    setContentHeightPx(el.scrollHeight);
-    return () => ro.disconnect();
-  }, [activeId, editMode]);
   useEffect(() => {
     if (!fitToScreen) {
       setZoomLevel(100);
@@ -482,7 +458,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [savedFlash, setSavedFlash] = useState(false);
   const [driveSyncFlash, setDriveSyncFlash] = useState(false);
   const [driveSyncError, setDriveSyncError] = useState("");
-  const [imageUploading, setImageUploading] = useState(false);
   const [dragId, setDragId] = useState<number | null>(null);
   const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
   const [lockedBy, setLockedBy] = useState<string | null>(null);
@@ -490,13 +465,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showVarsPanel, setShowVarsPanel] = useState(false);
   const previewGridView = false;
-  const [showTableModal, setShowTableModal] = useState(false);
-  const [tableDraft, setTableDraft] = useState({ rows: 3, cols: 3, headerRow: false, colWidthCm: "", rowHeightCm: "" });
   const A4_USABLE_WIDTH_CM = 18.46; // 21cm - 1.27cm marginesy z każdej strony
-  const tableInsertRangeRef = useRef<Range | null>(null);
-  const [showPlainPasteModal, setShowPlainPasteModal] = useState(false);
-  const [plainPasteText, setPlainPasteText] = useState("");
-  const plainPasteRangeRef = useRef<Range | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
@@ -642,98 +611,15 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [pollTicks, setPollTicks] = useState(0);
   const [pollError, setPollError] = useState<string>("");
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const [pageMarkers, setPageMarkers] = useState<number[]>([]);
-
-  // Visual guide only: shows roughly where a physical A4 page would end,
-  // using the same content-height budget as the print preview/PDF engine.
-  // Read-only measurement (getBoundingClientRect) - never mutates the
-  // editable DOM, unlike the preview's hoistPageBreaks (which is safe
-  // there only because it operates on a disposable, hidden clone).
-  const recomputePageMarkers = () => {
-    const content = editorRef.current;
-    if (!content || !editMode) { setPageMarkers([]); return; }
-    const outer = content.parentElement;
-    if (!outer) { setPageMarkers([]); return; }
-    const CONTENT_H_MM = 297 - 37.5 - 12.7;
-    const MM_TO_PX = 96 / 25.4;
-    const INNER_PAD_PX = 32;
-    const PAGE_H_BASE = Math.round(CONTENT_H_MM * MM_TO_PX) - INNER_PAD_PX * 2;
-    const scale = zoomLevel / 100;
-    const PAGE_H = PAGE_H_BASE * scale;
-    const outerTop = outer.getBoundingClientRect().top;
-    const markers: number[] = [];
-    let cumulative = 0;
-    // Word-pasted content is often deeply nested (div > div > div ...),
-    // so a single top-level child can span several physical pages.
-    // Recurse into any unit taller than one page until we reach pieces
-    // that fit, so breaks can land inside nested wrappers too.
-    const collectUnits = (el: HTMLElement): HTMLElement[] => {
-      if (el.classList.contains(PAGE_BREAK_CLASS)) return [el];
-      const h = el.getBoundingClientRect().height;
-      if (h <= PAGE_H || el.children.length === 0) return [el];
-      let units: HTMLElement[] = [];
-      Array.prototype.slice.call(el.children).forEach((k: HTMLElement) => {
-        units = units.concat(collectUnits(k));
-      });
-      return units.length ? units : [el];
-    };
-    let units: HTMLElement[] = [];
-    Array.prototype.slice.call(content.children).forEach((child: HTMLElement) => {
-      units = units.concat(collectUnits(child));
-    });
-    units.forEach((unit: HTMLElement) => {
-      const containsBreak = unit.classList.contains(PAGE_BREAK_CLASS) || !!unit.querySelector(`.${PAGE_BREAK_CLASS}`);
-      const h = unit.getBoundingClientRect().height;
-      if (cumulative > 0 && cumulative + h > PAGE_H) {
-        markers.push((unit.getBoundingClientRect().top - outerTop) / scale);
-        cumulative = 0;
-      }
-      if (containsBreak) {
-        const breakEls = unit.classList.contains(PAGE_BREAK_CLASS) ? [unit] : Array.prototype.slice.call(unit.querySelectorAll(`.${PAGE_BREAK_CLASS}`));
-        breakEls.forEach((b: HTMLElement) => {
-          markers.push((b.getBoundingClientRect().top - outerTop) / scale);
-        });
-        cumulative = 0;
-        return;
-      }
-      cumulative += h;
-    });
-    setPageMarkers(markers);
-  };
-
-  useEffect(() => {
-    const content = editorRef.current;
-    if (!content || !editMode) { setPageMarkers([]); return; }
-    let raf = 0;
-    const scheduleRecompute = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(recomputePageMarkers);
-    };
-    scheduleRecompute();
-    const observer = new MutationObserver(scheduleRecompute);
-    observer.observe(content, { childList: true, subtree: true, characterData: true, attributes: true });
-    content.addEventListener("input", scheduleRecompute);
-    return () => {
-      cancelAnimationFrame(raf);
-      observer.disconnect();
-      content.removeEventListener("input", scheduleRecompute);
-    };
-  }, [editMode, zoomLevel]);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const wordImportInputRef = useRef<HTMLInputElement | null>(null);
-  const [wordImporting, setWordImporting] = useState(false);
+  // Trzyma najświeższy HTML z Tiptap (edytor jest teraz komponentem
+  // kontrolowanym z zewnątrz, nie ma już bezpośredniego DOM-u contentEditable
+  // do odczytu przez editorRef.current.innerHTML — saveChapter/eksport
+  // czytają stąd).
+  const tiptapHtmlRef = useRef<string>("");
+  const [tiptapRemountTick, setTiptapRemountTick] = useState(0);
   const autoSaveTimer = useRef<number | null>(null);
   const savingRef = useRef(false);
-  const [selectedImg, setSelectedImg] = useState<HTMLImageElement | null>(null);
-  const [selectedTableEl, setSelectedTableEl] = useState<HTMLTableElement | null>(null);
-  const [tableModalMode, setTableModalMode] = useState<"insert" | "resize">("insert");
   const commentAreaRef = useRef<HTMLDivElement>(null);
-  const commentAnchorElRef = useRef<HTMLElement | null>(null);
-  const [commentPopup, setCommentPopup] = useState<{ top: number; left: number; lineWidth: number; draft: string } | null>(null);
-  const [imgToolbarPos, setImgToolbarPos] = useState<{ top: number; left: number } | null>(null);
-  const [handlePos, setHandlePos] = useState<{ top: number; left: number } | null>(null);
-  const resizingRef = useRef<{ startX: number; startWidth: number; aspect: number } | null>(null);
-  const draggedImgRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
     if (!actor) return;
@@ -1007,9 +893,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   useEffect(() => {
     setEditMode(false);
     setDirty(false);
-    setSelectedImg(null);
-    setImgToolbarPos(null);
-    setHandlePos(null);
     if (editorRef.current) {
       editorRef.current.innerHTML = active?.contentHtml || "<p></p>";
       repairTableBorders(editorRef.current);
@@ -1108,272 +991,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     if (deviceId !== null) await actor.reorderDeviceManualChapters(deviceId, ids);
   };
 
-  const exec = (command: string, value?: string) => {
-    document.execCommand(command, false, value);
-    editorRef.current?.focus();
-    setDirty(true);
-  };
-
-  // execCommand("justifyLeft") w niektórych przeglądarkach potrafi nie
-  // usunąć zaszytego inline text-align:center (np. z wklejonego Worda) -
-  // stąd czasem tylko "justifyFull" wizualnie "naprawiał" to efektem
-  // ubocznym. Ta funkcja ustawia wyrównanie wprost na blokach zaznaczenia,
-  // z !important, więc zawsze wygrywa niezależnie od tego co tam już było.
-  const setAlignment = (align: "left" | "center" | "right" | "justify") => {
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
-    const range = sel.getRangeAt(0);
-    const startEl = range.startContainer.nodeType === 1 ? (range.startContainer as HTMLElement) : range.startContainer.parentElement;
-    const endEl = range.endContainer.nodeType === 1 ? (range.endContainer as HTMLElement) : range.endContainer.parentElement;
-    const isBlock = (el: HTMLElement) => ["P", "DIV", "H1", "H2", "H3", "H4", "LI"].includes(el.tagName);
-    const findBlock = (el: HTMLElement | null): HTMLElement | null => {
-      while (el && el !== editorRef.current) {
-        if (isBlock(el)) return el;
-        el = el.parentElement;
-      }
-      return null;
-    };
-    const startBlock = findBlock(startEl);
-    const endBlock = findBlock(endEl);
-    const blocks = new Set<HTMLElement>();
-    if (startBlock) blocks.add(startBlock);
-    if (endBlock) blocks.add(endBlock);
-    if (startBlock && endBlock && startBlock !== endBlock) {
-      // Zaznaczenie obejmuje kilka bloków - dodaj wszystkie pomiędzy nimi.
-      let node: Node | null = startBlock;
-      while (node && node !== endBlock) {
-        node = node.nextSibling;
-        if (node instanceof HTMLElement && isBlock(node)) blocks.add(node);
-      }
-    }
-    if (blocks.size === 0 && startBlock) blocks.add(startBlock);
-    blocks.forEach((el) => el.style.setProperty("text-align", align, "important"));
-    editorRef.current?.focus();
-    setDirty(true);
-  };
-
-  // Sekcja = h4, celowo POZA numberHeadingsForExport/applyLiveHeadingNumbers
-  // (liczą tylko h1/h2/h3) — nienumerowana etykieta pisana ręcznie,
-  // wizualnie nad Rozdziałem. Styl inline (nie w COUNTER_CSS), żeby
-  // przetrwał identycznie w edytorze, podglądzie, PDF i Word.
-  const SECTION_STYLE = "display:block;font-family:Calibri, 'Segoe UI', Arial, sans-serif;font-size:20pt;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#000;border-bottom:3px solid #1a1a8c;margin:32px 0 16px;padding-bottom:6px;";
-  const applySectionStyle = () => {
-    document.execCommand("formatBlock", false, "<h4>");
-    const sel = window.getSelection();
-    const node = sel?.anchorNode;
-    const el = (node instanceof Element ? node : node?.parentElement)?.closest("h4") as HTMLElement | null;
-    if (el) el.setAttribute("style", SECTION_STYLE);
-    editorRef.current?.focus();
-    setDirty(true);
-  };
-
-  // Enable the browser's own corner-drag resize handles for images inside
-  // the editable region — without this, <img> tags inserted via
-  // execCommand("insertImage", ...) have no way to be resized at all.
-  useEffect(() => {
-    if (editMode) {
-      try { document.execCommand("enableObjectResizing", false, "true" as any); } catch { /* unsupported in this browser, ignore */ }
-    }
-  }, [editMode]);
-
-  const syncOverlayPositions = (img: HTMLImageElement) => {
-    const editorRect = editorRef.current!.getBoundingClientRect();
-    const imgRect = img.getBoundingClientRect();
-    setImgToolbarPos({ top: imgRect.top - editorRect.top - 36, left: imgRect.left - editorRect.left });
-    setHandlePos({ top: imgRect.bottom - editorRect.top - 8, left: imgRect.right - editorRect.left - 8 });
-  };
-
-  const syncCommentPopupPos = (anchorEl: HTMLElement) => {
-    const container = commentAreaRef.current;
-    if (!container) return;
-    const containerRect = container.getBoundingClientRect();
-    const anchorRect = anchorEl.getBoundingClientRect();
-    const top = anchorRect.top - containerRect.top + container.scrollTop;
-    const left = anchorRect.right - containerRect.left;
-    const popupWidth = 260;
-    const lineWidth = Math.max(container.clientWidth - popupWidth - 24 - left, 20);
-    setCommentPopup((p) => (p ? { ...p, top, left, lineWidth } : p));
-  };
-
-  // Przewija już załadowany iframe podglądu "2 strony" do miejsca kursora,
-  // natychmiast — bez czekania na przebudowę/przeładowanie treści (samo
-  // przestawienie kursora, bez zmiany tekstu, generuje identyczny HTML co
-  // poprzednio, więc iframe się nie przeładowuje i tick nic nie daje).
-  const scrollTwoPageToCaret = () => {
-    if (!twoPageView) return;
-    const win = twoPageIframeRef.current?.contentWindow;
-    if (!win || !editorRef.current) return;
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const anchorEl = sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? (sel.anchorNode as HTMLElement) : sel.anchorNode.parentElement) : null;
-    if (!anchorEl || !editorRef.current.contains(anchorEl)) return;
-    const range = sel.getRangeAt(0);
-    const rects = range.getClientRects();
-    const rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
-    const editorTop = editorRef.current.getBoundingClientRect().top;
-    const scrollTop = commentAreaRef.current?.scrollTop || 0;
-    const caretOffset = rect.top - editorTop + scrollTop;
-    const total = editorRef.current.scrollHeight || 1;
-    const fraction = Math.max(0, Math.min(1, caretOffset / total));
-    try {
-      const totalHeight = win.document.documentElement.scrollHeight;
-      win.scrollTo({ top: fraction * totalHeight, behavior: "smooth" });
-    } catch {
-      // iframe jeszcze nie załadowany / cross-origin - nic nie robimy
-    }
-  };
-
-  const onEditorClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === "IMG") {
-      const img = target as HTMLImageElement;
-      setSelectedImg(img);
-      syncOverlayPositions(img);
-    } else {
-      setSelectedImg(null);
-      setImgToolbarPos(null);
-      setHandlePos(null);
-    }
-    setSelectedTableEl(target.closest("table") as HTMLTableElement | null);
-    const commentEl = target.closest(".doc-comment-anchor") as HTMLElement | null;
-    if (commentEl && editorRef.current?.contains(commentEl)) {
-      commentAnchorElRef.current = commentEl;
-      const draft = commentEl.getAttribute("data-comment-text") || "";
-      setCommentPopup({ top: 0, left: 0, lineWidth: 0, draft });
-      requestAnimationFrame(() => syncCommentPopupPos(commentEl));
-    } else {
-      commentAnchorElRef.current = null;
-      setCommentPopup(null);
-    }
-    scrollTwoPageToCaret();
-  };
-
-  const addComment = () => {
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-      alert("Zaznacz fragment tekstu, żeby dodać komentarz.");
-      return;
-    }
-    const range = sel.getRangeAt(0);
-    if (!editorRef.current?.contains(range.commonAncestorContainer)) return;
-    const span = document.createElement("span");
-    span.className = "doc-comment-anchor";
-    span.setAttribute("data-comment-id", `c${Date.now()}`);
-    span.setAttribute("data-comment-text", "");
-    try {
-      range.surroundContents(span);
-    } catch {
-      // Zaznaczenie przecina granicę elementów (np. pogrubienie w środku)
-      // — surroundContents wymaga jednego spójnego węzła, więc wycinamy
-      // zawartość i owijamy ją ręcznie.
-      const frag = range.extractContents();
-      span.appendChild(frag);
-      range.insertNode(span);
-    }
-    sel.removeAllRanges();
-    commentAnchorElRef.current = span;
-    setCommentPopup({ top: 0, left: 0, lineWidth: 0, draft: "" });
-    requestAnimationFrame(() => syncCommentPopupPos(span));
-    setDirty(true);
-  };
-
-  const saveCommentDraft = (text: string) => {
-    if (!commentAnchorElRef.current) return;
-    commentAnchorElRef.current.setAttribute("data-comment-text", text);
-    setDirty(true);
-  };
-
-  const deleteComment = () => {
-    const anchor = commentAnchorElRef.current;
-    if (!anchor) return;
-    const parent = anchor.parentNode;
-    while (anchor.firstChild) parent?.insertBefore(anchor.firstChild, anchor);
-    anchor.remove();
-    commentAnchorElRef.current = null;
-    setCommentPopup(null);
-    setDirty(true);
-  };
-
-  useEffect(() => {
-    editorRef.current?.querySelectorAll(".doc-comment-anchor.doc-comment-active").forEach((el) => el.classList.remove("doc-comment-active"));
-    if (commentPopup && commentAnchorElRef.current) commentAnchorElRef.current.classList.add("doc-comment-active");
-  }, [commentPopup]);
-
-  // Images are draggable by default in browsers, but relying on the
-  // browser's own internal contenteditable drag-and-drop to relocate them
-  // is inconsistent across Chrome/Firefox/Edge. Handling it ourselves —
-  // remember which <img> started the drag, then explicitly move that same
-  // DOM node to wherever the cursor drops — works everywhere the same way.
-  const onEditorDragStart = (e: React.DragEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === "IMG") {
-      draggedImgRef.current = target as HTMLImageElement;
-      e.dataTransfer.setData("text/plain", "internal-image-move");
-      e.dataTransfer.effectAllowed = "move";
-    }
-  };
-
-  const onEditorDragEnd = () => {
-    draggedImgRef.current = null;
-  };
-
-  const alignImage = (align: "left" | "center" | "right") => {
-    if (!selectedImg) return;
-    selectedImg.style.display = "block";
-    if (align === "left") { selectedImg.style.float = "left"; selectedImg.style.margin = "0 12px 8px 0"; }
-    else if (align === "right") { selectedImg.style.float = "right"; selectedImg.style.margin = "0 0 8px 12px"; }
-    else { selectedImg.style.float = "none"; selectedImg.style.margin = "8px auto"; }
-    setDirty(true);
-    requestAnimationFrame(() => syncOverlayPositions(selectedImg));
-  };
-
-  const resizeImage = (percent: number) => {
-    if (!selectedImg) return;
-    const naturalW = selectedImg.naturalWidth || 500;
-    selectedImg.style.width = `${Math.round((naturalW * percent) / 100)}px`;
-    selectedImg.style.height = "auto";
-    setDirty(true);
-    requestAnimationFrame(() => syncOverlayPositions(selectedImg));
-  };
-
-  // Real-time drag-to-resize from the corner handle — updates the image
-  // width on every mousemove frame (not just on drop), so it visually
-  // tracks the cursor smoothly instead of jumping between fixed steps.
-  const startResizeDrag = (e: React.MouseEvent) => {
-    if (!selectedImg) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const currentWidth = selectedImg.getBoundingClientRect().width;
-    const currentHeight = selectedImg.getBoundingClientRect().height || 1;
-    resizingRef.current = { startX: e.clientX, startWidth: currentWidth, aspect: currentWidth / currentHeight };
-
-    const onMove = (ev: MouseEvent) => {
-      if (!resizingRef.current || !selectedImg) return;
-      const delta = ev.clientX - resizingRef.current.startX;
-      const newWidth = Math.max(40, Math.round(resizingRef.current.startWidth + delta));
-      selectedImg.style.width = `${newWidth}px`;
-      selectedImg.style.height = "auto";
-      syncOverlayPositions(selectedImg);
-    };
-    const onUp = () => {
-      resizingRef.current = null;
-      setDirty(true);
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  const removeSelectedImage = () => {
-    if (!selectedImg) return;
-    selectedImg.remove();
-    setSelectedImg(null);
-    setImgToolbarPos(null);
-    setHandlePos(null);
-    setDirty(true);
-  };
-
   const openSettings = () => {
     setHfDraft(hfSettings);
     setShowSettings(true);
@@ -1407,402 +1024,21 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     reader.readAsDataURL(file);
   };
 
-  const insertPageBreak = () => {
-    if (!editMode) return;
-    document.execCommand(
-      "insertHTML",
-      false,
-      `<div class="${PAGE_BREAK_CLASS}" contenteditable="false" data-label="— Podział strony —"></div><p><br></p>`,
-    );
-    editorRef.current?.focus();
-    setDirty(true);
-  };
-
-  // Pasted content (e.g. tables copied from Word/Excel) carries its own
-  // inline background-color styles from the source app. Word/Excel
-  // default table/cell backgrounds are white, which is invisible against
-  // our white print-preview/export page — so on paste we strip any
-  // white/near-white background so pasted tables stay visible everywhere
-  // they're rendered (editor, preview, PDF, Word export).
-  const sanitizePastedHtml = (html: string): string => {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const isWhiteish = (val: string) => {
-      const v = val.trim().toLowerCase();
-      if (!v) return false;
-      if (v === "white" || v === "#fff" || v === "#ffffff") return true;
-      const m = v.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-      if (m) return +m[1] >= 245 && +m[2] >= 245 && +m[3] >= 245;
-      return false;
-    };
-    doc.body.querySelectorAll<HTMLElement>("*").forEach((el) => {
-      if (el.style && el.style.backgroundColor && isWhiteish(el.style.backgroundColor)) {
-        el.style.removeProperty("background-color");
-        el.style.removeProperty("background");
-      }
-      if (el.hasAttribute("bgcolor") && isWhiteish(el.getAttribute("bgcolor") || "")) {
-        el.removeAttribute("bgcolor");
-      }
-    });
-    // Pasted tables (Word/Excel) carry their own border color/width — often
-    // very light gray, invisible on a white page. Force the same plain
-    // solid black border every editor-inserted table uses, so pasted
-    // tables stay visible everywhere (editor, print preview, PDF, Word
-    // export) regardless of the source app's styling.
-    doc.body.innerHTML = doc.body.innerHTML.replace(/\t/g, "\u00A0\u00A0\u00A0\u00A0");
-    doc.body.querySelectorAll<HTMLElement>("td, th").forEach((el) => {
-      el.style.borderWidth = "1px";
-      el.style.borderStyle = "solid";
-      el.style.borderColor = "#000";
-    });
-    return doc.body.innerHTML;
-  };
-
-  // "Wklej czysty tekst" — otwiera modal z <textarea>. Wklejenie do
-  // zwykłego <textarea> samo w sobie odrzuca cały HTML ze schowka (Word
-  // zostawia tam tylko czysty tekst), więc to najprostszy pewny sposób na
-  // pozbycie się stylów/klas/nagłówków Worda bez próby ich "czyszczenia"
-  // z HTML. Każda linia trafia do dokumentu jako osobny akapit <p> w
-  // standardowym stylu "Normal" (bez dodatkowych klas/inline-style).
-  const openPlainPasteModal = () => {
-    const sel0 = window.getSelection();
-    plainPasteRangeRef.current = sel0 && sel0.rangeCount > 0 ? sel0.getRangeAt(0).cloneRange() : null;
-    setPlainPasteText("");
-    setShowPlainPasteModal(true);
-  };
-  const escapeHtml = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const insertPlainPasteText = () => {
-    const lines = plainPasteText.split(/\r\n|\r|\n/);
-    const html = lines.map((l) => `<p>${l.trim() ? escapeHtml(l) : "<br>"}</p>`).join("");
-    const savedRange = plainPasteRangeRef.current;
-    const sel1 = window.getSelection();
-    if (savedRange) {
-      sel1?.removeAllRanges();
-      sel1?.addRange(savedRange);
-    }
-    // Restore the selection BEFORE focusing: focusing a contenteditable with
-    // no active selection resets the caret to the very start of the document,
-    // which is what caused the "jumps back to the beginning" bug.
-    editorRef.current?.focus({ preventScroll: true });
-    document.execCommand("insertHTML", false, html);
-    // Bring the freshly inserted text into view (insertHTML doesn't auto-scroll).
-    const sel2 = window.getSelection();
-    if (sel2 && sel2.rangeCount > 0) {
-      const node = sel2.getRangeAt(0).startContainer;
-      const el = node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
-      el?.scrollIntoView({ block: "center" });
-    }
-    setDirty(true);
-    setShowPlainPasteModal(false);
-  };
-
-  const onEditorPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    const html = e.clipboardData.getData("text/html");
-    if (!html) return; // let default plain-text paste behave normally
-    const sanitized = sanitizePastedHtml(html);
-    // Same nested-table guard as the toolbar button: pasting a table while
-    // the cursor sits inside an existing table cell would nest it and
-    // break rendering everywhere.
-    if (/<table[\s>]/i.test(sanitized)) {
-      const sel0 = window.getSelection();
-      const anchorEl = sel0 && sel0.anchorNode
-        ? (sel0.anchorNode.nodeType === 1 ? (sel0.anchorNode as HTMLElement) : sel0.anchorNode.parentElement)
-        : null;
-      if (anchorEl && anchorEl.closest("table") && editorRef.current?.contains(anchorEl)) {
-        e.preventDefault();
-        alert("Wklejona treść zawiera tabelę, a kursor jest wewnątrz innej tabeli. Ustaw kursor poza tabelą i spróbuj ponownie.");
-        return;
-      }
-    }
-    e.preventDefault();
-    document.execCommand("insertHTML", false, sanitized);
-    setDirty(true);
-  };
-
   // Plain <table><tr><td> with inline border styles (not an external
   // stylesheet class) — this way the table survives verbatim through
   // every export path (Word HTML import, print preview, PDF/print)
   // without any special mso-tricks, since inline styles always carry
   // through DOM/innerHTML round-trips unchanged.
-  const TABLE_CELL_STYLE = "border-width:1px;border-style:solid;border-color:#000;padding:6px 8px;min-width:60px;vertical-align:top;";
-
-  const insertTable = () => {
-    // window.prompt() steals focus and can lose the editor selection —
-    // same issue already solved for image insertion. Save the current
-    // Range BEFORE the modal opens, restore it right before inserting,
-    // otherwise the table can render on-screen but land outside the
-    // actual editor DOM node (looks fine visually, silently vanishes on
-    // save/export since it was never really part of editorRef).
-    const sel0 = window.getSelection();
-    // Refuse to insert a table with the cursor already inside another
-    // table — execCommand insertHTML would drop it straight into that
-    // cell, producing an invalid nested table that renders as a broken
-    // overlapping grid everywhere (editor, preview, Word).
-    const anchorEl = sel0 && sel0.anchorNode
-      ? (sel0.anchorNode.nodeType === 1 ? (sel0.anchorNode as HTMLElement) : sel0.anchorNode.parentElement)
-      : null;
-    if (anchorEl && anchorEl.closest("table") && editorRef.current?.contains(anchorEl)) {
-      alert("Nie można wstawić tabeli wewnątrz innej tabeli. Ustaw kursor poza tabelą (np. w akapicie pod nią) i spróbuj ponownie.");
-      return;
-    }
-    tableInsertRangeRef.current = sel0 && sel0.rangeCount > 0 ? sel0.getRangeAt(0).cloneRange() : null;
-    setTableModalMode("insert");
-    setTableDraft({ rows: 3, cols: 3, headerRow: false, colWidthCm: "", rowHeightCm: "" });
-    setShowTableModal(true);
-  };
-
-  // Opens the same modal pre-filled with the currently selected table's
-  // dimensions, so rows/cols/width/height can be changed on an existing
-  // table instead of only at creation time.
-  const openResizeTable = () => {
-    if (!selectedTableEl) return;
-    const rows = selectedTableEl.rows.length;
-    const cols = rows > 0 ? selectedTableEl.rows[0].cells.length : 1;
-    setTableModalMode("resize");
-    setTableDraft({ rows, cols, headerRow: false, colWidthCm: "", rowHeightCm: "" });
-    setShowTableModal(true);
-  };
-
-  const addTableRow = () => {
-    if (!selectedTableEl) return;
-    const lastRow = selectedTableEl.rows[selectedTableEl.rows.length - 1];
-    const cols = lastRow ? lastRow.cells.length : 1;
-    const tr = document.createElement("tr");
-    for (let i = 0; i < cols; i++) {
-      const td = document.createElement("td");
-      td.setAttribute("style", TABLE_CELL_STYLE);
-      td.innerHTML = "&nbsp;";
-      tr.appendChild(td);
-    }
-    selectedTableEl.querySelector("tbody")?.appendChild(tr) || selectedTableEl.appendChild(tr);
-    setDirty(true);
-  };
-
-  const removeTableRow = () => {
-    if (!selectedTableEl || selectedTableEl.rows.length <= 1) return;
-    selectedTableEl.rows[selectedTableEl.rows.length - 1].remove();
-    setDirty(true);
-  };
-
-  const addTableColumn = () => {
-    if (!selectedTableEl) return;
-    Array.from(selectedTableEl.rows).forEach((row) => {
-      const td = document.createElement("td");
-      td.setAttribute("style", TABLE_CELL_STYLE);
-      td.innerHTML = "&nbsp;";
-      row.appendChild(td);
-    });
-    setDirty(true);
-  };
-
-  const removeTableColumn = () => {
-    if (!selectedTableEl) return;
-    const rows = Array.from(selectedTableEl.rows);
-    if (rows.some((r) => r.cells.length <= 1)) return;
-    rows.forEach((row) => row.cells[row.cells.length - 1].remove());
-    setDirty(true);
-  };
-
-  const deleteTable = () => {
-    if (!selectedTableEl) return;
-    selectedTableEl.remove();
-    setSelectedTableEl(null);
-    setDirty(true);
-  };
-
-  const confirmInsertTable = () => {
-    const colWidth = parseFloat(tableDraft.colWidthCm);
-    const rowHeight = parseFloat(tableDraft.rowHeightCm);
-    const hasColWidth = !isNaN(colWidth) && colWidth > 0;
-    const hasRowHeight = !isNaN(rowHeight) && rowHeight > 0;
-
-    if (tableModalMode === "resize" && selectedTableEl) {
-      // Adjust row/column count first, then apply width/height to every
-      // cell uniformly — same behavior as at creation time, just applied
-      // to an already-inserted table.
-      const targetRows = Math.max(1, Math.min(30, tableDraft.rows || 1));
-      const targetCols = Math.max(1, Math.min(12, tableDraft.cols || 1));
-      while (selectedTableEl.rows.length < targetRows) addTableRow();
-      while (selectedTableEl.rows.length > targetRows) removeTableRow();
-      while ((selectedTableEl.rows[0]?.cells.length || 0) < targetCols) addTableColumn();
-      while ((selectedTableEl.rows[0]?.cells.length || 0) > targetCols) removeTableColumn();
-      if (hasColWidth || hasRowHeight) {
-        Array.from(selectedTableEl.querySelectorAll<HTMLElement>("td, th")).forEach((cell) => {
-          if (hasColWidth) { cell.style.removeProperty("min-width"); cell.style.width = `${colWidth}cm`; }
-          if (hasRowHeight) cell.style.height = `${rowHeight}cm`;
-        });
-        if (hasColWidth) {
-          selectedTableEl.style.width = `${(colWidth * targetCols).toFixed(2)}cm`;
-          selectedTableEl.style.tableLayout = "fixed";
-        }
-      }
-      setDirty(true);
-      setShowTableModal(false);
-      return;
-    }
-
-    const rows = Math.max(1, Math.min(30, tableDraft.rows || 3));
-    const cols = Math.max(1, Math.min(12, tableDraft.cols || 3));
-    // Border is solid black, plain inline styles only (no resize/overflow
-    // tricks) — Word's HTML-to-doc importer can silently drop an entire
-    // table if a cell has overflow:auto (treats it as an unsupported
-    // scrollable region), so this must stay minimal to survive every
-    // export path (Word, print preview, PDF).
-    const cellStyle = `border-width:1px;border-style:solid;border-color:#000;padding:6px 8px;${hasColWidth ? `width:${colWidth}cm;` : "min-width:60px;"}${hasRowHeight ? `height:${rowHeight}cm;` : ""}vertical-align:top;`;
-    const headerCellStyle = cellStyle + "background:#eee;font-weight:bold;";
-    const rowsHtml = Array.from({ length: rows }, (_, r) =>
-      `<tr>${Array.from({ length: cols }, () => `<td style="${r === 0 && tableDraft.headerRow ? headerCellStyle : cellStyle}">&nbsp;</td>`).join("")}</tr>`
-    ).join("");
-    const tableWidthStyle = hasColWidth ? `width:${(colWidth * cols).toFixed(2)}cm;table-layout:fixed;` : "width:100%;";
-    const tableHtml = `<table style="border-collapse:collapse;${tableWidthStyle}margin:12px 0;"><tbody>${rowsHtml}</tbody></table><p><br></p>`;
-    editorRef.current?.focus();
-    const savedRange = tableInsertRangeRef.current;
-    if (savedRange) {
-      const sel1 = window.getSelection();
-      sel1?.removeAllRanges();
-      sel1?.addRange(savedRange);
-    }
-    document.execCommand("insertHTML", false, tableHtml);
-    setDirty(true);
-    setShowTableModal(false);
-  };
-  const insertImage = () => imageInputRef.current?.click();
-  const insertWordDoc = () => wordImportInputRef.current?.click();
-  const onWordFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
-    if (!/\.docx$/i.test(file.name)) {
-      alert("Tylko pliki .docx (nie stare .doc).");
-      return;
-    }
-    setWordImporting(true);
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const html = await convertDocxToHtml(arrayBuffer);
-      const sanitized = sanitizePastedHtml(html);
-      const sel0 = window.getSelection();
-      const anchorEl = sel0 && sel0.anchorNode
-        ? (sel0.anchorNode.nodeType === 1 ? (sel0.anchorNode as HTMLElement) : sel0.anchorNode.parentElement)
-        : null;
-      if (anchorEl && anchorEl.closest("table") && editorRef.current?.contains(anchorEl)) {
-        alert("Ustaw kursor poza tabelą i spróbuj ponownie.");
-        return;
-      }
-      editorRef.current?.focus();
-      document.execCommand("insertHTML", false, sanitized);
-      setDirty(true);
-    } catch (err: any) {
-      alert("Nie udało się zaimportować pliku: " + String(err?.message || err));
-    } finally {
-      setWordImporting(false);
-    }
-  };
-
-  const placeCaretAtPoint = (x: number, y: number) => {
-    const anyDoc = document as any;
-    let range: Range | null = null;
-    if (anyDoc.caretRangeFromPoint) {
-      range = anyDoc.caretRangeFromPoint(x, y);
-    } else if (anyDoc.caretPositionFromPoint) {
-      const pos = anyDoc.caretPositionFromPoint(x, y);
-      if (pos) {
-        range = document.createRange();
-        range.setStart(pos.offsetNode, pos.offset);
-      }
-    }
-    if (range) {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-    }
-    editorRef.current?.focus();
-  };
-
-  const insertImageFile = async (file: File) => {
-    if (!/^image\/(jpeg|png)$/.test(file.type)) {
-      alert("Tylko pliki JPG lub PNG.");
-      return;
-    }
-    if (!selectedDevice) {
-      alert("Wybierz najpierw urządzenie.");
-      return;
-    }
-    // The upload takes a few network round-trips (folder check, numbering,
-    // upload, share link) — capture exactly where the caret was NOW, so
-    // the image lands there even if focus/selection changes meanwhile.
-    const sel = window.getSelection();
-    const savedRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
-
-    setImageUploading(true);
-    try {
-      const dataUrl: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error("Nie udało się odczytać pliku."));
-        reader.readAsDataURL(file);
-      });
-
-      const { blob } = await new Promise<{ blob: Blob }>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-          // Downscale large images client-side before upload.
-          const maxWidth = 1400;
-          let { width, height } = img;
-          if (width > maxWidth) {
-            height = Math.round(height * (maxWidth / width));
-            width = maxWidth;
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          ctx?.drawImage(img, 0, 0, width, height);
-          canvas.toBlob(
-            (b) => (b ? resolve({ blob: b }) : reject(new Error("Nie udało się przetworzyć obrazka."))),
-            file.type === "image/png" ? "image/png" : "image/jpeg",
-            0.85,
-          );
-        };
-        img.onerror = () => reject(new Error("Nie udało się wczytać obrazka."));
-        img.src = dataUrl;
-      });
-
-      const extension = file.type === "image/png" ? "png" : "jpg";
-      const url = await uploadChapterImage(deviceLabel, blob, extension);
-
-      if (savedRange) {
-        const sel2 = window.getSelection();
-        sel2?.removeAllRanges();
-        sel2?.addRange(savedRange);
-      }
-      editorRef.current?.focus();
-      document.execCommand("insertImage", false, url);
-      setDirty(true);
-    } catch (e: any) {
-      alert("Nie udało się wstawić obrazka: " + (e?.message || String(e)));
-    } finally {
-      setImageUploading(false);
-    }
-  };
-
-  const onImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    insertImageFile(file);
-  };
-
   const saveChapter = async (silent = false) => {
-    if (!active || !editorRef.current) return;
+    if (!active) return;
     if (savingRef.current) return;
     savingRef.current = true;
     try {
     // Strip the live-preview data-num attributes before persisting —
-    // they're recomputed fresh on every load/render (see
-    // applyLiveHeadingNumbers), so saved content should stay clean of
-    // them to avoid staleness and keep the stored HTML minimal.
-    const html = editorRef.current.innerHTML.replace(/\s*data-num="[^"]*"/g, "");
+    // Tiptap's HeadingNumbering extension writes them as real node
+    // attributes for live display, but they're recomputed fresh on every
+    // load, so saved content should stay clean of them.
+    const html = (tiptapHtmlRef.current || active.contentHtml || "").replace(/\s*data-num="[^"]*"/g, "");
     try {
       await syncChapterToDrive(deviceLabel, active.id, active.order, active.title, html);
     } catch (e: any) {
@@ -1833,7 +1069,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   }, [dirty, autoSave, editMode]);
 
   const getChaptersForExport = async (): Promise<Chapter[]> => {
-    const liveHtml = active && editorRef.current ? editorRef.current.innerHTML.replace(/\s*data-num="[^"]*"/g, "") : null;
+    const liveHtml = active && tiptapHtmlRef.current ? tiptapHtmlRef.current.replace(/\s*data-num="[^"]*"/g, "") : null;
     let merged = chapters.map((c) => (active && liveHtml !== null && c.id === active.id ? { ...c, contentHtml: liveHtml } : c));
     const missing = merged.filter((c) => selectedForPrint.has(c.id) && !c.contentHtml);
     if (missing.length > 0) {
@@ -2072,37 +1308,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // single contentEditable box above) - real per-page splitting across a
   // live contentEditable region is not feasible without risking caret/undo
   // breakage, so this renders alongside it instead of replacing it.
-  useEffect(() => {
-    if (!twoPageView || !active) { setTwoPageHtml(""); return; }
-    let cancelled = false;
-    const run = async () => {
-      const win = twoPageIframeRef.current?.contentWindow;
-      if (win) twoPageScrollRef.current = win.scrollY;
-      // Pozycja kursora jako ułamek (0..1) całkowitej wysokości treści -
-      // przybliżenie, bo edytor (ciągły) i podgląd (spaginowany, z
-      // nagłówkami/stopkami) mają inną wysokość, ale wystarcza żeby
-      // podgląd "podążał" za miejscem edycji zamiast zostawać w miejscu.
-      twoPageCaretFractionRef.current = null;
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount > 0 && editorRef.current) {
-        const range = sel.getRangeAt(0);
-        const anchorEl = sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? (sel.anchorNode as HTMLElement) : sel.anchorNode.parentElement) : null;
-        if (anchorEl && editorRef.current.contains(anchorEl)) {
-          const rects = range.getClientRects();
-          const rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
-          const editorTop = editorRef.current.getBoundingClientRect().top;
-          const scrollTop = commentAreaRef.current?.scrollTop || 0;
-          const caretOffset = rect.top - editorTop + scrollTop;
-          const total = editorRef.current.scrollHeight || 1;
-          twoPageCaretFractionRef.current = Math.max(0, Math.min(1, caretOffset / total));
-        }
-      }
-      const html = await buildChapterPreviewHtml(false, true, new Set([active.id]));
-      if (!cancelled) setTwoPageHtml(html);
-    };
-    const t = setTimeout(run, 500);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [twoPageView, editMode, active, twoPageTick]);
   // Tryb bez edycji ("Edytuj" nieaktywne): zamiast surowego, ciągłego
   // contentEditable z nakładkowym nagłówkiem/stopką (przybliżenie, które
   // nachodzi na treść na 2+ stronie), pokazujemy dokładnie ten sam,
@@ -2121,16 +1326,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     const onMsg = (e: MessageEvent) => {
       if (e.data && e.data.type === "docPreviewPageCount") {
         setPreviewPageCount(e.data.count);
-        const win = twoPageIframeRef.current?.contentWindow;
-        if (win && e.source === win) {
-          const fraction = twoPageCaretFractionRef.current;
-          if (fraction !== null) {
-            const totalHeight = win.document.documentElement.scrollHeight;
-            win.scrollTo(0, fraction * totalHeight);
-          } else {
-            win.scrollTo(0, twoPageScrollRef.current);
-          }
-        }
       }
     };
     window.addEventListener("message", onMsg);
@@ -2322,11 +1517,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             </div>
 
             <div
-              className={editMode ? "fixed inset-0 z-[200] flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] overflow-hidden" : "flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] relative"}
+              className={editMode ? "fixed z-[200] flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] overflow-hidden rounded-lg shadow-2xl" : "flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] relative"}
+              style={editMode ? { left: editWinRect.x, top: editWinRect.y, width: editWinRect.width, height: editWinRect.height } : undefined}
             >
               <style>{COUNTER_CSS}</style>
-              <input ref={imageInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={onImageSelected} />
-              <input ref={wordImportInputRef} type="file" accept=".docx" className="hidden" onChange={onWordFileSelected} />
               {!active ? (
                 <div className="p-8 text-sm text-[var(--text-muted)]">
                   {chapters.length === 0 ? "Brak rozdziałów — dodaj pierwszy w panelu po lewej." : "Wybierz rozdział z listy."}
@@ -2357,7 +1551,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       title="Dopasuj szerokość pola roboczego do szerokości ekranu"
                       onClick={() => setFitToScreen((v) => !v)}
                     />
-                    <RailButton icon="📖" label="2 strony" active={twoPageView} title="Podgląd podziału na strony" onClick={() => setTwoPageView((v) => !v)} />
                     <div className="flex flex-col items-center gap-0.5 w-12">
                       <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} title="Powiększ" className="w-8 h-6 rounded text-xs border border-[var(--border-color)] transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90">＋</button>
                       <button onClick={() => setZoomLevel(100)} title="Resetuj powiększenie" className="text-[10px] text-[var(--text-secondary)]">{zoomLevel}%</button>
@@ -2367,7 +1560,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       <>
                         <div className="w-8 h-px bg-[var(--border-color)] my-1" />
                         <RailButton icon="🔗" label="Zmienne" title="Zmienne referencyjne" onClick={() => setShowVarsPanel(true)} />
-                        <RailButton icon="🧹" label="Wklej tekst" title="Wklej jako zwykły tekst (bez formatowania Worda)" onClick={openPlainPasteModal} />
                         <RailButton icon="⚙️" label="Nagłówek" title="Nagłówek i stopka" onClick={openSettings} />
                         <RailButton icon={autoSave ? "☑️" : "⬜"} label="Auto-zapis" active={autoSave} title="Auto-zapis (3s)" onClick={() => setAutoSave((v) => !v)} />
                       </>
@@ -2397,254 +1589,51 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     )}
                   </div>
                   <div className="flex-1 flex flex-col overflow-hidden">
-                  {editMode && canEdit && (
-                    <div
-                      className="flex items-center gap-1.5 px-3 py-2 border-b border-[var(--border-color)] flex-wrap bg-[var(--bg-card)]"
-                      onMouseDown={onEditWinDragStart}
-                      style={{ cursor: "move" }}
-                    >
-                        <select
-                          defaultValue=""
-                          onChange={(e) => {
-                            if (e.target.value === "<h4>") applySectionStyle();
-                            else if (e.target.value) exec("formatBlock", e.target.value);
-                            e.target.value = "";
-                          }}
-                          className="text-xs h-8 rounded-md border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] px-1 transition-colors hover:border-[var(--accent)]"
-                        >
-                          <option value="" disabled>Styl</option>
-                          <option value="<p>">Normal</option>
-                          <option value="<h4>">Sekcja (bez numeracji, nad rozdziałem)</option>
-                          <option value="<h1>">Heading 1 — Rozdział</option>
-                          <option value="<h2>">Heading 2 — Podrozdział</option>
-                          <option value="<h3>">Heading 3 — Punkt</option>
-                        </select>
-                        <select
-                          defaultValue=""
-                          onChange={(e) => { if (e.target.value) exec("fontSize", e.target.value); e.target.value = ""; }}
-                          className="text-xs h-8 rounded-md border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] px-1 transition-colors hover:border-[var(--accent)]"
-                          title="Wielkość czcionki"
-                        >
-                          <option value="" disabled>Rozmiar</option>
-                          <option value="1">Bardzo mała (10px)</option>
-                          <option value="2">Mała (13px)</option>
-                          <option value="3">Normalna (16px)</option>
-                          <option value="4">Duża (18px)</option>
-                          <option value="5">Większa (24px)</option>
-                          <option value="6">Duża+ (32px)</option>
-                          <option value="7">Bardzo duża (48px)</option>
-                        </select>
-                        <button onClick={() => exec("bold")} className="text-xs w-8 h-8 font-bold rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">B</button>
-                        <button onClick={() => exec("italic")} className="text-xs w-8 h-8 italic rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">I</button>
-                        <button onClick={() => exec("insertUnorderedList")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">• Lista</button>
-                        <button onClick={() => setAlignment("left")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⬛L</button>
-                        <button onClick={() => setAlignment("center")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⬛C</button>
-                        <button onClick={() => setAlignment("right")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⬛R</button>
-                        <button onClick={() => setAlignment("justify")} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⬛J</button>
-                        <span className="w-px h-5 bg-[#ccc] mx-1" />
-                        <button onClick={insertImage} disabled={imageUploading} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20 disabled:opacity-50">
-                          {imageUploading ? "⏳ Przesyłam na Drive…" : "🖼 Obraz"}
-                        </button>
-                        <button onClick={insertPageBreak} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">⏎ Podział strony</button>
-                        <button onClick={insertTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">🔲 Tabela</button>
-                        <button onClick={insertWordDoc} disabled={wordImporting} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20 disabled:opacity-50">
-                          {wordImporting ? "Importuję…" : "📄 Import z Worda"}
-                        </button>
-                        <button onClick={addComment} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">💬 Komentarz</button>
-                        {selectedTableEl && (
-                          <>
-                            <span className="w-px h-5 bg-[#ccc] mx-1" />
-                            <button onClick={addTableRow} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">+Wiersz</button>
-                            <button onClick={removeTableRow} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">-Wiersz</button>
-                            <button onClick={addTableColumn} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">+Kolumna</button>
-                            <button onClick={removeTableColumn} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">-Kolumna</button>
-                            <button onClick={openResizeTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20">📐 Rozmiar</button>
-                            <button onClick={deleteTable} className="text-xs px-2 h-8 rounded border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm transition-all duration-100 hover:border-[var(--accent)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)] active:scale-90 active:bg-[var(--accent)]/20 text-red-600">🗑 Usuń tabelę</button>
-                          </>
-                        )}
-                        <span className="text-[10px] text-[var(--text-muted)]">(albo przeciągnij plik na edytor)</span>
-                    </div>
-                  )}
                   <div className="flex-1 flex overflow-hidden">
-                  <div ref={commentAreaRef} className={"relative overflow-auto bg-[var(--bg-page)] py-6 " + ((twoPageView && editMode) ? "w-1/2 shrink-0 border-r border-[var(--border-color)]" : "flex-1")}>
+                  <div ref={commentAreaRef} className="relative overflow-auto bg-[var(--bg-page)] py-6 flex-1">
                   {!editMode && active && (
                     <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none" }} />
                   )}
-                    <div
-                      ref={pageRef}
-                      className={"mx-auto bg-[var(--paper-bg)] text-black shadow-lg relative " + (!editMode ? "hidden" : "")}
-                      style={{
-                        width: "210mm",
-                        maxWidth: "210mm",
-                        minHeight: "297mm",
-                        boxSizing: "border-box",
-                        padding: `${hfSettings.headerHeightCm}cm 1.27cm ${hfSettings.footerHeightCm}cm 1.27cm`,
-                        transform: `scale(${zoomLevel / 100})`,
-                        transformOrigin: "top center",
-                      }}
-                    >
-                    {loadingChapterContent && (
-                      <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--bg-card)]/80 text-sm text-[var(--text-muted)]">
-                        Ładowanie treści rozdziału…
-                      </div>
-                    )}
-                    {Array.from({ length: Math.max(1, Math.ceil(contentHeightPx / A4_HEIGHT_PX)) - 1 }).map((_, pageIdx) => (
+                  {editMode && canEdit && active && (
+                    <div className="mx-auto" style={{ maxWidth: 900, transform: `scale(${zoomLevel / 100})`, transformOrigin: "top center" }}>
                       <div
-                        key={pageIdx}
-                        className="absolute left-0 right-0 box-border pointer-events-none select-none text-center"
-                        style={{ top: (pageIdx + 1) * A4_HEIGHT_PX - 10 }}
-                        title="Tu fizycznie kończy się strona A4 (przybliżenie - patrz dokładny podgląd po prawej)"
+                        onMouseDown={onEditWinDragStart}
+                        title="Przeciągnij, żeby przesunąć okno"
+                        className="text-[10px] text-[var(--text-muted)] px-2 py-1 cursor-move select-none"
                       >
-                        <div className="border-t-2 border-dashed border-[#4fc3f7]" />
-                        <span className="inline-block -mt-2.5 px-2 bg-[var(--paper-bg)] text-[10px] text-[#4fc3f7]">
-                          — koniec strony {pageIdx + 1} —
-                        </span>
+                        ✥ Przeciągnij, żeby przesunąć okno
                       </div>
-                    ))}
-                    <div
-                      id="doc-editor-content"
-                      ref={editorRef}
-                      contentEditable={editMode && canEdit}
-                      onFocus={() => {
-                        // Wymusza <p> jako tag przy Enter (nie <div>/inny),
-                        // żeby akapit wpisany Enterem miał te same,
-                        // jednakowe odstępy co akapit wklejony przez
-                        // "Wklej tekst" (ta sama reguła CSS margin:0 wyżej).
-                        try { document.execCommand("defaultParagraphSeparator", false, "p"); } catch (e) {}
-                      }}
-                      onKeyDown={(e) => {
-                        // Browsers move focus to the next tabbable element
-                        // on Tab by default, which is useless inside a
-                        // contentEditable body — capture it and insert an
-                        // indent (Shift+Tab removes one level) instead.
-                        if (e.key !== "Tab") return;
-                        e.preventDefault();
-                        if (e.shiftKey) {
-                          document.execCommand("outdent");
-                        } else {
-                          document.execCommand("insertHTML", false, "&emsp;");
-                        }
-                        setDirty(true);
-                      }}
-                      onInput={() => {
-                        setDirty(true);
-                        if (editorRef.current) applyLiveHeadingNumbers(editorRef.current, h1Offset);
-                        if (twoPageView) setTwoPageTick((t) => t + 1);
-                      }}
-                      onClick={onEditorClick}
-                      onKeyUp={(e) => {
-                        // Nawigacja klawiaturą (strzałki/Home/End/PgUp/PgDn)
-                        // też przesuwa kursor bez zmiany treści.
-                        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
-                          scrollTwoPageToCaret();
-                        }
-                      }}
-                      onPaste={onEditorPaste}
-                      onDragStart={onEditorDragStart}
-                      onDragEnd={onEditorDragEnd}
-                      onDragOver={(e) => { if (editMode && canEdit) e.preventDefault(); }}
-                      onDrop={(e) => {
-                        if (!editMode || !canEdit) return;
-                        e.preventDefault();
-                        if (draggedImgRef.current) {
-                          const img = draggedImgRef.current;
-                          draggedImgRef.current = null;
-                          placeCaretAtPoint(e.clientX, e.clientY);
-                          const sel = window.getSelection();
-                          if (sel && sel.rangeCount > 0) {
-                            const range = sel.getRangeAt(0);
-                            img.remove();
-                            range.insertNode(img);
-                            range.collapse(false);
-                          }
-                          setSelectedImg(img);
-                          syncOverlayPositions(img);
-                          setDirty(true);
-                          return;
-                        }
-                        const file = e.dataTransfer.files?.[0];
-                        if (!file) return;
-                        placeCaretAtPoint(e.clientX, e.clientY);
-                        insertImageFile(file);
-                      }}
-                      suppressContentEditableWarning
-                      className="p-8 text-[15px] leading-relaxed outline-none"
-                      style={{ maxWidth: 900, margin: "0 auto", width: "100%", ["--h1-offset" as any]: h1Offset }}
-                    />
-                    {pageMarkers.map((y, i) => (
-                      <div
-                        key={i}
-                        className="absolute left-0 right-0 h-[5px] bg-[#888] pointer-events-none select-none"
-                        style={{ top: y }}
-                        title="Koniec fizycznej strony A4"
-                      />
-                    ))}
-                    </div>
-                    {selectedImg && imgToolbarPos && editMode && canEdit && (
-                      <div
-                        className="absolute flex items-center gap-1 bg-[#1a1a2e] rounded shadow-lg px-1.5 py-1 z-10"
-                        style={{ top: Math.max(imgToolbarPos.top, 0), left: imgToolbarPos.left }}
-                      >
-                        <button onClick={() => alignImage("left")} title="Wyrównaj do lewej, tekst opływa z prawej" className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">⬅</button>
-                        <button onClick={() => alignImage("center")} title="Wyśrodkuj" className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">⬛</button>
-                        <button onClick={() => alignImage("right")} title="Wyrównaj do prawej, tekst opływa z lewej" className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">➡</button>
-                        <span className="w-px h-4 bg-[#555] mx-0.5" />
-                        <button onClick={() => resizeImage(25)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">25%</button>
-                        <button onClick={() => resizeImage(50)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">50%</button>
-                        <button onClick={() => resizeImage(100)} className="text-[10px] px-1.5 py-0.5 rounded border border-[#555] text-[var(--text-secondary)]">100%</button>
-                        <span className="w-px h-4 bg-[#555] mx-0.5" />
-                        <button onClick={removeSelectedImage} title="Usuń obraz" className="text-[10px] px-1.5 py-0.5 rounded border border-red-400 text-red-400">✕</button>
-                      </div>
-                    )}
-                    {selectedImg && handlePos && editMode && canEdit && (
-                      <div
-                        onMouseDown={startResizeDrag}
-                        title="Przeciągnij, żeby zmienić rozmiar"
-                        className="absolute w-4 h-4 rounded-full bg-[var(--accent)] border-2 border-white shadow z-10 cursor-nwse-resize"
-                        style={{ top: handlePos.top, left: handlePos.left }}
-                      />
-                    )}
-                    {commentPopup && (
-                      <>
-                        <div className="absolute h-px bg-amber-500 z-10 pointer-events-none" style={{ top: commentPopup.top, left: commentPopup.left, width: commentPopup.lineWidth }} />
-                        <div
-                          className="absolute z-20 rounded-lg shadow-xl p-3 border-2"
-                          style={{ top: Math.max(commentPopup.top - 20, 0), right: 12, width: 260, background: "#fff8e1", borderColor: "#e6b800" }}
-                        >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[10px] font-semibold text-amber-800">💬 Komentarz</span>
-                            <button onClick={() => { commentAnchorElRef.current = null; setCommentPopup(null); }} className="text-[11px] text-amber-800">✕</button>
-                          </div>
-                          <textarea
-                            value={commentPopup.draft}
-                            onChange={(e) => setCommentPopup((p) => (p ? { ...p, draft: e.target.value } : p))}
-                            onBlur={(e) => saveCommentDraft(e.target.value)}
-                            rows={3}
-                            disabled={!editMode || !canEdit}
-                            className="w-full text-xs p-1.5 rounded border border-amber-300 bg-white text-[var(--text-secondary)]"
-                            placeholder="Wpisz komentarz…"
-                          />
-                          {editMode && canEdit && (
-                            <div className="flex justify-end gap-1 mt-1.5">
-                              <button onClick={deleteComment} className="text-[10px] px-2 py-1 rounded border border-red-300 text-red-500">Usuń komentarz</button>
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  {twoPageView && editMode && (
-                    <div className="w-1/2 shrink-0 overflow-auto bg-[#888] flex flex-col">
-                      <div className="text-[10px] text-white bg-[#555] px-3 py-1.5">📖 Podgląd podziału na strony{editMode ? " (odśwież. co 0,5s po edycji)" : ""}</div>
-                      <iframe
-                        ref={twoPageIframeRef}
-                        title="Podgląd stron"
-                        srcDoc={twoPageHtml}
-                        className="flex-1 w-full"
-                        style={{ border: "none" }}
+                      <DocumentationEditorTiptapPoC
+                        key={`${active.id}-${tiptapRemountTick}`}
+                        initialHtml={active.contentHtml || "<p></p>"}
+                        onChangeHtml={(html) => { tiptapHtmlRef.current = html; setDirty(true); }}
+                        h1OffsetBefore={h1Offset}
+                        headerLeft={hfSettings.headerText || `${deviceLabel} — Instrukcja obsługi`}
+                        headerCenter={hfSettings.headerTextCenter}
+                        headerRight={hfSettings.headerTextRight}
+                        headerEvenLeft={hfSettings.headerTextEvenLeft}
+                        headerEvenCenter={hfSettings.headerTextEvenCenter}
+                        headerEvenRight={hfSettings.headerTextEvenRight}
+                        footerLeft={hfSettings.footerTextLeft}
+                        footerCenter={hfSettings.footerText}
+                        footerRight={hfSettings.footerTextRight}
+                        enableHeader={hfSettings.enableHeader}
+                        enableFooter={hfSettings.enableFooter}
+                        headerHeightCm={hfSettings.headerHeightCm}
+                        footerHeightCm={hfSettings.footerHeightCm}
+                        headerFontSize={hfSettings.headerFontSize}
+                        footerFontSize={hfSettings.footerFontSize}
+                        headerBorder={hfSettings.headerBorder}
+                        footerBorder={hfSettings.footerBorder}
+                        skipFirstPage={hfSettings.skipFirstPage}
+                        onImageUpload={async (blob, filename) => {
+                          const ext = filename.toLowerCase().endsWith(".png") ? "png" : "jpg";
+                          return uploadChapterImage(deviceLabel, blob, ext);
+                        }}
                       />
                     </div>
                   )}
+                  </div>
                   </div>
                   </div>
                   </div>
@@ -2866,74 +1855,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         </div>
       )}
 
-      {showTableModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[300]" onClick={() => setShowTableModal(false)}>
-          <div className="bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg p-5 w-full max-w-xs space-y-3" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold text-[var(--accent-text)]">🔲 {tableModalMode === "resize" ? "Zmień rozmiar tabeli" : "Wstaw tabelę"}</h3>
-            <label className="block text-xs text-[var(--text-secondary)]">
-              Liczba wierszy
-              <input
-                type="number" min={1} max={30}
-                value={tableDraft.rows}
-                onChange={(e) => setTableDraft((d) => ({ ...d, rows: parseInt(e.target.value, 10) || 1 }))}
-                className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
-              />
-            </label>
-            <label className="block text-xs text-[var(--text-secondary)]">
-              Liczba kolumn
-              <input
-                type="number" min={1} max={12}
-                value={tableDraft.cols}
-                onChange={(e) => setTableDraft((d) => ({ ...d, cols: parseInt(e.target.value, 10) || 1 }))}
-                className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
-              />
-            </label>
-            <label className="flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={tableDraft.headerRow}
-                onChange={(e) => setTableDraft((d) => ({ ...d, headerRow: e.target.checked }))}
-              />
-              Pierwszy wiersz jako nagłówek (pogrubiony, wyszarzone tło)
-            </label>
-            <label className="block text-xs text-[var(--text-secondary)]">
-              Szerokość kolumny (cm, puste = auto)
-              <input
-                type="number" min={0} step={0.1}
-                value={tableDraft.colWidthCm}
-                onChange={(e) => setTableDraft((d) => ({ ...d, colWidthCm: e.target.value }))}
-                className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
-                placeholder="np. 10"
-              />
-            </label>
-            <label className="block text-xs text-[var(--text-secondary)]">
-              Wysokość wiersza (cm, puste = auto)
-              <input
-                type="number" min={0} step={0.1}
-                value={tableDraft.rowHeightCm}
-                onChange={(e) => setTableDraft((d) => ({ ...d, rowHeightCm: e.target.value }))}
-                className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
-                placeholder="np. 1.5"
-              />
-            </label>
-            {(() => {
-              const w = parseFloat(tableDraft.colWidthCm);
-              if (isNaN(w) || w <= 0) return null;
-              const total = w * tableDraft.cols;
-              if (total <= A4_USABLE_WIDTH_CM) return null;
-              return (
-                <p className="text-xs text-red-600">
-                  ⚠️ Tabela za szeroka na A4: {total.toFixed(1)} cm (dostępne ~{A4_USABLE_WIDTH_CM} cm).
-                </p>
-              );
-            })()}
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setShowTableModal(false)} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Anuluj</button>
-              <button onClick={confirmInsertTable} className="px-3 py-1.5 text-sm rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">{tableModalMode === "resize" ? "Zastosuj" : "Wstaw"}</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showPrintPreview && (
         <div className="fixed inset-0 z-[300] bg-black/50 flex items-center justify-center">
@@ -2990,10 +1911,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             // nie zgubić niezapisanej pracy) — ale jeśli nic nie jest jeszcze
             // napisane od ostatniego zapisu (!dirty), nadpisanie jest bezpieczne
             // i unika konieczności ręcznego wyjścia/wejścia w edycję.
-            if (chapterId === activeIdRef.current && !dirty && editorRef.current) {
-              editorRef.current.innerHTML = newHtml || "<p></p>";
-              repairTableBorders(editorRef.current);
-              applyLiveHeadingNumbers(editorRef.current, h1Offset);
+            if (chapterId === activeIdRef.current && !dirty) {
+              // Tiptap czyta initialHtml tylko raz przy montowaniu — wymuś
+              // remount (key bump), żeby pokazać podmienioną treść bez
+              // wychodzenia z trybu edycji.
+              setTiptapRemountTick((t) => t + 1);
             }
           }}
         />
@@ -3051,35 +1973,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                 className="px-3 py-1.5 text-sm rounded bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white"
               >
                 Usuń kopię
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showPlainPasteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[500]" onClick={() => setShowPlainPasteModal(false)}>
-          <div className="bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg p-5 w-full max-w-3xl space-y-3" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold">🧹 Wklej jako zwykły tekst</h3>
-            <p className="text-xs text-[var(--text-muted)]">
-              Wklej tekst poniżej (Ctrl+V) — cały format Worda zostanie odrzucony, każda linia trafi do dokumentu jako zwykły akapit "Normal".
-            </p>
-            <textarea
-              autoFocus
-              value={plainPasteText}
-              onChange={(e) => setPlainPasteText(e.target.value)}
-              rows={22}
-              className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm font-mono resize-y"
-              style={{ minHeight: "60vh" }}
-              placeholder="Wklej tutaj..."
-            />
-            <div className="flex justify-end gap-2 pt-1">
-              <button onClick={() => setShowPlainPasteModal(false)} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Anuluj</button>
-              <button
-                onClick={insertPlainPasteText}
-                disabled={!plainPasteText.trim()}
-                className="px-3 py-1.5 text-sm rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-white"
-              >
-                Wstaw jako Normal
               </button>
             </div>
           </div>
