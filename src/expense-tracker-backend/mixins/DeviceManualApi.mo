@@ -259,6 +259,10 @@ mixin (
     sorted;
   };
 
+  // @deprecated: nieużywana przez frontend — zastąpiona przez zbiorczy
+  // getDeviceChapterBookMap (mapa wszystkich rozdziałów urządzenia naraz).
+  // Nie usunięto (redeploy zmienia interfejs candid) — do usunięcia przy
+  // najbliższym świadomym redeployu backendu.
   public query ({ caller }) func getChapterBook(chapterId : Nat) : async ?Nat {
     requireManualRead(caller);
     chapterBookId.get(chapterId);
@@ -273,6 +277,8 @@ mixin (
     };
   };
 
+  // @deprecated: nieużywana przez frontend — zastąpiona przez zbiorczy
+  // getDeviceChapterBookMap. Nie usunięto (redeploy zmienia interfejs candid).
   public query ({ caller }) func listChaptersByBook(bookId : Nat) : async [Nat] {
     requireManualRead(caller);
     var result = List.empty<Nat>();
@@ -351,11 +357,15 @@ mixin (
   // eksportowanych dokumentów (klucz "default" — pojedynczy rekord).
   // Odczyt = zwykły dostęp do modułu "devices"; zapis wymaga tego samego
   // dedykowanego uprawnienia co edycja treści.
+  // @deprecated: nieużywana przez frontend — zastąpiona przez book-scoped
+  // getBookHeaderFooterSettings. Nie usunięto (redeploy zmienia candid).
   public query ({ caller }) func getDocHeaderFooterSettings() : async ?Types.DocHeaderFooterSettings {
     requireManualRead(caller);
     docHeaderFooterSettings.get("default");
   };
 
+  // @deprecated: nieużywana przez frontend — zastąpiona przez book-scoped
+  // setBookHeaderFooterSettings. Nie usunięto (redeploy zmienia candid).
   public shared ({ caller }) func setDocHeaderFooterSettings(
     headerText : Text,
     footerText : Text,
@@ -653,6 +663,8 @@ mixin (
   // Wyszukiwanie działa WYŁĄCZNIE na rozdziałach z aktywną kopią backend
   // (deviceManualChapterBackupEnabled), bo tylko tam backend ma treść.
 
+  // @deprecated: nieużywana przez frontend — zastąpiona przez book-scoped
+  // getBookManualVariables. Nie usunięto (redeploy zmienia candid).
   public query ({ caller }) func getDeviceManualVariables(deviceId : Nat) : async [Types.ManualVariable] {
     requireManualRead(caller);
     switch (deviceManualVariables.get(deviceId)) {
@@ -661,6 +673,8 @@ mixin (
     };
   };
 
+  // @deprecated: nieużywana przez frontend — zastąpiona przez book-scoped
+  // setBookManualVariables. Nie usunięto (redeploy zmienia candid).
   public shared ({ caller }) func setDeviceManualVariables(deviceId : Nat, vars : [Types.ManualVariable]) : async () {
     requireManualWrite(caller);
     deviceManualVariables.add(deviceId, vars);
@@ -846,6 +860,8 @@ mixin (
   // Szuka searchText we wszystkich rozdziałach urządzenia z aktywnym backupem.
   // 0 trafień / 1 trafienie / wiele trafień — rozstrzyga o tym frontend
   // (auto-podmiana vs modal wyboru), backend tylko zwraca listę z kontekstem.
+  // @deprecated: nieużywana przez frontend — wyszukiwanie zmiennych działa
+  // teraz client-side po realnym DOM. Nie usunięto (redeploy zmienia candid).
   public query ({ caller }) func findManualVariableOccurrences(deviceId : Nat, searchText : Text) : async [Types.ManualVariableMatch] {
     requireManualRead(caller);
     var result = List.empty<Types.ManualVariableMatch>();
@@ -886,6 +902,8 @@ mixin (
   // wcześniejsze podmiany nie przesuwały indeksów kolejnych. Długość podmiany
   // bierzemy z matchedLength (nie z długości searchText) — mogą się różnić,
   // gdy trafienie objęło &nbsp; albo kilka spacji zwiniętych przy wyszukiwaniu.
+  // @deprecated: nieużywana przez frontend — zamiana zmiennych działa teraz
+  // client-side po realnym DOM. Nie usunięto (redeploy zmienia candid).
   public shared ({ caller }) func applyManualVariableReplace(
     deviceId : Nat,
     key : Text,
@@ -944,6 +962,8 @@ mixin (
   // przeglądarki) nowe treści rozdziałów po podmianie referencji. Zastępuje
   // ręczne stripowanie HTML w Motoko, które nie radziło sobie ze wszystkimi
   // przypadkami (zagnieżdżone tagi, encje) — przeglądarka robi to poprawnie.
+  // @deprecated: nieużywana przez frontend — zastąpiona przez book-scoped
+  // setBookManualVariableValue. Nie usunięto (redeploy zmienia candid).
   public shared ({ caller }) func setManualVariableValue(deviceId : Nat, key : Text, newValue : Text) : async () {
     requireManualWrite(caller);
     let vars = switch (deviceManualVariables.get(deviceId)) { case (?v) v; case null [] };
@@ -953,6 +973,8 @@ mixin (
     deviceManualVariables.add(deviceId, updated);
   };
 
+  // @deprecated: nieużywana przez frontend — zamiana zmiennych działa teraz
+  // client-side po realnym DOM. Nie usunięto (redeploy zmienia candid).
   public shared ({ caller }) func applyManualVariableReplaceContents(
     deviceId : Nat,
     key : Text,
