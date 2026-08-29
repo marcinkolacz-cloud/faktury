@@ -3,7 +3,7 @@ import { useAuthContext } from "../providers/AuthProvider";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { setDriveActor, warmDriveToken } from "../lib/oneDriveConfig";
-import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive } from "../lib/documentationDriveSync";
+import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive, resolveDriveImages } from "../lib/documentationDriveSync";
 import { driveTimingSummary, driveMark } from "../lib/driveTiming";
 import { isTocHeadingTitle } from "../lib/headingNumbering";
 import { docContentCss } from "../lib/docContentStyle";
@@ -1160,7 +1160,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       });
       setChapters(merged);
     }
-    return merged;
+    // Podgląd wydruku / eksport Word / PDF renderują surowy HTML poza
+    // edytorem Tiptap (bez ImageNodeView), więc tu (i tylko tu) trzeba
+    // podmienić linki do obrazków na świeże - `merged` (z cache'owanym
+    // surowym contentHtml) zostaje nietknięty w stanie `chapters`, żeby
+    // kolejny zapis nie utrwalił tymczasowego blob: URL-a.
+    return Promise.all(merged.map(async (c) => ({ ...c, contentHtml: await resolveDriveImages(c.contentHtml) })));
   };
 
   const exportWord = async () => {

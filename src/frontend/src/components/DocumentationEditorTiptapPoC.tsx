@@ -16,6 +16,7 @@ const TableRow = TiptapTableRow.extend({
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import ImageExt from "@tiptap/extension-image";
+import { odDownloadFileBlob } from "../lib/oneDriveConfig";
 import { isTocHeadingTitle } from "../lib/headingNumbering";
 import { Extension, Mark, Node, mergeAttributes } from "@tiptap/core";
 import TextAlign from "@tiptap/extension-text-align";
@@ -267,6 +268,26 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
   const [showSizeModal, setShowSizeModal] = useState(false);
   const [sizeW, setSizeW] = useState("");
   const [sizeH, setSizeH] = useState("");
+  // Link zapisany w node.attrs.src (temp @microsoft.graph.downloadUrl)
+  // wygasa po ok. 1h - jeśli mamy driveItemId, dociągamy świeży obrazek
+  // i podmieniamy TYLKO to, co się renderuje, nigdy node.attrs.src, żeby
+  // zapis dokumentu nie utrwalił tymczasowego blob: URL-a.
+  const [liveSrc, setLiveSrc] = useState<string | null>(null);
+  useEffect(() => {
+    const itemId = node.attrs.driveItemId;
+    if (!itemId) { setLiveSrc(null); return; }
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    odDownloadFileBlob(itemId).then((blob) => {
+      if (cancelled) return;
+      objectUrl = URL.createObjectURL(blob);
+      setLiveSrc(objectUrl);
+    }).catch(() => { /* brak dostepu - zostaje stary/martwy src */ });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [node.attrs.driveItemId]);
 
   const openSizeModal = () => {
     setSizeW(node.attrs.width ? String(parseInt(node.attrs.width, 10)) : "");
@@ -339,7 +360,7 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
     <NodeViewWrapper as="span" style={wrapperStyle}>
       <img
         ref={imgRef}
-        src={node.attrs.src}
+        src={liveSrc || node.attrs.src}
         alt={node.attrs.alt || ""}
         style={{ ...style, outline: selected ? "2px solid #4fc3f7" : "none" }}
         draggable={editor.isEditable}
@@ -428,6 +449,14 @@ const AlignableImage = ImageExt.extend({
         default: null,
         parseHTML: () => null,
         renderHTML: () => ({}),
+      },
+      // Stały identyfikator pliku na Bartolini Drive - src bywa
+      // wygasającym linkiem tymczasowym, ten atrybut pozwala ImageNodeView
+      // pobrać świeży obrazek niezależnie od tego, czy src jeszcze działa.
+      driveItemId: {
+        default: null,
+        parseHTML: (el: HTMLElement) => el.getAttribute("data-drive-item-id") || null,
+        renderHTML: (a: any) => (a.driveItemId ? { "data-drive-item-id": a.driveItemId } : {}),
       },
     };
   },
@@ -899,7 +928,7 @@ type Props = {
   footerBorder?: boolean;
   skipFirstPage?: boolean;
   showPageNumbers?: boolean;
-  onImageUpload?: (blob: Blob, filename: string) => Promise<string>;
+  onImageUpload?: (blob: Blob, filename: string) => Promise<{ url: string; itemId: string }>;
   // Gdy podany, toolbar renderuje się przez portal w tym elemencie (lewy
   // sidebar w DocumentationModule.tsx) zamiast jako osobna kolumna obok
   // treści - żeby fizycznie siedział w tym samym miejscu co reszta
@@ -1355,14 +1384,14 @@ export function DocumentationEditorTiptapPoC({
       const scale = Math.min(1, 602 / width, 800 / height);
       const w = Math.round(width * scale);
       const h = Math.round(height * scale);
-      const url = onImageUpload
+      const uploaded = onImageUpload
         ? await onImageUpload(blob, file.name)
-        : await new Promise<string>((resolve) => {
+        : { url: await new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onload = () => resolve(String(reader.result));
             reader.readAsDataURL(blob);
-          });
-      editor.chain().focus().insertContentAt(savedPos, { type: "image", attrs: { src: url, width: `${w}px`, height: `${h}px` } }).run();
+          }), itemId: null as any };
+      editor.chain().focus().insertContentAt(savedPos, { type: "image", attrs: { src: uploaded.url, driveItemId: uploaded.itemId, width: `${w}px`, height: `${h}px` } }).run();
       settlePaginationAfterImagesLoad(editor);
     } finally {
       setUploading(false);
@@ -1404,14 +1433,14 @@ export function DocumentationEditorTiptapPoC({
           const scale = Math.min(1, 602 / width, 800 / height);
           const w = Math.round(width * scale);
           const h = Math.round(height * scale);
-          const url = onImageUpload
+          const uploaded = onImageUpload
             ? await onImageUpload(blob, file.name)
-            : await new Promise<string>((resolve) => {
+            : { url: await new Promise<string>((resolve) => {
                 const reader = new FileReader();
                 reader.onload = () => resolve(String(reader.result));
                 reader.readAsDataURL(blob);
-              });
-          editor.chain().focus().insertContent({ type: "image", attrs: { src: url, width: `${w}px`, height: `${h}px` } }).run();
+              }), itemId: null as any };
+          editor.chain().focus().insertContent({ type: "image", attrs: { src: uploaded.url, driveItemId: uploaded.itemId, width: `${w}px`, height: `${h}px` } }).run();
           settlePaginationAfterImagesLoad(editor);
         } finally {
           setUploading(false);

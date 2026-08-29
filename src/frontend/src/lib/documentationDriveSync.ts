@@ -138,7 +138,33 @@ async function nextImageNumber(imagesFolderPath: string): Promise<number> {
 // src>, never the raw image bytes — keeps the saved HTML small and
 // readable instead of bloated with base64 data, and the image genuinely
 // lives on Bartolini Drive as its source of truth.
-export async function uploadChapterImage(deviceLabel: string, blob: Blob, extension: string): Promise<string> {
+// Obrazki na Drive znikały po ~1h, bo @microsoft.graph.downloadUrl (link
+// tymczasowy) był zapisywany w treści na stałe jako <img src>. Teraz
+// uploadChapterImage zwraca DODATKOWO itemId (edytor zapisuje go w
+// data-drive-item-id, patrz AlignableImage), a resolveDriveImages()
+// poniżej podmienia src na świeży, uwierzytelniony blob: URL tuż przed
+// wyświetleniem/eksportem - nigdy przy zapisie, żeby na Drive zawsze
+// zostawał stabilny wpis z itemId, a nie wygasający blob:.
+export async function resolveDriveImages(html: string): Promise<string> {
+  if (!html || !html.includes("data-drive-item-id")) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const imgs = Array.from(doc.querySelectorAll("img[data-drive-item-id]"));
+  await Promise.all(
+    imgs.map(async (img) => {
+      const itemId = img.getAttribute("data-drive-item-id");
+      if (!itemId) return;
+      try {
+        const blob = await odDownloadFileBlob(itemId);
+        img.setAttribute("src", URL.createObjectURL(blob));
+      } catch {
+        // brak dostepu do obrazka na Drive - zostaw stary/martwy src
+      }
+    }),
+  );
+  return doc.body.innerHTML;
+}
+
+export async function uploadChapterImage(deviceLabel: string, blob: Blob, extension: string): Promise<{ url: string; itemId: string }> {
   const deviceFolder = sanitizeName(deviceLabel);
   await ensureFolder("", ROOT_FOLDER);
   await ensureFolder(ROOT_FOLDER, deviceFolder);
@@ -177,7 +203,7 @@ export async function uploadChapterImage(deviceLabel: string, blob: Blob, extens
       if (!shareResult.downloadUrl) {
         throw new Error("Nie udało się utworzyć linku do obrazka na Drive: " + JSON.stringify(shareResult));
       }
-      return shareResult.downloadUrl;
+      return { url: shareResult.downloadUrl, itemId: uploaded.id };
     } catch (e: any) {
       lastError = e;
       const msg = String(e?.message || e);
