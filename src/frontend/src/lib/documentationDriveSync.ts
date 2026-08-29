@@ -216,3 +216,107 @@ export async function uploadChapterImage(deviceLabel: string, blob: Blob, extens
   }
   throw lastError || new Error("Nie udało się wgrać obrazka po kilku próbach.");
 }
+
+const IMAGE_UPLOAD_CHUNK_SIZE = 1_500_000;
+
+// Wysyła obraz (Blob) do magazynu obrazków backupu dokumentacji na
+// kanistrze (deviceManualImages), chunkowany zapis identyczny wzorem co
+// beginChapterUpload/appendChapterChunk. Zwraca id obrazka do wstawienia
+// w URL https://<canister>.raw.icp0.io/manualImage/<id>.
+export async function uploadImageToCanister(actor: any, blob: Blob, contentType: string): Promise<string> {
+  const id: string = await actor.beginManualImageUpload();
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  for (let start = 0; start < buf.length; start += IMAGE_UPLOAD_CHUNK_SIZE) {
+    const chunk = buf.slice(start, start + IMAGE_UPLOAD_CHUNK_SIZE);
+    await actor.appendManualImageChunk(id, chunk);
+  }
+  await actor.commitManualImageUpload(id, contentType);
+  return id;
+}
+
+const BACKUP_IMAGE_MAX_DIM = 1600;
+const BACKUP_IMAGE_HARD_LIMIT_BYTES = 400_000;
+const BACKUP_IMAGE_QUALITY_STEPS = [0.75, 0.6, 0.5, 0.4, 0.3];
+
+// Kompresuje obraz z OneDrive do JPEG przed uploadem na kanister -
+// zmniejsza dłuższy bok do BACKUP_IMAGE_MAX_DIM, potem obniża jakość wg
+// BACKUP_IMAGE_QUALITY_STEPS aż zmieści się w limicie lub wyczerpie kroki.
+export async function compressImageForBackup(sourceBlob: Blob): Promise<Blob> {
+  const url = URL.createObjectURL(sourceBlob);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = url;
+    });
+    const scale = Math.min(1, BACKUP_IMAGE_MAX_DIM / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no ctx");
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    let last: Blob | null = null;
+    for (const quality of BACKUP_IMAGE_QUALITY_STEPS) {
+      const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      if (!blob) continue;
+      last = blob;
+      if (blob.size <= BACKUP_IMAGE_HARD_LIMIT_BYTES) return blob;
+    }
+    if (!last) throw new Error("compression failed");
+    return last;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Przechodzi po img[data-drive-item-id] w HTML kopii backupu, pobiera
+// oryginał z OneDrive, kompresuje (compressImageForBackup) i wgrywa na
+// kanister (uploadImageToCanister), podmieniając src na URL kanistra i
+// zamieniając atrybut na data-canister-image-id (sekwencyjnie, nie
+// równolegle - patrz uzasadnienie w uploadImageToCanister/ManualImage
+// backend). Zwraca nowy HTML.
+export async function migrateImagesToCanisterBackup(
+  html: string,
+  actor: any,
+  canisterBaseUrl: string,
+  onProgress?: (done: number, total: number) => void,
+): Promise<string> {
+  if (!html || !html.includes("data-drive-item-id")) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const imgs = Array.from(doc.querySelectorAll("img[data-drive-item-id]"));
+  let done = 0;
+  for (const img of imgs) {
+    const itemId = img.getAttribute("data-drive-item-id");
+    if (!itemId) { done++; continue; }
+    try {
+      const original = await odDownloadFileBlob(itemId);
+      const compressed = await compressImageForBackup(original);
+      const id = await uploadImageToCanister(actor, compressed, "image/jpeg");
+      img.setAttribute("src", `${canisterBaseUrl}/manualImage/${id}`);
+      img.setAttribute("data-canister-image-id", id);
+      img.removeAttribute("data-drive-item-id");
+    } catch {
+      // pojedynczy obrazek nie przeszedł - zostaw jak jest, nie przerywaj całości
+    } finally {
+      done++;
+      onProgress?.(done, imgs.length);
+    }
+  }
+  return doc.body.innerHTML;
+}
+
+// Zbiera wszystkie data-canister-image-id obecne w danym HTML (do
+// porównania starej/nowej wersji backupu przy sprzątaniu nieużywanych
+// obrazków po nadpisaniu kopii).
+export function collectCanisterImageIds(html: string): Set<string> {
+  const ids = new Set<string>();
+  if (!html) return ids;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("img[data-canister-image-id]").forEach((img) => {
+    const id = img.getAttribute("data-canister-image-id");
+    if (id) ids.add(id);
+  });
+  return ids;
+}

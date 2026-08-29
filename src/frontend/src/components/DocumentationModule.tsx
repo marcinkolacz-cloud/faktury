@@ -3,7 +3,8 @@ import { useAuthContext } from "../providers/AuthProvider";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { setDriveActor, warmDriveToken } from "../lib/oneDriveConfig";
-import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive, resolveDriveImages } from "../lib/documentationDriveSync";
+import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive, resolveDriveImages, migrateImagesToCanisterBackup, collectCanisterImageIds } from "../lib/documentationDriveSync";
+import { CANISTER_ID } from "../lib/actor";
 import { driveTimingSummary, driveMark } from "../lib/driveTiming";
 import { isTocHeadingTitle } from "../lib/headingNumbering";
 import { docContentCss } from "../lib/docContentStyle";
@@ -460,6 +461,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [chapterBackupFlags, setChapterBackupFlags] = useState<Record<number, boolean>>({});
   const [activeBackupLength, setActiveBackupLength] = useState<number | null>(null);
   const [backupBusy, setBackupBusy] = useState(false);
+  const [backupImageProgress, setBackupImageProgress] = useState<{ done: number; total: number } | null>(null);
   const knownChapterIdsRef = useRef<Set<number>>(new Set());
   const chapterIdsKey = chapters.map((c) => c.id).sort((a, b) => a - b).join(",");
   useEffect(() => {
@@ -892,21 +894,48 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const createOrUpdateActiveBackup = async () => {
     if (!active) return;
     setBackupBusy(true);
+    setBackupImageProgress(null);
     try {
       let full = "";
       try { full = await loadChapterContentFromDrive(deviceLabel, active.id); } catch { /* Drive niedostępny */ }
       if (!full) { alert("Nie udało się pobrać treści z OneDrive."); return; }
+      let oldIds = new Set<string>();
+      try {
+        const prevRes: any = await actor.getDeviceManualChapterContentLength(active.id);
+        const prevLen = prevRes && prevRes.length ? Number(prevRes[0]) : 0;
+        if (prevLen > 0) {
+          const CHUNK = 1_000_000;
+          let prevHtml = "";
+          for (let start = 0; start < prevLen; start += CHUNK) {
+            const chunkRes: any = await actor.getDeviceManualChapterContentChunk(active.id, BigInt(start), BigInt(CHUNK));
+            prevHtml += chunkRes && chunkRes.length ? chunkRes[0] : "";
+          }
+          oldIds = collectCanisterImageIds(prevHtml);
+        }
+      } catch { /* brak poprzedniej kopii - nic do posprzątania */ }
+      const canisterBaseUrl = `https://${CANISTER_ID}.raw.icp0.io`;
+      full = await migrateImagesToCanisterBackup(full, actor, canisterBaseUrl, (done, total) => {
+        setBackupImageProgress({ done, total });
+      });
       if (!chapterBackupFlags[active.id]) {
         await actor.setChapterBackupEnabled(active.id, true);
         setChapterBackupFlags((m) => ({ ...m, [active.id]: true }));
       }
       await actor.saveChapterBackup(active.id, full);
+      const newIds = collectCanisterImageIds(full);
+      for (const oldId of oldIds) {
+        if (!newIds.has(oldId)) {
+          try { await actor.deleteManualImage(oldId); } catch { /* nie krytyczne */ }
+        }
+      }
       const res: any = await actor.getDeviceManualChapterContentLength(active.id);
       setActiveBackupLength(res && res.length ? Number(res[0]) : 0);
     } finally {
       setBackupBusy(false);
+      setBackupImageProgress(null);
     }
   };
+
   const requestRemoveBackup = () => {
     if (!active) return;
     setRemoveBackupConfirm(true);
@@ -1913,7 +1942,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         />
                         <RailButton
                           icon="🛟"
-                          label={chapterBackupFlags[active.id] ? "Aktualizuj" : "Backup"}
+                          label={backupImageProgress ? `Obrazki ${backupImageProgress.done}/${backupImageProgress.total}` : backupBusy ? "Zapisuję…" : (chapterBackupFlags[active.id] ? "Aktualizuj" : "Backup")}
                           badge={!!chapterBackupFlags[active.id]}
                           disabled={backupBusy}
                           title={chapterBackupFlags[active.id] ? `Aktualizuj kopię onchain (obecnie: ${activeBackupLength ?? "?"} zn.)` : "Utwórz kopię onchain z aktualnej treści OneDrive"}
