@@ -271,7 +271,7 @@ async function buildWordExportHtml(deviceLabel: string, chapters: Chapter[], set
 
   const logo = settings.logoDataUri || (await fetchLogoDataUri());
   const logoImg = logo ? `<img src="${logo}" height="24" style="vertical-align:middle;margin-right:8px;"/>` : "";
-  const headerLeft = (settings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`).replace(/\n/g, "<br>");
+  const headerLeft = settings.headerText.trim().replace(/\n/g, "<br>");
   const headerCenter = settings.headerTextCenter.trim().replace(/\n/g, "<br>");
   const headerRight = settings.headerTextRight.trim().replace(/\n/g, "<br>");
   const footerText = settings.footerText.trim() || "Bartolini Air Simulation";
@@ -1198,7 +1198,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       </body></html>`;
     }
     const nl2br = (t: string) => t.replace(/\n/g, "<br>");
-    const headerOddLeft = nl2br(hfSettings.headerText.trim() || `${deviceLabel} — Instrukcja obsługi`);
+    const headerOddLeft = nl2br(hfSettings.headerText.trim());
     const headerOddCenter = nl2br(hfSettings.headerTextCenter.trim());
     const headerOddRight = nl2br(hfSettings.headerTextRight.trim());
     const headerEvenLeft = nl2br(hfSettings.headerTextEvenLeft.trim()) || headerOddLeft;
@@ -1927,7 +1927,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         onChangeHtml={(html) => { tiptapHtmlRef.current = html; setDirty(true); }}
                         onPageCountChange={setLivePageCount}
                         h1OffsetBefore={h1Offset}
-                        headerLeft={hfSettings.headerText || `${deviceLabel} — Instrukcja obsługi`}
+                        headerLeft={hfSettings.headerText}
                         headerCenter={hfSettings.headerTextCenter}
                         headerRight={hfSettings.headerTextRight}
                         headerEvenLeft={hfSettings.headerTextEvenLeft}
@@ -1994,14 +1994,22 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                 Te ustawienia są wspólne dla <b>całej instrukcji tego urządzenia</b> (nie per rozdział) i identyczne w podglądzie wydruku,
                 eksporcie PDF i eksporcie Word.
               </p>
-              <p>
+              <p className="mb-1">
                 Nagłówek ma osobne pola <b>Lewo / Środek / Prawo</b> dla stron <b>nieparzystych</b> i osobne dla <b>parzystych</b> —
                 puste pole parzyste kopiuje treść z nieparzystego. Stopka jest wspólna dla wszystkich stron.
+              </p>
+              <p className="mb-1">
+                Puste pole = brak tekstu w tym miejscu (bez automatycznego uzupełniania nazwą urządzenia).
+              </p>
+              <p>
+                Jeśli którekolwiek z pól L/C/P zawiera więcej niż jedną linię, cały nagłówek/stopka wyrównuje się do góry zamiast
+                do środka. „Numeruj strony" dodaje osobny licznik strony obok tekstu, niezależnie od jego treści.
+                „Pomiń pierwszą stronę" wyłącza nagłówek i stopkę tylko na stronie 1.
               </p>
             </div>
 
             <div>
-              <div className="text-xs text-[var(--text-secondary)] mb-1">Tekst nagłówka (pusty = domyślnie nazwa urządzenia)</div>
+              <div className="text-xs text-[var(--text-secondary)] mb-1">Tekst nagłówka (puste pole = brak nagłówka)</div>
               <div className="text-[11px] font-semibold text-[var(--text-muted)] mb-1">Strony nieparzyste</div>
               <div className="grid grid-cols-3 gap-2 mb-2">
                 <label className="block text-xs text-[var(--text-secondary)]">

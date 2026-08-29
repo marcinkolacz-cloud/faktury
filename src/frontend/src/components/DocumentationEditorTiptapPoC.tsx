@@ -494,6 +494,33 @@ const AlignableTable = Table.extend({
   },
 }).configure({ resizable: true });
 
+// Wcięcie akapitu/nagłówka z lewej i prawej (cm, przechowywane jako px w
+// atrybucie) - globalny attribute na paragraph/heading, żeby dało się
+// ustawić jednym transakcyjnym przebiegiem po całym dokumencie ("Wcięcie
+// całego dokumentu"), analogicznie do textAlign z TextAlign extension.
+const BlockIndent = Extension.create({
+  name: "blockIndent",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["paragraph", "heading"],
+        attributes: {
+          indentLeft: {
+            default: null,
+            parseHTML: (el: HTMLElement) => el.style.marginLeft || null,
+            renderHTML: (attrs: any) => (attrs.indentLeft ? { style: `margin-left:${attrs.indentLeft}` } : {}),
+          },
+          indentRight: {
+            default: null,
+            parseHTML: (el: HTMLElement) => el.style.marginRight || null,
+            renderHTML: (attrs: any) => (attrs.indentRight ? { style: `margin-right:${attrs.indentRight}` } : {}),
+          },
+        },
+      },
+    ];
+  },
+});
+
 // SimplePagination: wlasny silnik zywej paginacji (bez tiptap-pagination-plus).
 // Mierzy realne wysokosci top-level blokow (getBoundingClientRect) i wstawia
 // bloki naglowka/stopki jako NORMALNE elementy w przeplywie dokumentu (nie
@@ -984,6 +1011,7 @@ export function DocumentationEditorTiptapPoC({
       TextStyle,
       FontSize,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
+      BlockIndent,
       HeadingNumbering.configure({ h1OffsetBefore }),
       createSimplePaginationExtension(hfConfigRef, forceRecomputeRef),
     ],
@@ -1111,18 +1139,39 @@ export function DocumentationEditorTiptapPoC({
     view.dispatch(tr);
     editor.commands.focus();
   }, [editor]);
-  const alignWholeDocument = useCallback((align: "left" | "right") => {
+  const [showIndentModal, setShowIndentModal] = useState(false);
+  const [indentLeftCm, setIndentLeftCm] = useState("");
+  const [indentRightCm, setIndentRightCm] = useState("");
+  const openIndentModal = useCallback(() => {
     if (!editor) return;
+    let sample: any = null;
+    editor.state.doc.descendants((node: any) => {
+      if (!sample && (node.type.name === "paragraph" || node.type.name === "heading")) sample = node;
+      return !sample;
+    });
+    const l = sample?.attrs?.indentLeft ? parseFloat(sample.attrs.indentLeft) / (10 * MM_TO_PX) : 0;
+    const r = sample?.attrs?.indentRight ? parseFloat(sample.attrs.indentRight) / (10 * MM_TO_PX) : 0;
+    setIndentLeftCm(l ? l.toFixed(1) : "");
+    setIndentRightCm(r ? r.toFixed(1) : "");
+    setShowIndentModal(true);
+  }, [editor]);
+  const applyDocumentIndent = useCallback(() => {
+    if (!editor) return;
+    const leftCm = parseFloat(indentLeftCm) || 0;
+    const rightCm = parseFloat(indentRightCm) || 0;
+    const leftPx = leftCm > 0 ? `${cmToPx(leftCm)}px` : null;
+    const rightPx = rightCm > 0 ? `${cmToPx(rightCm)}px` : null;
     const { state, view } = editor;
     let tr = state.tr;
     state.doc.descendants((node: any, pos: number) => {
       if (node.type.name === "paragraph" || node.type.name === "heading") {
-        tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, textAlign: align });
+        tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, indentLeft: leftPx, indentRight: rightPx });
       }
     });
     view.dispatch(tr);
     editor.commands.focus();
-  }, [editor]);
+    setShowIndentModal(false);
+  }, [editor, indentLeftCm, indentRightCm]);
   const selectWholeTable = useCallback(() => {
     if (!editor) return;
     const { state, view } = editor;
@@ -1409,10 +1458,7 @@ export function DocumentationEditorTiptapPoC({
               <GroupBtn icon="↔" label="Środek" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()} />
               <GroupBtn icon="➡" label="Prawo" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()} />
               <GroupBtn icon="☰" label="Justuj" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()} />
-              <GroupSelect icon="📑" label="Justuj cały dokument" onChange={(v) => { if (v) alignWholeDocument(v as "left" | "right"); }}>
-                <option value="left">Z lewej</option>
-                <option value="right">Z prawej</option>
-              </GroupSelect>
+              <GroupBtn icon="📑" label="Wcięcie całego dokumentu" onClick={openIndentModal} />
             </Group>
             <Group id="insert" icon="➕" label="Wstaw">
               <GroupBtn icon="🧹" label="Wklej tekst" onClick={() => setShowPlainPasteModal(true)} />
@@ -1553,6 +1599,22 @@ ${docContentCss("#doc-editor-content")}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button type="button" className="dt-btn" onClick={() => setShowTableSizeModal(false)}>Anuluj</button>
               <button type="button" className="dt-btn" onClick={applyTableSize}>Zastosuj</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {showIndentModal && createPortal(
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100000 }} onClick={() => setShowIndentModal(false)}>
+          <div style={{ background: "#fff", borderRadius: 6, padding: 16, minWidth: 260 }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontWeight: 600, marginBottom: 10 }}>📑 Wcięcie całego dokumentu</h3>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Wcięcie z lewej (cm)</label>
+            <input type="number" step="0.1" value={indentLeftCm} onChange={(e) => setIndentLeftCm(e.target.value)} style={{ width: "100%", marginBottom: 8 }} placeholder="0" />
+            <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Wcięcie z prawej (cm)</label>
+            <input type="number" step="0.1" value={indentRightCm} onChange={(e) => setIndentRightCm(e.target.value)} style={{ width: "100%", marginBottom: 12 }} placeholder="0" />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" className="dt-btn" onClick={() => setShowIndentModal(false)}>Anuluj</button>
+              <button type="button" className="dt-btn" onClick={applyDocumentIndent}>Zastosuj</button>
             </div>
           </div>
         </div>,
