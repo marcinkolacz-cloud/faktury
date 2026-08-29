@@ -6,10 +6,34 @@ function sanitizeName(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, "_").trim().slice(0, 120) || "Bez nazwy";
 }
 
+// Listing jednego folderu urządzenia jest odpytywany PRZY KAŻDYM otwarciu
+// rozdziału (loadChapterContentFromDrive), mimo że w ramach jednej sesji
+// zawartość folderu prawie nigdy się nie zmienia między kolejnymi kliknięciami
+// w rozdziały - to osobny, sekwencyjny call do Workera/Graph API przed
+// właściwym pobraniem treści, więc każde przełączenie rozdziału płaci
+// podwójny round-trip. Cache z krótkim TTL + jawna inwalidacja po każdym
+// zapisie/zmianie nazwy usuwa ten zbędny odList w typowym przypadku
+// (przeglądanie/podgląd wielu rozdziałów tego samego urządzenia pod rząd).
+const FOLDER_LIST_TTL_MS = 60_000;
+const folderListCache = new Map<string, { items: any[]; expiry: number }>();
+
+async function listFolderCached(path: string): Promise<any[]> {
+  const cached = folderListCache.get(path);
+  if (cached && Date.now() < cached.expiry) return cached.items;
+  const listing = await odList(path);
+  const items = listing.items || [];
+  folderListCache.set(path, { items, expiry: Date.now() + FOLDER_LIST_TTL_MS });
+  return items;
+}
+
+function invalidateFolderListCache(path: string): void {
+  folderListCache.delete(path);
+}
+
 async function ensureFolder(parentPath: string, name: string): Promise<void> {
-  const listing = await odList(parentPath);
-  const exists = (listing.items || []).some((i: any) => i.name === name && i.folder);
-  if (!exists) await odCreateFolder(parentPath, name);
+  const items = await listFolderCached(parentPath);
+  const exists = items.some((i: any) => i.name === name && i.folder);
+  if (!exists) { await odCreateFolder(parentPath, name); invalidateFolderListCache(parentPath); }
 }
 
 // Mirrors one manual chapter to Bartolini Drive as a raw .html file at
@@ -22,8 +46,7 @@ export async function loadChapterContentFromDrive(deviceLabel: string, chapterId
   const deviceFolder = sanitizeName(deviceLabel);
   const folderPath = `${ROOT_FOLDER}/${deviceFolder}`;
   const idTag = `[${chapterId}]`;
-  const listing = await odList(folderPath);
-  const items = listing.items || [];
+  const items = await listFolderCached(folderPath);
   const match = items.find((i: any) => typeof i.name === "string" && i.name.includes(idTag));
   if (!match) return "";
   const blob = await odDownloadFileBlob(match.id);
@@ -45,8 +68,7 @@ export async function syncChapterToDrive(
   const idTag = `[${chapterId}]`;
   const fileName = `${String(order + 1).padStart(2, "0")} - ${sanitizeName(title)} ${idTag}.html`;
 
-  const listing = await odList(folderPath);
-  const items = listing.items || [];
+  const items = await listFolderCached(folderPath);
   const stale = items.filter((i: any) => typeof i.name === "string" && i.name.includes(idTag) && i.name !== fileName);
 
   // Upload PIERWSZY, dopiero potem kasujemy stary plik pod inną nazwą —
@@ -60,6 +82,7 @@ export async function syncChapterToDrive(
   for (const item of stale) {
     try { await odDelete(item.id); } catch { /* best-effort cleanup */ }
   }
+  invalidateFolderListCache(folderPath);
 }
 
 // Renames the chapter's Drive file WITHOUT touching its content - used by
@@ -79,12 +102,12 @@ export async function renameChapterOnDrive(
   const idTag = `[${chapterId}]`;
   const newFileName = `${String(order + 1).padStart(2, "0")} - ${sanitizeName(title)} ${idTag}.html`;
 
-  const listing = await odList(folderPath);
-  const items = listing.items || [];
+  const items = await listFolderCached(folderPath);
   const existing = items.find((i: any) => typeof i.name === "string" && i.name.includes(idTag));
   if (!existing) return; // chapter never synced to Drive yet - nothing to rename
   if (existing.name === newFileName) return;
   await odRename(existing.id, newFileName);
+  invalidateFolderListCache(folderPath);
 }
 
 async function nextImageNumber(imagesFolderPath: string): Promise<number> {
