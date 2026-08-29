@@ -771,81 +771,22 @@ function createTableWidthSyncExtension() {
   });
 }
 
-// Nowy UX dla tabel: zamiast wyłącznie panelu bocznego (który znika po
-// przypadkowym kliknięciu poza komórkę), pasek narzędzi doczepiony
-// bezpośrednio NAD klikniętą tabelą - ten sam mechanizm dekoracji-widgetu
-// co nagłówek/stopka paginacji. Widoczny gdy kursor/zaznaczenie jest
-// gdziekolwiek wewnątrz danej tabeli (w tym CellSelection z "Zaznacz całą
-// tabelę"), znika dopiero gdy selekcja faktycznie opuści tabelę.
-type TableToolbarActions = {
-  align: (a: "left" | "center" | "right") => void;
-  selectAll: () => void;
-  openSize: () => void;
-  remove: () => void;
-};
-const TABLE_INLINE_TOOLBAR_KEY = new PluginKey("tableInlineToolbar");
-
+// Nowy UX dla tabel: pasek narzędzi doczepiony do klikniętej tabeli.
+// WAŻNE: to NIE jest dekoracja ProseMirror wstawiona w przepływ dokumentu
+// (tak było wcześniej) - taki widget fizycznie zajmuje miejsce i przesuwa
+// resztę treści, a silnik paginacji (SimplePagination) liczy wysokość
+// strony SUMUJĄC wysokości bloków dokumentu - pojawienie/zniknięcie paska
+// rozjeżdżało tę sumę i dawało efekt "tabela skacze/zmienia kształt".
+// Zamiast tego: tylko ŚLEDZIMY pozycję tabeli pod kursorem (funkcja niżej),
+// a sam pasek renderuje się jako zwykły React-owy portal do document.body,
+// position:fixed nad realnym prostokątem tabeli (editor.view.nodeDOM) -
+// całkowicie poza drzewem mierzonym przez paginację, więc nic nie przesuwa.
 function findEnclosingTable(state: any): { pos: number } | null {
   const { $from } = state.selection;
   for (let d = $from.depth; d > 0; d--) {
     if ($from.node(d).type.spec.tableRole === "table") return { pos: $from.before(d) };
   }
   return null;
-}
-
-function buildTableInlineToolbarWidget(actions: TableToolbarActions) {
-  return () => {
-    const bar = document.createElement("div");
-    bar.contentEditable = "false";
-    bar.className = "table-inline-toolbar";
-    const mkBtn = (icon: string, title: string, onClick: () => void) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = icon;
-      b.title = title;
-      b.onmousedown = (e) => e.preventDefault();
-      b.onclick = onClick;
-      return b;
-    };
-    bar.appendChild(mkBtn("⬅", "Tabela do lewej", () => actions.align("left")));
-    bar.appendChild(mkBtn("↔", "Tabela wyśrodkowana", () => actions.align("center")));
-    bar.appendChild(mkBtn("➡", "Tabela do prawej", () => actions.align("right")));
-    bar.appendChild(mkBtn("⬚", "Zaznacz całą tabelę", () => actions.selectAll()));
-    bar.appendChild(mkBtn("📐", "Rozmiar tabeli", () => actions.openSize()));
-    bar.appendChild(mkBtn("🗑", "Usuń tabelę", () => actions.remove()));
-    return bar;
-  };
-}
-
-function createTableInlineToolbarExtension(actionsRef: { current: TableToolbarActions }) {
-  const computeDecos = (state: any) => {
-    const found = findEnclosingTable(state);
-    if (!found) return DecorationSet.empty;
-    return DecorationSet.create(state.doc, [
-      Decoration.widget(found.pos, buildTableInlineToolbarWidget(actionsRef.current), { side: -1, key: `tbl-toolbar-${found.pos}` }),
-    ]);
-  };
-  return Extension.create({
-    name: "tableInlineToolbar",
-    addProseMirrorPlugins() {
-      return [
-        new Plugin({
-          key: TABLE_INLINE_TOOLBAR_KEY,
-          state: {
-            init: (_config: any, state: any) => computeDecos(state),
-            apply(_tr: any, _old: any, _oldState: any, newState: any) {
-              return computeDecos(newState);
-            },
-          },
-          props: {
-            decorations(state) {
-              return TABLE_INLINE_TOOLBAR_KEY.getState(state);
-            },
-          },
-        }),
-      ];
-    },
-  });
 }
 
 function createSimplePaginationExtension(cfgRef: { current: HfPagCfg }, forceRecomputeRef: { current: (() => void) | null }) {
@@ -974,9 +915,11 @@ export function DocumentationEditorTiptapPoC({
   const [plainPasteText, setPlainPasteText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docxInputRef = useRef<HTMLInputElement>(null);
-  const tableToolbarActionsRef = useRef<TableToolbarActions>({
-    align: () => {}, selectAll: () => {}, openSize: () => {}, remove: () => {},
-  });
+  // Pozycja tabeli pod kursorem (do pływającego paska narzędzi) - patrz
+  // komentarz przy findEnclosingTable wyżej. Aktualizowana z listenera
+  // "transaction" edytora (niżej), nie z propsów/dekoracji.
+  const [tableToolbarPos, setTableToolbarPos] = useState<number | null>(null);
+  const [tableToolbarRect, setTableToolbarRect] = useState<{ top: number; left: number } | null>(null);
   const hfConfigRef = useRef<HfPagCfg>({
     headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
     footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
@@ -1001,7 +944,6 @@ export function DocumentationEditorTiptapPoC({
       NumberedHeading.configure({ levels: [1, 2, 3] }),
       AlignableTable,
       createTableWidthSyncExtension(),
-      createTableInlineToolbarExtension(tableToolbarActionsRef),
       TableRow,
       TableHeader,
       TableCell,
@@ -1199,14 +1141,39 @@ export function DocumentationEditorTiptapPoC({
     if (!editor) return;
     editor.chain().focus().deleteTable().run();
   }, [editor]);
+  // Pozycja/prostokąt tabeli pod kursorem, do pływającego paska - patrz
+  // duży komentarz przy findEnclosingTable. Aktualizowane na każdej
+  // transakcji edytora (docChanged LUB selectionChanged - w przeciwieństwie
+  // do SimplePagination, tu MUSIMY reagować na samo przesunięcie kursora,
+  // nie tylko na zmianę treści), plus przy scrollu/resize kontenera.
+  const updateTableToolbarPosition = useCallback(() => {
+    if (!editor) { setTableToolbarPos(null); return; }
+    const found = findEnclosingTable(editor.state);
+    if (!found) { setTableToolbarPos(null); setTableToolbarRect(null); return; }
+    setTableToolbarPos(found.pos);
+    const dom = editor.view.nodeDOM(found.pos) as HTMLElement | null;
+    const tableEl = dom ? (dom.tagName === "TABLE" ? dom : dom.querySelector("table")) : null;
+    if (tableEl) {
+      const r = tableEl.getBoundingClientRect();
+      setTableToolbarRect({ top: r.top, left: r.left });
+    }
+  }, [editor]);
   useEffect(() => {
-    tableToolbarActionsRef.current = {
-      align: setTablePosition,
-      selectAll: selectWholeTable,
-      openSize: openTableSizeModal,
-      remove: removeTable,
+    if (!editor) return;
+    editor.on("transaction", updateTableToolbarPosition);
+    updateTableToolbarPosition();
+    return () => { editor.off("transaction", updateTableToolbarPosition); };
+  }, [editor, updateTableToolbarPosition]);
+  useEffect(() => {
+    const scrollEl = editor?.view.dom.closest(".dt-page-scroll") as HTMLElement | null;
+    if (!scrollEl) return;
+    scrollEl.addEventListener("scroll", updateTableToolbarPosition, { passive: true });
+    window.addEventListener("resize", updateTableToolbarPosition);
+    return () => {
+      scrollEl.removeEventListener("scroll", updateTableToolbarPosition);
+      window.removeEventListener("resize", updateTableToolbarPosition);
     };
-  }, [setTablePosition, selectWholeTable, openTableSizeModal, removeTable]);
+  }, [editor, updateTableToolbarPosition]);
 
   const addComment = useCallback(() => {
     if (!editor || editor.state.selection.empty) {
@@ -1541,9 +1508,9 @@ export function DocumentationEditorTiptapPoC({
 .doc-editor-tiptap-poc .ProseMirror table { border-collapse: collapse; table-layout: fixed; margin: 8px 0; }
 .doc-editor-tiptap-poc .ProseMirror table td, .doc-editor-tiptap-poc .ProseMirror table th { border: 1px solid #999; min-width: 60px; padding: 4px 8px; position: relative; }
 .doc-editor-tiptap-poc .ProseMirror .selectedCell:after { z-index: 2; position: absolute; content: ""; left: 0; right: 0; top: 0; bottom: 0; background: rgba(79, 195, 247, 0.35); pointer-events: none; }
-.doc-editor-tiptap-poc .table-inline-toolbar { display: flex; gap: 4px; margin: 4px 0; padding: 4px 6px; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); width: max-content; }
-.doc-editor-tiptap-poc .table-inline-toolbar button { border: 1px solid #ddd; background: #fff; border-radius: 4px; padding: 2px 7px; cursor: pointer; font-size: 13px; line-height: 1.6; }
-.doc-editor-tiptap-poc .table-inline-toolbar button:hover { background: #efedff; border-color: #6d5cfc; }
+.table-inline-toolbar { display: flex; gap: 4px; padding: 4px 6px; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); width: max-content; }
+.table-inline-toolbar button { border: 1px solid #ddd; background: #fff; border-radius: 4px; padding: 2px 7px; cursor: pointer; font-size: 13px; line-height: 1.6; }
+.table-inline-toolbar button:hover { background: #efedff; border-color: #6d5cfc; }
 .doc-editor-tiptap-poc .ProseMirror table th { background: #eee; font-weight: bold; }
 .doc-editor-tiptap-poc .page { box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
 .doc-editor-tiptap-poc .simple-page-break-line { position: absolute; left: -96px; right: -96px; height: 5px; background: #888; transform: translateY(-5px); pointer-events: none; z-index: 1; }
@@ -1601,6 +1568,21 @@ ${docContentCss("#doc-editor-content")}
               <button type="button" className="dt-btn" onClick={applyTableSize}>Zastosuj</button>
             </div>
           </div>
+        </div>,
+        document.body
+      )}
+      {tableToolbarPos !== null && tableToolbarRect && createPortal(
+        <div
+          contentEditable={false}
+          style={{ position: "fixed", top: Math.max(4, tableToolbarRect.top - 36), left: tableToolbarRect.left, zIndex: 500 }}
+          className="table-inline-toolbar"
+        >
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setTablePosition("left")} title="Tabela do lewej">⬅</button>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setTablePosition("center")} title="Tabela wyśrodkowana">↔</button>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setTablePosition("right")} title="Tabela do prawej">➡</button>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={selectWholeTable} title="Zaznacz całą tabelę">⬚</button>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={openTableSizeModal} title="Rozmiar tabeli">📐</button>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={removeTable} title="Usuń tabelę">🗑</button>
         </div>,
         document.body
       )}
