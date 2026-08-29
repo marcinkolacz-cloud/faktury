@@ -1185,7 +1185,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // to be an exact preview of what exportWord()/exportPdf() will
   // produce, so it must use the same chapter set and the same
   // numberHeadingsForExport() numbering as Word.
-  const buildChapterPreviewHtml = async (forPrint: boolean = false, gridView: boolean = false, selectedOverride?: Set<number>, chaptersOverride?: Chapter[]): Promise<string> => {
+  const buildChapterPreviewHtml = async (forPrint: boolean = false, gridView: boolean = false, selectedOverride?: Set<number>, chaptersOverride?: Chapter[], previewToken?: string): Promise<string> => {
     const selectedSet = selectedOverride || selectedForPrint;
     const selected = chapters.filter((c) => selectedSet.has(c.id));
     if (selected.length === 0) {
@@ -1263,6 +1263,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         // screen measurement pass) - Chrome's print engine then silently
         // inserts an extra physical page instead of respecting the single
         // .sheet box. A few px of headroom prevents that ghost page.
+        var __TOKEN__ = ${JSON.stringify(previewToken || null)};
         var PAGE_H = ${contentHeightPx};
         var measure = document.getElementById('measure');
         var pagesEl = document.getElementById('pages');
@@ -1303,7 +1304,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             // tresc jako jedna nieformatowana "strone" zamiast pustego ekranu.
             pagesEl.innerHTML = '<div class="sheet"><div class="page-content">' + (measure ? measure.innerHTML : '') + '</div></div>';
             try { if (measure && measure.parentNode) measure.remove(); } catch (e2) {}
-            try { parent.postMessage({ type: 'docPreviewPageCount', count: 1, error: String(e && e.message || e) }, '*'); } catch (e3) {}
+            try { parent.postMessage({ type: 'docPreviewPageCount', count: 1, error: String(e && e.message || e), token: __TOKEN__ }, '*'); } catch (e3) {}
           }
         }
         function paginateInner(){
@@ -1359,7 +1360,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             '</div>';
           }).join('');
           measure.remove();
-          try { parent.postMessage({ type: 'docPreviewPageCount', count: pages.length }, '*'); } catch (e) {}
+          try { parent.postMessage({ type: 'docPreviewPageCount', count: pages.length, token: __TOKEN__ }, '*'); } catch (e) {}
         }
 
         function waitImagesThenPaginate(){
@@ -1404,15 +1405,25 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [readViewLoading, setReadViewLoading] = useState(false);
   const [readViewReady, setReadViewReady] = useState(false);
   const readViewIframeRef = useRef<HTMLIFrameElement>(null);
+  // Ten sam <iframe> (ten sam DOM-element, to samo contentWindow) jest
+  // wielokrotnie ponownie ladowany (nowy srcDoc) przy kazdej zmianie
+  // rozdzialu/showChainVersion - samo sprawdzenie "e.source === iframe"
+  // nie odroznia spoznionej wiadomosci z POPRZEDNIEGO zaladowania od
+  // biezacego. Token generacji odrzuca spoznione wiadomosci ze starej
+  // tresci, ktore inaczej przedwczesnie chowaly okno ladowania (ukazujac
+  // na chwile pusta/nieukonczona strone, zanim realna tresc dojdzie).
+  const readViewTokenRef = useRef<string | null>(null);
   useEffect(() => {
     if (editMode) return;
     if (!active) { setReadViewHtml(""); return; }
     let cancelled = false;
     setReadViewLoading(true);
     setReadViewReady(false);
+    const token = `${active.id}-${Date.now()}-${Math.random()}`;
+    readViewTokenRef.current = token;
     (async () => {
       try {
-        const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active]);
+        const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active], token);
         if (!cancelled) setReadViewHtml(html);
       } catch {
         // Zostaw poprzednio wyrenderowaną treść zamiast czyścić do pustego -
@@ -1434,7 +1445,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         // bez sprawdzenia źródła, wcześniejsza/inna wiadomość z modala
         // potrafiła fałszywie zaliczyć gotowość podglądu ogólnego, przez
         // co zielony napis znikał zanim WŁAŚCIWY iframe faktycznie skończył.
-        if (!editMode && e.source === readViewIframeRef.current?.contentWindow) setReadViewReady(true);
+        if (!editMode && e.source === readViewIframeRef.current?.contentWindow && e.data.token === readViewTokenRef.current) setReadViewReady(true);
       }
     };
     window.addEventListener("message", onMsg);
