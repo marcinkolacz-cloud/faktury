@@ -597,7 +597,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
-  useAuthContext();
+  const { identity } = useAuthContext();
   const [lastPolled, setLastPolled] = useState<Date | null>(null);
   const [pollTicks, setPollTicks] = useState(0);
   const [pollError, setPollError] = useState<string>("");
@@ -835,12 +835,32 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }
     setActiveId(id);
   };
+  const [lockStolenBy, setLockStolenBy] = useState<string | null>(null);
   useEffect(() => {
     if (!editMode || activeId === null) return;
-    const interval = setInterval(() => {
+    setLockStolenBy(null);
+    const myPrincipal = identity?.getPrincipal().toText();
+    const check = () => {
       actor.heartbeatEditLock(activeId).catch(() => {});
-    }, 15000);
+      // Bezpiecznik na przypadek znaleziony w audycie: gdyby nasza blokada
+      // wygasła (np. przez przerwę w sieci) i ktoś inny ją przejął, chcemy
+      // to widzieć od razu zamiast po cichu dalej "edytować" i nadpisać
+      // czyjeś zmiany przy kolejnym zapisie. Nazwa z listy z modułu admin
+      // (listPrincipalDisplayNames), tak samo jak przy próbie wejścia
+      // w edycję zajętego rozdziału.
+      actor.getEditLock(activeId).then((lock: any) => {
+        const holderText = lock && lock.length > 0 ? lock[0].toText() : "";
+        if (holderText && holderText !== myPrincipal) {
+          setLockStolenBy(displayNames[holderText] || holderText);
+        } else {
+          setLockStolenBy(null);
+        }
+      }).catch(() => {});
+    };
+    check();
+    const interval = setInterval(check, 15000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actor, activeId, editMode]);
   useEffect(() => {
     return () => {
@@ -1106,12 +1126,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // (e.g. transient OneDrive/token error) used to leave `dirty` stuck true
   // forever with no further retry scheduled, silently losing edits.
   useEffect(() => {
-    if (!autoSave || !editMode) return;
+    if (!autoSave || !editMode || lockStolenBy) return;
     const interval = window.setInterval(() => {
       if (dirtyRef.current && !savingRef.current) saveChapter(true);
     }, 3000);
     return () => window.clearInterval(interval);
-  }, [autoSave, editMode]);
+  }, [autoSave, editMode, lockStolenBy]);
 
   const getChaptersForExport = async (): Promise<Chapter[]> => {
     const liveHtml = active && tiptapHtmlRef.current ? tiptapHtmlRef.current.replace(/\s*data-num="[^"]*"/g, "") : null;
@@ -1623,6 +1643,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       {chapterBackupFlags[active.id] ? "🛟 backup: tak" : "🛟 backup: nie"}
                     </span>
                   </span>
+                </div>
+              )}
+              {editMode && canEdit && active && lockStolenBy && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white text-xs font-medium shrink-0">
+                  <span>⚠️</span>
+                  <span>Ten dokument edytuje teraz: <strong>{lockStolenBy}</strong> — Twoje zmiany mogą nie zostać zapisane. Autozapis wstrzymany, zapisz ręcznie i wyjdź z edycji.</span>
                 </div>
               )}
               <style>{docContentCss("#doc-editor-content")}</style>
