@@ -1459,10 +1459,20 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       if (recentlySavedRef.current.id === chapterId && Date.now() < recentlySavedRef.current.until) return;
       try {
         const content = await fetchChapterContent(chapterId);
-        if (content && content !== active.contentHtml) {
-          pendingNewerContentRef.current = content;
-          setNewerVersionAvailable(true);
-        }
+        // Porownanie z NAJSWIEZSZYM stanem (funkcyjny setChapters), nie z
+        // "active" zamknietym w domknieciu tego efektu - to domkniecie bylo
+        // nieaktualne (puste/stare contentHtml sprzed dociagniecia z Drive
+        // przy pierwszym wejsciu w rozdzial), co falszywie pokazywalo baner
+        // "nowsza wersja" od razu po otwarciu.
+        if (!content) return;
+        setChapters((prev) => {
+          const cur = prev.find((c) => c.id === chapterId);
+          if (cur && cur.contentHtml !== content) {
+            pendingNewerContentRef.current = content;
+            setNewerVersionAvailable(true);
+          }
+          return prev;
+        });
       } catch { /* kolejna proba za 5s */ }
     }, 5000);
     return () => window.clearInterval(interval);
@@ -1484,27 +1494,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     const token = `${active.id}-${Date.now()}-${Math.random()}`;
     readViewTokenRef.current = token;
     setReadViewToken(token);
-    // Failsafe niezależny od przyczyny zawieszenia (obraz z Drive wiszący
-    // bez load/error, zgubiona wiadomość postMessage, cross-origin itp.):
-    // jeśli po 8s nadal nie przyszło "ready" dla TEGO tokenu, odblokuj
-    // spinner mimo wszystko - nieaktualny/niedopracowany podgląd jest
-    // lepszy niż okno kręcące się w nieskończoność.
-    const failsafe = window.setTimeout(() => {
-      if (cancelled || readViewTokenRef.current !== token) return;
-      setReadViewReady(true);
-      setPaginationError("Podgląd nie potwierdził gotowości w 8s - pokazano mimo to.");
-    }, 8000);
     (async () => {
       try {
         const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active], token);
         if (!cancelled) setReadViewHtml(html);
       } catch (err: any) {
-        // Zostaw poprzednio wyrenderowaną treść zamiast czyścić do pustego -
-        // pusty ekran jest gorszy niż lekko nieaktualny podgląd. Ale trzeba
-        // odblokować "ready", inaczej okno ładowania kręci się w
-        // nieskończoność (nigdy nie przyjdzie postMessage, bo iframe się
-        // nie przeładował) - dokładnie to zgłoszone jako "kręci się cały
-        // czas i nie wczytuje tekstu" po wyjściu z edycji.
         if (!cancelled) {
           setReadViewReady(true);
           setPaginationError("Podgląd nie odświeżył się: " + (err?.message || String(err)));
@@ -1513,20 +1507,23 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         if (!cancelled) setReadViewLoading(false);
       }
     })();
-    return () => { cancelled = true; window.clearTimeout(failsafe); };
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode, active?.id, active?.contentHtml]);
+  // Gotowość podglądu sterowana natywnym zdarzeniem onLoad iframe zamiast
+  // postMessage+token - przeglądarka GWARANTUJE że load/error zawsze się
+  // odpali dla aktualnej nawigacji tego konkretnego elementu, więc znika
+  // cała klasa błędów "wiadomość nie doszła / doszła za późno / z innego
+  // iframe" (poprzednie podejście z 8s failsafe tylko maskowało to, że
+  // "ready" w ogóle nie przychodziło). docPreviewPageCount zostaje
+  // wyłącznie do liczby stron / komunikatu błędu paginacji, nie do
+  // odblokowania spinnera.
+  const handleReadViewIframeLoad = () => setReadViewReady(true);
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.data && e.data.type === "docPreviewPageCount") {
         setPreviewPageCount(e.data.count);
         setPaginationError(e.data.error || "");
-        // Ten sam typ wiadomości wysyła i modal "Podgląd wydruku", i ten
-        // iframe podglądu ogólnego (współdzielą buildChapterPreviewHtml) -
-        // bez sprawdzenia źródła, wcześniejsza/inna wiadomość z modala
-        // potrafiła fałszywie zaliczyć gotowość podglądu ogólnego, przez
-        // co zielony napis znikał zanim WŁAŚCIWY iframe faktycznie skończył.
-        if (!editMode && e.source === readViewIframeRef.current?.contentWindow && e.data.token === readViewTokenRef.current) setReadViewReady(true);
       }
     };
     window.addEventListener("message", onMsg);
@@ -1865,7 +1862,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         </div>
                       </div>
                     )}
-                    <iframe key={readViewToken || "initial"} ref={readViewIframeRef} title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
+                    <iframe key={readViewToken || "initial"} ref={readViewIframeRef} title="Podgląd rozdziału" srcDoc={readViewHtml} onLoad={handleReadViewIframeLoad} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
                     </>
                   )}
                   {editMode && canEdit && active && (
