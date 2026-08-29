@@ -560,7 +560,12 @@ mixin (
     requireManualLockOk(caller, id);
     switch (deviceManualChapters.get(id)) {
       case (?ch) {
-        deviceManualChapters.add(id, { ch with title; contentHtml = ""; updatedBy; updatedAt = Time.now() });
+        // BYLO: "contentHtml = """ tutaj kasowalo kopie on-chain (backup)
+        // przy KAZDYM zapisie rozdzialu (auto-zapis co 3s, "Zapisz",
+        // "Odswiez i zapisz") - mimo ze ta funkcja mia byc "metadata-only".
+        // To byl realny root cause znikajacego backupu ("kanister") po
+        // zwyklej edycji tresci na OneDrive.
+        deviceManualChapters.add(id, { ch with title; updatedBy; updatedAt = Time.now() });
         true;
       };
       case null { false };

@@ -1360,7 +1360,25 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             '</div>';
           }).join('');
           measure.remove();
-          try { parent.postMessage({ type: 'docPreviewPageCount', count: pages.length, token: __TOKEN__ }, '*'); } catch (e) {}
+          // Okno ladowania miало znikac dopiero gdy tresc FAKTYCZNIE widac -
+          // obrazki w pagesEl sa wstawiane od nowa (outerHTML -> innerHTML),
+          // wiec przegladarka dekoduje je ponownie; bez tego czekania
+          // postMessage("ready") szedl natychmiast, znikal spinner, a
+          // strona jeszcze kilka sekund donaladowywala obrazki na oczach
+          // uzytkownika.
+          function notifyReady(){
+            try { parent.postMessage({ type: 'docPreviewPageCount', count: pages.length, token: __TOKEN__ }, '*'); } catch (e) {}
+          }
+          var finalImgs = Array.prototype.slice.call(pagesEl.querySelectorAll('img'));
+          if (finalImgs.length === 0) {
+            requestAnimationFrame(notifyReady);
+          } else {
+            var remaining2 = finalImgs.length;
+            finalImgs.forEach(function(img){
+              if (img.complete) { remaining2--; if (remaining2 === 0) requestAnimationFrame(notifyReady); }
+              else { img.onload = img.onerror = function(){ remaining2--; if (remaining2 === 0) requestAnimationFrame(notifyReady); }; }
+            });
+          }
         }
 
         function waitImagesThenPaginate(){
@@ -1425,9 +1443,17 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       try {
         const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active], token);
         if (!cancelled) setReadViewHtml(html);
-      } catch {
+      } catch (err: any) {
         // Zostaw poprzednio wyrenderowaną treść zamiast czyścić do pustego -
-        // pusty ekran jest gorszy niż lekko nieaktualny podgląd.
+        // pusty ekran jest gorszy niż lekko nieaktualny podgląd. Ale trzeba
+        // odblokować "ready", inaczej okno ładowania kręci się w
+        // nieskończoność (nigdy nie przyjdzie postMessage, bo iframe się
+        // nie przeładował) - dokładnie to zgłoszone jako "kręci się cały
+        // czas i nie wczytuje tekstu" po wyjściu z edycji.
+        if (!cancelled) {
+          setReadViewReady(true);
+          setPaginationError("Podgląd nie odświeżył się: " + (err?.message || String(err)));
+        }
       } finally {
         if (!cancelled) setReadViewLoading(false);
       }
