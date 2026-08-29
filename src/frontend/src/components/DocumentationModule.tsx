@@ -978,9 +978,24 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     if (deviceId !== null) await actor.reorderDeviceManualChapters(deviceId, ids);
   };
 
+  const hfSettingsBeforeEditRef = useRef<HeaderFooterSettings | null>(null);
   const openSettings = () => {
+    hfSettingsBeforeEditRef.current = hfSettings;
     setHfDraft(hfSettings);
     setShowSettings(true);
+  };
+  // Nagłówek/stopka mają się odświeżać na żywo w edytorze w trakcie
+  // zmieniania ustawień w modalu, nie dopiero po kliknięciu "Zapisz" -
+  // odzwierciedlamy draft na bieżąco w hfSettings (które napędza edytor
+  // przez propsy); rzeczywisty zapis do kanistra nadal następuje tylko
+  // w saveSettings().
+  useEffect(() => {
+    if (showSettings) setHfSettings(hfDraft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSettings, hfDraft]);
+  const closeSettingsWithoutSaving = () => {
+    if (hfSettingsBeforeEditRef.current) setHfSettings(hfSettingsBeforeEditRef.current);
+    setShowSettings(false);
   };
 
   const saveSettings = async () => {
@@ -996,6 +1011,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       );
       setHfSettings(hfDraft);
       saveHfExtras(hfDraft);
+      hfSettingsBeforeEditRef.current = hfDraft;
       setShowSettings(false);
     } catch (e: any) {
       alert("Błąd zapisu ustawień: " + (e?.message || String(e)));
@@ -1056,6 +1072,34 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
 
   const dirtyRef = useRef(dirty);
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+
+  // "Odśwież i zapisz": najpierw flushuje bieżące zmiany (jak zwykły
+  // zapis), potem pobiera treść na nowo z OneDrive i remontuje edytor -
+  // przydatne żeby ręcznie potwierdzić że to co widać zgadza się z tym co
+  // faktycznie zostało zapisane (round-trip), zamiast ufać samemu stanowi
+  // w pamięci przeglądarki.
+  const [refreshingAndSaving, setRefreshingAndSaving] = useState(false);
+  const refreshAndSave = async () => {
+    if (!active || refreshingAndSaving) return;
+    setRefreshingAndSaving(true);
+    try {
+    if (dirtyRef.current) {
+      try { await saveChapter(true); } catch { /* saveChapter already surfaces its own error */ }
+    }
+    // OneDrive/Graph nie gwarantuje odczytu-zaraz-po-zapisie (ta sama
+    // przyczyna co RECENT_SAVE_GUARD_MS przy silentReload) - krótki bufor
+    // zmniejsza ryzyko, że ten "odśwież" pokaże starszą wersję niż to, co
+    // właśnie zapisano.
+    await new Promise((r) => setTimeout(r, 1500));
+    const content = await fetchChapterContent(active.id);
+    setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: content } : c)));
+    tiptapHtmlRef.current = "";
+    setDirty(false);
+    setTiptapRemountTick((t) => t + 1);
+    } finally {
+      setRefreshingAndSaving(false);
+    }
+  };
 
   // Auto-save: retries every 3s while dirty + enabled + edit mode on, not
   // just once on the dirty:false->true transition - a single failed save
@@ -1610,6 +1654,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     {editMode && canEdit && (
                       <RailButton icon="💾" label="Zapisz" active={dirty} disabled={!dirty} onClick={() => saveChapter(false)} />
                     )}
+                    {editMode && canEdit && (
+                      <RailButton icon="🔄" label={refreshingAndSaving ? "Odświeżam…" : "Odśwież i zapisz"} disabled={refreshingAndSaving} title="Zapisz, potem pobierz treść na nowo z OneDrive" onClick={refreshAndSave} />
+                    )}
                     <div className="w-8 h-px bg-[var(--border-color)] my-1" />
                     <RailButton icon="🖨" label="Podgląd" onClick={openPrintPreview} />
                     <RailButton
@@ -1730,7 +1777,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       </div>
 
       {showSettings && (
-        <div className="fixed inset-0 z-[400]" onClick={() => setShowSettings(false)}>
+        <div className="fixed inset-0 z-[400]" onClick={closeSettingsWithoutSaving}>
           <div
             className="absolute bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg shadow-2xl flex flex-col overflow-hidden"
             style={{ left: hfWinRect.x, top: hfWinRect.y, width: hfWinRect.width, height: hfWinRect.height }}
@@ -1741,7 +1788,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-color)] bg-[var(--bg-hover)] cursor-move shrink-0"
             >
               <h3 className="font-semibold text-[var(--accent-text)] text-sm">⚙️ Nagłówek i stopka dokumentu</h3>
-              <button onClick={() => setShowSettings(false)} className="text-xs px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">✕</button>
+              <button onClick={closeSettingsWithoutSaving} className="text-xs px-2 py-1 rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">✕</button>
             </div>
             <div className="p-5 space-y-3 overflow-y-auto flex-1">
             <div className="rounded-md border border-[var(--accent)]/30 bg-[var(--accent-light)] p-2.5 text-xs text-[var(--text-secondary)] leading-relaxed">
@@ -1918,7 +1965,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setShowSettings(false)} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Anuluj</button>
+              <button onClick={closeSettingsWithoutSaving} className="px-3 py-1.5 text-sm rounded border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)]">Anuluj</button>
               <button onClick={saveSettings} className="px-3 py-1.5 text-sm rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white">Zapisz</button>
             </div>
             </div>
