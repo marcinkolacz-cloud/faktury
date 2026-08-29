@@ -1078,7 +1078,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // the person kept typing during it, `html` here is already stale and
     // clearing dirty would silently drop those newer keystrokes (next
     // autosave tick would then see dirty=false and never send them).
-    if (tiptapHtmlRef.current === html || !tiptapHtmlRef.current) setDirty(false);
+    // Compare both sides WITHOUT data-num - tiptapHtmlRef.current still has
+    // it (HeadingNumbering writes it live for on-screen display), `html`
+    // had it stripped above, so comparing them directly never matched for
+    // any document containing a heading - dirty was getting stuck true
+    // forever even though the save itself succeeded every time.
+    const currentStripped = (tiptapHtmlRef.current || "").replace(/\s*data-num="[^"]*"/g, "");
+    if (currentStripped === html || !tiptapHtmlRef.current) setDirty(false);
     recentlySavedRef.current = { id: active.id, until: Date.now() + RECENT_SAVE_GUARD_MS };
     setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: html } : c)));
     setLastSavedAt(new Date());
