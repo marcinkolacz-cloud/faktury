@@ -1533,7 +1533,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode, active?.id, active?.contentHtml, loadingChapterContent]);
+  }, [editMode, active?.id, active?.contentHtml, loadingChapterContent, hfSettings]);
   // Gotowość podglądu sterowana natywnym zdarzeniem onLoad iframe zamiast
   // postMessage+token - przeglądarka GWARANTUJE że load/error zawsze się
   // odpali dla aktualnej nawigacji tego konkretnego elementu, więc znika
