@@ -1,0 +1,68 @@
+diff --git a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+index 69c7b31..d4e2231 100755
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -804,6 +804,29 @@ export function DocumentationEditorTiptapPoC({
+     }
+     setShowTableSizeModal(false);
+   }, [editor, tableSizeW, tableSizeH]);
++  const alignWholeTable = useCallback((align: "left" | "center" | "right" | "justify") => {
++    if (!editor) return;
++    const { state, view } = editor;
++    const { $from } = state.selection;
++    let tableStart = -1, tableEnd = -1;
++    for (let d = $from.depth; d > 0; d--) {
++      const node = $from.node(d);
++      if (node.type.spec.tableRole === "table") {
++        tableStart = $from.before(d);
++        tableEnd = tableStart + node.nodeSize;
++        break;
++      }
++    }
++    if (tableStart === -1) return;
++    let tr = state.tr;
++    state.doc.nodesBetween(tableStart, tableEnd, (node: any, pos: number) => {
++      if (node.type.name === "paragraph" || node.type.name === "heading") {
++        tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, textAlign: align });
++      }
++    });
++    view.dispatch(tr);
++    editor.commands.focus();
++  }, [editor]);
+ 
+   const addComment = useCallback(() => {
+     if (!editor || editor.state.selection.empty) {
+@@ -1082,6 +1105,10 @@ export function DocumentationEditorTiptapPoC({
+                 <GroupBtn icon="➕⏷" label="Dodaj kolumnę" onClick={() => editor.chain().focus().addColumnAfter().run()} />
+                 <GroupBtn icon="➖⏷" label="Usuń kolumnę" onClick={() => editor.chain().focus().deleteColumn().run()} />
+                 <GroupBtn icon="📐" label="Rozmiar tabeli" onClick={openTableSizeModal} />
++                <GroupBtn icon="🔤⬅" label="Tekst w tabeli: lewo" onClick={() => alignWholeTable("left")} />
++                <GroupBtn icon="🔤↔" label="Tekst w tabeli: środek" onClick={() => alignWholeTable("center")} />
++                <GroupBtn icon="🔤➡" label="Tekst w tabeli: prawo" onClick={() => alignWholeTable("right")} />
++                <GroupBtn icon="🔤☰" label="Tekst w tabeli: justuj" onClick={() => alignWholeTable("justify")} />
+                 <GroupBtn icon="⬅" label="Tabela do lewej" active={editor.getAttributes("table").align === "left"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()} />
+                 <GroupBtn icon="↔" label="Tabela wyśrodkowana" active={editor.getAttributes("table").align === "center"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()} />
+                 <GroupBtn icon="➡" label="Tabela do prawej" active={editor.getAttributes("table").align === "right"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()} />
+@@ -1135,7 +1162,7 @@ export function DocumentationEditorTiptapPoC({
+ .doc-editor-tiptap-poc .manual-page-break::after { content: attr(data-label); position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #fff; padding: 0 8px; font-size: 11px; color: #7b7bd6; white-space: nowrap; }
+ .doc-editor-tiptap-poc .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }
+ .doc-editor-tiptap-poc .ProseMirror img { max-width: 100%; max-height: 850px; height: auto; }
+-.doc-editor-tiptap-poc .ProseMirror table { border-collapse: collapse; margin: 8px 0; }
++.doc-editor-tiptap-poc .ProseMirror table { border-collapse: collapse; table-layout: fixed; margin: 8px 0; }
+ .doc-editor-tiptap-poc .ProseMirror table td, .doc-editor-tiptap-poc .ProseMirror table th { border: 1px solid #999; min-width: 60px; padding: 4px 8px; position: relative; }
+ .doc-editor-tiptap-poc .ProseMirror table th { background: #eee; font-weight: bold; }
+ .doc-editor-tiptap-poc .page { box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+diff --git a/src/frontend/src/lib/docContentStyle.ts b/src/frontend/src/lib/docContentStyle.ts
+index 273bb14..cb86d6a 100644
+--- a/src/frontend/src/lib/docContentStyle.ts
++++ b/src/frontend/src/lib/docContentStyle.ts
+@@ -26,7 +26,8 @@ ${selector} h3::before { content: attr(data-num); }
+ ${selector} img { max-width: 100%; height: auto; }
+ ${selector} .manual-page-break { border-top: 2px dashed #4fc3f7; text-align: center; color: #4fc3f7; font-size: 10px; margin: 16px 0; user-select: none; }
+ ${selector} .manual-page-break::before { content: attr(data-label); }
+-${selector} table, ${selector} td, ${selector} th { border-color: var(--text-secondary) !important; }
++${selector} table { border-collapse: collapse; table-layout: fixed; }
++${selector} table, ${selector} td, ${selector} th { border-style: solid !important; border-width: 1px !important; border-color: var(--text-secondary) !important; }
+ ${selector} td[style*="background:#eee"], ${selector} th[style*="background:#eee"] { background: var(--bg-hover) !important; }
+ ${selector} table td, ${selector} table th { resize: both; overflow: hidden; }
+ ${selector} .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }

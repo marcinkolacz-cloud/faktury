@@ -445,6 +445,7 @@ type HfPagCfg = {
   headerFontSize: number; footerFontSize: number;
   headerBorder: boolean; footerBorder: boolean;
   skipFirstPage: boolean;
+  showPageNumbers: boolean;
   onPageCountChange?: (count: number) => void;
 };
 
@@ -465,14 +466,16 @@ function buildHeaderEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
   el.style.padding = `0 ${SIDE_MARGIN_PX}px 6px`;
   if (cfg.headerBorder) el.style.borderBottom = "1px solid #ccc";
   el.innerHTML = `<span>${nl2brSimple(left)}</span><span>${nl2brSimple(center)}</span><span>${nl2brSimple(right)}</span>`;
-  const pageLabel = document.createElement("div");
-  pageLabel.className = "simple-page-number-badge";
-  pageLabel.textContent = `Strona ${pageNum} / ${totalPages}`;
-  el.appendChild(pageLabel);
+  if (cfg.showPageNumbers) {
+    const pageLabel = document.createElement("div");
+    pageLabel.className = "simple-page-number-badge";
+    pageLabel.textContent = `Strona ${pageNum} / ${totalPages}`;
+    el.appendChild(pageLabel);
+  }
   return el;
 }
 
-function buildFooterEl(cfg: HfPagCfg) {
+function buildFooterEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
   const el = document.createElement("div");
   el.className = "simple-page-footer";
   el.contentEditable = "false";
@@ -482,6 +485,12 @@ function buildFooterEl(cfg: HfPagCfg) {
   el.style.padding = `6px ${SIDE_MARGIN_PX}px 0`;
   if (cfg.footerBorder) el.style.borderTop = "1px solid #ccc";
   el.innerHTML = `<span>${nl2brSimple(cfg.footerLeft)}</span><span>${nl2brSimple(cfg.footerCenter)}</span><span>${nl2brSimple(cfg.footerRight)}</span>`;
+  if (cfg.showPageNumbers) {
+    const pageLabel = document.createElement("div");
+    pageLabel.className = "simple-page-number-badge";
+    pageLabel.textContent = `Strona ${pageNum} / ${totalPages}`;
+    el.appendChild(pageLabel);
+  }
   return el;
 }
 
@@ -500,7 +509,7 @@ function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingP
   return () => {
     const wrap = document.createElement("div");
     wrap.contentEditable = "false";
-    if (cfg.enableFooter && !(cfg.skipFirstPage && endingPageNum === 1)) wrap.appendChild(buildFooterEl(cfg));
+    if (cfg.enableFooter && !(cfg.skipFirstPage && endingPageNum === 1)) wrap.appendChild(buildFooterEl(cfg, endingPageNum, totalPages));
     wrap.appendChild(buildGapEl(endingPageNum, totalPages));
     if (cfg.enableHeader && !(cfg.skipFirstPage && startingPageNum === 1)) wrap.appendChild(buildHeaderEl(cfg, startingPageNum, totalPages));
     return wrap;
@@ -566,7 +575,7 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   }
   if (cfg.enableFooter && !(totalPages === 1 && cfg.skipFirstPage)) {
     const endPos = view.state.doc.content.size;
-    decos.push(Decoration.widget(endPos, () => buildFooterEl(cfg), { side: 1, key: "spb-footer-last" }));
+    decos.push(Decoration.widget(endPos, () => buildFooterEl(cfg, totalPages, totalPages), { side: 1, key: "spb-footer-last" }));
   }
   return DecorationSet.create(view.state.doc, decos);
 }
@@ -648,6 +657,7 @@ type Props = {
   headerBorder?: boolean;
   footerBorder?: boolean;
   skipFirstPage?: boolean;
+  showPageNumbers?: boolean;
   onImageUpload?: (blob: Blob, filename: string) => Promise<string>;
   // Gdy podany, toolbar renderuje się przez portal w tym elemencie (lewy
   // sidebar w DocumentationModule.tsx) zamiast jako osobna kolumna obok
@@ -680,6 +690,7 @@ export function DocumentationEditorTiptapPoC({
   headerBorder = true,
   footerBorder = true,
   skipFirstPage = true,
+  showPageNumbers = true,
   onImageUpload,
   toolbarPortalEl,
   onPageCountChange,
@@ -698,7 +709,7 @@ export function DocumentationEditorTiptapPoC({
   const hfConfigRef = useRef<HfPagCfg>({
     headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
     footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
-    headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage,
+    headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers,
     onPageCountChange,
   });
   const forceRecomputeRef = useRef<(() => void) | null>(null);
@@ -706,13 +717,13 @@ export function DocumentationEditorTiptapPoC({
     hfConfigRef.current = {
       headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
       footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
-      headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage,
+      headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers,
       onPageCountChange,
     };
     // Zmiana ustawien nagl/stopki (modal) NIE jest zmiana editor.state.doc,
     // wiec silnik paginacji sam by tego nie przeliczyl - wymuszamy recompute.
     forceRecomputeRef.current?.();
-  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, onPageCountChange]);
+  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers, onPageCountChange]);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false }),
@@ -804,6 +815,29 @@ export function DocumentationEditorTiptapPoC({
     }
     setShowTableSizeModal(false);
   }, [editor, tableSizeW, tableSizeH]);
+  const alignWholeTable = useCallback((align: "left" | "center" | "right" | "justify") => {
+    if (!editor) return;
+    const { state, view } = editor;
+    const { $from } = state.selection;
+    let tableStart = -1, tableEnd = -1;
+    for (let d = $from.depth; d > 0; d--) {
+      const node = $from.node(d);
+      if (node.type.spec.tableRole === "table") {
+        tableStart = $from.before(d);
+        tableEnd = tableStart + node.nodeSize;
+        break;
+      }
+    }
+    if (tableStart === -1) return;
+    let tr = state.tr;
+    state.doc.nodesBetween(tableStart, tableEnd, (node: any, pos: number) => {
+      if (node.type.name === "paragraph" || node.type.name === "heading") {
+        tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, textAlign: align });
+      }
+    });
+    view.dispatch(tr);
+    editor.commands.focus();
+  }, [editor]);
 
   const addComment = useCallback(() => {
     if (!editor || editor.state.selection.empty) {
@@ -1082,6 +1116,10 @@ export function DocumentationEditorTiptapPoC({
                 <GroupBtn icon="➕⏷" label="Dodaj kolumnę" onClick={() => editor.chain().focus().addColumnAfter().run()} />
                 <GroupBtn icon="➖⏷" label="Usuń kolumnę" onClick={() => editor.chain().focus().deleteColumn().run()} />
                 <GroupBtn icon="📐" label="Rozmiar tabeli" onClick={openTableSizeModal} />
+                <GroupBtn icon="🔤⬅" label="Tekst w tabeli: lewo" onClick={() => alignWholeTable("left")} />
+                <GroupBtn icon="🔤↔" label="Tekst w tabeli: środek" onClick={() => alignWholeTable("center")} />
+                <GroupBtn icon="🔤➡" label="Tekst w tabeli: prawo" onClick={() => alignWholeTable("right")} />
+                <GroupBtn icon="🔤☰" label="Tekst w tabeli: justuj" onClick={() => alignWholeTable("justify")} />
                 <GroupBtn icon="⬅" label="Tabela do lewej" active={editor.getAttributes("table").align === "left"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()} />
                 <GroupBtn icon="↔" label="Tabela wyśrodkowana" active={editor.getAttributes("table").align === "center"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()} />
                 <GroupBtn icon="➡" label="Tabela do prawej" active={editor.getAttributes("table").align === "right"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()} />
@@ -1135,7 +1173,7 @@ export function DocumentationEditorTiptapPoC({
 .doc-editor-tiptap-poc .manual-page-break::after { content: attr(data-label); position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #fff; padding: 0 8px; font-size: 11px; color: #7b7bd6; white-space: nowrap; }
 .doc-editor-tiptap-poc .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }
 .doc-editor-tiptap-poc .ProseMirror img { max-width: 100%; max-height: 850px; height: auto; }
-.doc-editor-tiptap-poc .ProseMirror table { border-collapse: collapse; margin: 8px 0; }
+.doc-editor-tiptap-poc .ProseMirror table { border-collapse: collapse; table-layout: fixed; margin: 8px 0; }
 .doc-editor-tiptap-poc .ProseMirror table td, .doc-editor-tiptap-poc .ProseMirror table th { border: 1px solid #999; min-width: 60px; padding: 4px 8px; position: relative; }
 .doc-editor-tiptap-poc .ProseMirror table th { background: #eee; font-weight: bold; }
 .doc-editor-tiptap-poc .page { box-shadow: 0 2px 10px rgba(0,0,0,0.35); }

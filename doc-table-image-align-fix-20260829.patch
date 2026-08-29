@@ -1,0 +1,167 @@
+diff --git a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+index 4cdb045..6bfecf4 100755
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -22,7 +22,7 @@ import TextAlign from "@tiptap/extension-text-align";
+ import { TextStyle } from "@tiptap/extension-text-style";
+ import { Plugin, PluginKey } from "@tiptap/pm/state";
+ import { Decoration, DecorationSet } from "@tiptap/pm/view";
+-import { TableMap } from "@tiptap/pm/tables";
++import { TableMap, CellSelection } from "@tiptap/pm/tables";
+ import { convertDocxToHtml } from "../lib/docxImport";
+ import { docContentCss } from "../lib/docContentStyle";
+ 
+@@ -339,9 +339,34 @@ const AlignableImage = ImageExt.extend({
+   addAttributes() {
+     return {
+       ...this.parent?.(),
+-      width: { default: null, renderHTML: (a: any) => (a.width ? { style: `width:${a.width}` } : {}) },
+-      height: { default: null, renderHTML: (a: any) => (a.height ? { style: `height:${a.height}` } : {}) },
+-      align: { default: "left", renderHTML: (a: any) => ({ "data-align": a.align }) },
++      width: {
++        default: null,
++        parseHTML: (el: HTMLElement) => el.style.width || el.getAttribute("width") || null,
++        renderHTML: (a: any) => (a.width ? { style: `width:${a.width}` } : {}),
++      },
++      height: {
++        default: null,
++        parseHTML: (el: HTMLElement) => el.style.height || el.getAttribute("height") || null,
++        renderHTML: (a: any) => (a.height ? { style: `height:${a.height}` } : {}),
++      },
++      align: {
++        default: "left",
++        parseHTML: (el: HTMLElement) => {
++          const attr = el.getAttribute("data-align");
++          if (attr) return attr;
++          if (el.style.float === "right") return "right";
++          if (el.style.display === "block" && el.style.marginLeft === "auto") return "center";
++          return "left";
++        },
++        renderHTML: (a: any) => {
++          const style = a.align === "center"
++            ? "float:none;display:block;margin-left:auto;margin-right:auto;"
++            : a.align === "right"
++            ? "float:right;margin:0 0 8px 8px;"
++            : "float:left;margin:0 8px 8px 0;";
++          return { "data-align": a.align, style };
++        },
++      },
+     };
+   },
+   addNodeView() {
+@@ -580,6 +605,66 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
+   return DecorationSet.create(view.state.doc, decos);
+ }
+ 
++// Tabela z resizable:true dostaje kolwidth per-komórka, ale sam <table> bez
++// jawnej szerokości domyślnie wypełnia cały kontener (stąd przyciski
++// "Tabela do lewej/prawej/wyśrodkowana" nie miały żadnego widocznego efektu -
++// nie było gdzie przesunąć, bo tabela i tak zajmowała 100% szerokości).
++// Ten plugin ustawia realną szerokość <table> = suma szerokości kolumn,
++// ale TYLKO gdy użytkownik jawnie ustawił szerokość wszystkich kolumn
++// (drag albo modal "Rozmiar tabeli") - w przeciwnym razie zostawia auto.
++const TABLE_WIDTH_SYNC_KEY = new PluginKey("tableWidthSync");
++function syncTableWidths(view: any) {
++  view.state.doc.descendants((node: any, pos: number) => {
++    if (node.type.spec.tableRole !== "table") return;
++    const map = TableMap.get(node);
++    const colWidths: number[] = new Array(map.width).fill(0);
++    for (let col = 0; col < map.width; col++) {
++      for (let row = 0; row < map.height; row++) {
++        const cellPos = map.map[row * map.width + col];
++        const cell = node.nodeAt(cellPos);
++        const w = cell?.attrs?.colwidth?.[0];
++        if (w) colWidths[col] = Math.max(colWidths[col], w);
++      }
++    }
++    let dom = view.nodeDOM(pos) as HTMLElement | null;
++    if (dom && dom.tagName !== "TABLE") dom = dom.querySelector("table");
++    if (!dom) return;
++    if (colWidths.every((w) => w > 0)) {
++      dom.style.width = `${colWidths.reduce((a, b) => a + b, 0)}px`;
++    } else {
++      dom.style.width = "";
++    }
++  });
++}
++function createTableWidthSyncExtension() {
++  return Extension.create({
++    name: "tableWidthSync",
++    addProseMirrorPlugins() {
++      return [
++        new Plugin({
++          key: TABLE_WIDTH_SYNC_KEY,
++          view(editorView) {
++            let frame: number | null = null;
++            const schedule = () => {
++              if (frame !== null) cancelAnimationFrame(frame);
++              frame = requestAnimationFrame(() => { frame = null; syncTableWidths(editorView); });
++            };
++            schedule();
++            return {
++              update(view, prevState) {
++                if (view.state.doc !== prevState.doc) schedule();
++              },
++              destroy() {
++                if (frame !== null) cancelAnimationFrame(frame);
++              },
++            };
++          },
++        }),
++      ];
++    },
++  });
++}
++
+ function createSimplePaginationExtension(cfgRef: { current: HfPagCfg }, forceRecomputeRef: { current: (() => void) | null }) {
+   return Extension.create({
+     name: "simplePagination",
+@@ -729,6 +814,7 @@ export function DocumentationEditorTiptapPoC({
+       StarterKit.configure({ heading: false }),
+       NumberedHeading.configure({ levels: [1, 2, 3] }),
+       AlignableTable,
++      createTableWidthSyncExtension(),
+       TableRow,
+       TableHeader,
+       TableCell,
+@@ -838,6 +924,24 @@ export function DocumentationEditorTiptapPoC({
+     view.dispatch(tr);
+     editor.commands.focus();
+   }, [editor]);
++  const selectWholeTable = useCallback(() => {
++    if (!editor) return;
++    const { state, view } = editor;
++    const { $from } = state.selection;
++    for (let d = $from.depth; d > 0; d--) {
++      const node = $from.node(d);
++      if (node.type.spec.tableRole === "table") {
++        const tablePos = $from.before(d);
++        const map = TableMap.get(node);
++        const start = tablePos + 1 + map.map[0];
++        const end = tablePos + 1 + map.map[map.map.length - 1];
++        const selection = CellSelection.create(state.doc, start, end);
++        view.dispatch(state.tr.setSelection(selection));
++        editor.commands.focus();
++        return;
++      }
++    }
++  }, [editor]);
+ 
+   const addComment = useCallback(() => {
+     if (!editor || editor.state.selection.empty) {
+@@ -1116,10 +1220,11 @@ export function DocumentationEditorTiptapPoC({
+                 <GroupBtn icon="➕⏷" label="Dodaj kolumnę" onClick={() => editor.chain().focus().addColumnAfter().run()} />
+                 <GroupBtn icon="➖⏷" label="Usuń kolumnę" onClick={() => editor.chain().focus().deleteColumn().run()} />
+                 <GroupBtn icon="📐" label="Rozmiar tabeli" onClick={openTableSizeModal} />
+-                <GroupBtn icon="🔤⬅" label="Tekst w tabeli: lewo" onClick={() => alignWholeTable("left")} />
+-                <GroupBtn icon="🔤↔" label="Tekst w tabeli: środek" onClick={() => alignWholeTable("center")} />
+-                <GroupBtn icon="🔤➡" label="Tekst w tabeli: prawo" onClick={() => alignWholeTable("right")} />
+-                <GroupBtn icon="🔤☰" label="Tekst w tabeli: justuj" onClick={() => alignWholeTable("justify")} />
++                <GroupBtn icon="⬚" label="Zaznacz całą tabelę" onClick={selectWholeTable} />
++                <GroupBtn icon="⬅" label="Tekst w tabeli: lewo" onClick={() => alignWholeTable("left")} />
++                <GroupBtn icon="↔" label="Tekst w tabeli: środek" onClick={() => alignWholeTable("center")} />
++                <GroupBtn icon="➡" label="Tekst w tabeli: prawo" onClick={() => alignWholeTable("right")} />
++                <GroupBtn icon="☰" label="Tekst w tabeli: justuj" onClick={() => alignWholeTable("justify")} />
+                 <GroupBtn icon="⬅" label="Tabela do lewej" active={editor.getAttributes("table").align === "left"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()} />
+                 <GroupBtn icon="↔" label="Tabela wyśrodkowana" active={editor.getAttributes("table").align === "center"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()} />
+                 <GroupBtn icon="➡" label="Tabela do prawej" active={editor.getAttributes("table").align === "right"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()} />

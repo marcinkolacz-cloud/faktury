@@ -26,7 +26,8 @@ ${selector} h3::before { content: attr(data-num); }
 ${selector} img { max-width: 100%; height: auto; }
 ${selector} .manual-page-break { border-top: 2px dashed #4fc3f7; text-align: center; color: #4fc3f7; font-size: 10px; margin: 16px 0; user-select: none; }
 ${selector} .manual-page-break::before { content: attr(data-label); }
-${selector} table, ${selector} td, ${selector} th { border-color: var(--text-secondary) !important; }
+${selector} table { border-collapse: collapse; table-layout: fixed; }
+${selector} table, ${selector} td, ${selector} th { border-style: solid !important; border-width: 1px !important; border-color: var(--text-secondary) !important; }
 ${selector} td[style*="background:#eee"], ${selector} th[style*="background:#eee"] { background: var(--bg-hover) !important; }
 ${selector} table td, ${selector} table th { resize: both; overflow: hidden; }
 ${selector} .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }

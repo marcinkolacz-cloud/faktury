@@ -1941,6 +1941,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         headerBorder={hfSettings.headerBorder}
                         footerBorder={hfSettings.footerBorder}
                         skipFirstPage={hfSettings.skipFirstPage}
+                        showPageNumbers={hfSettings.showPageNumbers}
                         toolbarPortalEl={toolbarSlotEl}
                         onImageUpload={async (blob, filename) => {
                           const ext = filename.toLowerCase().endsWith(".png") ? "png" : "jpg";

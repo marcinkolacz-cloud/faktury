@@ -1,0 +1,118 @@
+diff --git a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+index d4e2231..4cdb045 100755
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -445,6 +445,7 @@ type HfPagCfg = {
+   headerFontSize: number; footerFontSize: number;
+   headerBorder: boolean; footerBorder: boolean;
+   skipFirstPage: boolean;
++  showPageNumbers: boolean;
+   onPageCountChange?: (count: number) => void;
+ };
+ 
+@@ -465,14 +466,16 @@ function buildHeaderEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
+   el.style.padding = `0 ${SIDE_MARGIN_PX}px 6px`;
+   if (cfg.headerBorder) el.style.borderBottom = "1px solid #ccc";
+   el.innerHTML = `<span>${nl2brSimple(left)}</span><span>${nl2brSimple(center)}</span><span>${nl2brSimple(right)}</span>`;
+-  const pageLabel = document.createElement("div");
+-  pageLabel.className = "simple-page-number-badge";
+-  pageLabel.textContent = `Strona ${pageNum} / ${totalPages}`;
+-  el.appendChild(pageLabel);
++  if (cfg.showPageNumbers) {
++    const pageLabel = document.createElement("div");
++    pageLabel.className = "simple-page-number-badge";
++    pageLabel.textContent = `Strona ${pageNum} / ${totalPages}`;
++    el.appendChild(pageLabel);
++  }
+   return el;
+ }
+ 
+-function buildFooterEl(cfg: HfPagCfg) {
++function buildFooterEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
+   const el = document.createElement("div");
+   el.className = "simple-page-footer";
+   el.contentEditable = "false";
+@@ -482,6 +485,12 @@ function buildFooterEl(cfg: HfPagCfg) {
+   el.style.padding = `6px ${SIDE_MARGIN_PX}px 0`;
+   if (cfg.footerBorder) el.style.borderTop = "1px solid #ccc";
+   el.innerHTML = `<span>${nl2brSimple(cfg.footerLeft)}</span><span>${nl2brSimple(cfg.footerCenter)}</span><span>${nl2brSimple(cfg.footerRight)}</span>`;
++  if (cfg.showPageNumbers) {
++    const pageLabel = document.createElement("div");
++    pageLabel.className = "simple-page-number-badge";
++    pageLabel.textContent = `Strona ${pageNum} / ${totalPages}`;
++    el.appendChild(pageLabel);
++  }
+   return el;
+ }
+ 
+@@ -500,7 +509,7 @@ function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingP
+   return () => {
+     const wrap = document.createElement("div");
+     wrap.contentEditable = "false";
+-    if (cfg.enableFooter && !(cfg.skipFirstPage && endingPageNum === 1)) wrap.appendChild(buildFooterEl(cfg));
++    if (cfg.enableFooter && !(cfg.skipFirstPage && endingPageNum === 1)) wrap.appendChild(buildFooterEl(cfg, endingPageNum, totalPages));
+     wrap.appendChild(buildGapEl(endingPageNum, totalPages));
+     if (cfg.enableHeader && !(cfg.skipFirstPage && startingPageNum === 1)) wrap.appendChild(buildHeaderEl(cfg, startingPageNum, totalPages));
+     return wrap;
+@@ -566,7 +575,7 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
+   }
+   if (cfg.enableFooter && !(totalPages === 1 && cfg.skipFirstPage)) {
+     const endPos = view.state.doc.content.size;
+-    decos.push(Decoration.widget(endPos, () => buildFooterEl(cfg), { side: 1, key: "spb-footer-last" }));
++    decos.push(Decoration.widget(endPos, () => buildFooterEl(cfg, totalPages, totalPages), { side: 1, key: "spb-footer-last" }));
+   }
+   return DecorationSet.create(view.state.doc, decos);
+ }
+@@ -648,6 +657,7 @@ type Props = {
+   headerBorder?: boolean;
+   footerBorder?: boolean;
+   skipFirstPage?: boolean;
++  showPageNumbers?: boolean;
+   onImageUpload?: (blob: Blob, filename: string) => Promise<string>;
+   // Gdy podany, toolbar renderuje się przez portal w tym elemencie (lewy
+   // sidebar w DocumentationModule.tsx) zamiast jako osobna kolumna obok
+@@ -680,6 +690,7 @@ export function DocumentationEditorTiptapPoC({
+   headerBorder = true,
+   footerBorder = true,
+   skipFirstPage = true,
++  showPageNumbers = true,
+   onImageUpload,
+   toolbarPortalEl,
+   onPageCountChange,
+@@ -698,7 +709,7 @@ export function DocumentationEditorTiptapPoC({
+   const hfConfigRef = useRef<HfPagCfg>({
+     headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
+     footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
+-    headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage,
++    headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers,
+     onPageCountChange,
+   });
+   const forceRecomputeRef = useRef<(() => void) | null>(null);
+@@ -706,13 +717,13 @@ export function DocumentationEditorTiptapPoC({
+     hfConfigRef.current = {
+       headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
+       footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
+-      headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage,
++      headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers,
+       onPageCountChange,
+     };
+     // Zmiana ustawien nagl/stopki (modal) NIE jest zmiana editor.state.doc,
+     // wiec silnik paginacji sam by tego nie przeliczyl - wymuszamy recompute.
+     forceRecomputeRef.current?.();
+-  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, onPageCountChange]);
++  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers, onPageCountChange]);
+   const editor = useEditor({
+     extensions: [
+       StarterKit.configure({ heading: false }),
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 83fcb95..b67d3ea 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -1941,6 +1941,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                         headerBorder={hfSettings.headerBorder}
+                         footerBorder={hfSettings.footerBorder}
+                         skipFirstPage={hfSettings.skipFirstPage}
++                        showPageNumbers={hfSettings.showPageNumbers}
+                         toolbarPortalEl={toolbarSlotEl}
+                         onImageUpload={async (blob, filename) => {
+                           const ext = filename.toLowerCase().endsWith(".png") ? "png" : "jpg";
