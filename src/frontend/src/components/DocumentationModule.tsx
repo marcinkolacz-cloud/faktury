@@ -1250,7 +1250,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         .page-content{padding:0;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
         .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:6px;font-size:8pt;color:#999;text-align:center;}
         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
-        ${forPrint ? "@page{size:A4;margin:0;} body{background:#fff;} .sheet{box-shadow:none;margin:0;} .sheet + .sheet{page-break-before:always;} .page-number{display:none;}" : ""}
+        ${forPrint ? "@page{size:A4;margin:0;} body{background:#fff;} .sheet{box-shadow:none;margin:0;} .sheet + .sheet{page-break-before:always;} .page-number{display:none;} #page-count-badge{display:none;}" : ""}
         img{max-width:100%;}
         #measure{position:absolute;left:-99999px;top:0;width:${innerContentWidthPx}px;padding:0;max-width:none;visibility:hidden;--text-secondary:#5c574d;--bg-hover:#efece3;}
         ${docContentCss(".page-content")}
@@ -1258,6 +1258,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       </head><body>
       <div id="measure" class="page-content">${body}</div>
       <div id="pages" class="${gridView ? "pages-grid" : ""}"></div>
+      <div id="page-count-badge" style="position:fixed;top:10px;right:14px;background:#333;color:#fff;padding:5px 12px;border-radius:14px;font-family:Arial,sans-serif;font-size:12px;font-weight:600;z-index:9999;box-shadow:0 1px 6px rgba(0,0,0,0.35);opacity:0.92;">…</div>
       <script>
       (function(){
         // Small safety buffer (print mode only): without it, a page whose
@@ -1271,6 +1272,17 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         var PAGE_H = ${contentHeightPx};
         var measure = document.getElementById('measure');
         var pagesEl = document.getElementById('pages');
+        var badgeEl = document.getElementById('page-count-badge');
+        function pluralPages(n){
+          if (n === 1) return n + ' strona';
+          var mod10 = n % 10, mod100 = n % 100;
+          if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return n + ' strony';
+          return n + ' stron';
+        }
+        function updateBadge(n, extra){
+          if (!badgeEl) return;
+          badgeEl.textContent = '📄 ' + pluralPages(n) + (extra ? ' ' + extra : '');
+        }
         var headerOddLeft = ${JSON.stringify(headerOddLeft)};
         var headerOddCenter = ${JSON.stringify(headerOddCenter)};
         var headerOddRight = ${JSON.stringify(headerOddRight)};
@@ -1307,6 +1319,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             // Cokolwiek poszlo nie tak w mierzeniu/paginacji - pokaz cala
             // tresc jako jedna nieformatowana "strone" zamiast pustego ekranu.
             pagesEl.innerHTML = '<div class="sheet"><div class="page-content">' + (measure ? measure.innerHTML : '') + '</div></div>';
+            updateBadge(1, '(BŁĄD: ' + String(e && e.message || e) + ')');
             try { if (measure && measure.parentNode) measure.remove(); } catch (e2) {}
             try { parent.postMessage({ type: 'docPreviewPageCount', count: 1, error: String(e && e.message || e), token: __TOKEN__ }, '*'); } catch (e3) {}
           }
@@ -1327,6 +1340,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           Array.prototype.slice.call(measure.children).forEach(function(el){
             units = units.concat(collectUnits(el));
           });
+          var totalMeasuredH = measure.getBoundingClientRect().height;
+          var totalTextLen = (measure.textContent || '').replace(/\s+/g, '').length;
+          var firstBlockH = units.length ? units[0].getBoundingClientRect().height : -1;
+          var measureAttached = !!measure.offsetParent || measure.getClientRects().length > 0;
           var pages = [];
           var current = [];
           var currentH = 0;
@@ -1348,6 +1365,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           });
           flush();
           if (pages.length === 0) pages = [''];
+          // TYMCZASOWA diagnostyka w nawiasie - do usunięcia jak znajdziemy
+          // przyczynę "1 strona zamiast wielu"; sam licznik zostaje na stałe.
+          updateBadge(pages.length, '(diag: limit=' + PAGE_H + 'px, treść=' + Math.round(totalMeasuredH) + 'px, bloków=' + units.length + ', znaków=' + totalTextLen + ', pierwszyBlok=' + Math.round(firstBlockH) + 'px, attached=' + measureAttached + ')');
           pagesEl.innerHTML = pages.map(function(html, i){
             var isFirst = i === 0;
             var isOdd = (i + 1) % 2 === 1;
@@ -1920,7 +1940,21 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         </div>
                       </div>
                     )}
-                    <iframe key={readViewToken || "initial"} ref={readViewIframeRef} title="Podgląd rozdziału" srcDoc={readViewHtml} onLoad={handleReadViewIframeLoad} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
+                    <iframe key={readViewToken || "initial"} ref={readViewIframeRef} title="Podgląd rozdziału" srcDoc={readViewHtml} onLoad={handleReadViewIframeLoad} className="mx-auto block w-full" style={
+                      (readViewLoading || !readViewReady)
+                        // WAŻNE: nigdy display:none tutaj - paginacja liczy
+                        // się WEWNĄTRZ tego iframe'a (document.fonts.ready);
+                        // element w iframie z display:none zawsze zwraca
+                        // zerowe wymiary (getBoundingClientRect/
+                        // getClientRects) dla WSZYSTKIEGO w środku, więc
+                        // silnik paginacji mierzył realną treść jako 0px i
+                        // zawsze wychodziła 1 strona. Zamiast tego chowamy
+                        // go POZA EKRAN (layout liczy się normalnie), a
+                        // widocznie pojawia się dopiero gdy paginacja
+                        // faktycznie skończy.
+                        ? { maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", position: "absolute", left: -99999, top: 0, visibility: "hidden" }
+                        : { maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none" }
+                    } />
                     </>
                   )}
                   {editMode && canEdit && active && (
