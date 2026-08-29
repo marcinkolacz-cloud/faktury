@@ -310,18 +310,31 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
   };
 
   const align = node.attrs.align || "center";
-  const style: React.CSSProperties =
-    align === "center"
-      ? { float: "none", display: "block", marginLeft: "auto", marginRight: "auto" }
-      : align === "right"
-      ? { float: "right", margin: "0 0 8px 8px" }
-      : { float: "left", margin: "0 8px 8px 0" };
+  // Float/margin muszą siedzieć na WRAPPERZE (który jest elementem w
+  // normalnym przepływie akapitu), nie na samym <img> - wcześniej wrapper
+  // miał "display:inline-block" i float na <img> był w nim uwięziony,
+  // więc na zewnątrz (w akapicie) nie było go w ogóle widać.
+  const wrapperStyle: React.CSSProperties = { position: "relative" };
+  if (align === "center") {
+    wrapperStyle.float = "none";
+    wrapperStyle.display = "block";
+    wrapperStyle.marginLeft = "auto";
+    wrapperStyle.marginRight = "auto";
+    wrapperStyle.width = node.attrs.width || "fit-content";
+  } else if (align === "right") {
+    wrapperStyle.float = "right";
+    wrapperStyle.margin = "0 0 8px 8px";
+  } else {
+    wrapperStyle.float = "left";
+    wrapperStyle.margin = "0 8px 8px 0";
+  }
+  const style: React.CSSProperties = { display: "block" };
   if (node.attrs.width) style.width = node.attrs.width;
   const heightPx = node.attrs.height ? parseFloat(node.attrs.height) : NaN;
   if (!isNaN(heightPx) && heightPx > 0 && heightPx <= 3000) style.height = node.attrs.height;
 
   return (
-    <NodeViewWrapper as="span" style={{ position: "relative", display: "inline-block" }}>
+    <NodeViewWrapper as="span" style={wrapperStyle}>
       <img
         ref={imgRef}
         src={node.attrs.src}
@@ -1519,7 +1532,7 @@ ${docContentCss("#doc-editor-content")}
         </div>,
         document.body
       )}
-      {commentPopup && (() => {
+      {commentPopup && createPortal((() => {
         const popupLeft = Math.min(commentPopup.ax + 16, window.innerWidth - 280);
         const popupTop = Math.max(8, commentPopup.ay - 20);
         return (
@@ -1545,7 +1558,7 @@ ${docContentCss("#doc-editor-content")}
             </div>
           </>
         );
-      })()}
+      })(), document.body)}
     </div>
   );
 }
