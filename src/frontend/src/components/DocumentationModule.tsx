@@ -1440,13 +1440,18 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // "key" wymusza pelny remount iframe (a wiec i realny reload) za kazdym
   // razem, niezaleznie od tego czy tresc faktycznie sie zmienila.
   const [readViewToken, setReadViewToken] = useState<string | null>(null);
-  // Dedykowany, niezależny od silentReload timer odświeżający TREŚĆ
-  // aktywnego rozdziału w tle (bez przełączania dokumentu), żeby zmiany
-  // innego instruktora pojawiły się w podglądzie ogólnym same z siebie.
-  // Osobny effect z active?.id w deps (zamiast polegać na jednym starym
-  // interwale z silentReload) - gwarantuje świeże activeId przy każdym
-  // odtworzeniu, bez potrzeby refów.
+  // Inne podejście niż poprzednio: w tle NIGDY nie podmieniamy automatycznie
+  // wyświetlanej treści (to właśnie powodowało, że okno podglądu potrafiło
+  // zniknąć - remount iframe/spinner w trakcie cichego odpytywania - i nie
+  // wracało). Zamiast tego cichy timer tylko WYKRYWA, że na Dysku jest
+  // nowsza wersja i pokazuje nieinwazyjny banner; realny przeładunek treści
+  // (z tym samym, sprawdzonym mechanizmem tokenu/spinnera co przy zmianie
+  // rozdziału) następuje dopiero po kliknięciu przez operatora.
+  const [newerVersionAvailable, setNewerVersionAvailable] = useState(false);
+  const pendingNewerContentRef = useRef<string>("");
   useEffect(() => {
+    setNewerVersionAvailable(false);
+    pendingNewerContentRef.current = "";
     if (editMode || !active || !deviceLabel) return;
     const chapterId = active.id;
     const interval = window.setInterval(async () => {
@@ -1454,16 +1459,22 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       if (recentlySavedRef.current.id === chapterId && Date.now() < recentlySavedRef.current.until) return;
       try {
         const content = await fetchChapterContent(chapterId);
-        setChapters((prev) => {
-          const cur = prev.find((c) => c.id === chapterId);
-          if (!cur || cur.contentHtml === content) return prev; // brak zmian - nie wywołuj rerenderu/przeladowania iframe
-          return prev.map((c) => (c.id === chapterId ? { ...c, contentHtml: content } : c));
-        });
+        if (content && content !== active.contentHtml) {
+          pendingNewerContentRef.current = content;
+          setNewerVersionAvailable(true);
+        }
       } catch { /* kolejna proba za 5s */ }
     }, 5000);
     return () => window.clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode, active?.id, deviceLabel]);
+  const applyNewerVersion = () => {
+    if (!active || !pendingNewerContentRef.current) return;
+    const content = pendingNewerContentRef.current;
+    setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: content } : c)));
+    setNewerVersionAvailable(false);
+    pendingNewerContentRef.current = "";
+  };
   useEffect(() => {
     if (editMode) return;
     if (!active) { setReadViewHtml(""); return; }
@@ -1823,6 +1834,16 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   <div ref={commentAreaRef} className="relative overflow-auto bg-[var(--bg-page)] py-6 flex-1">
                   {!editMode && active && (
                     <>
+                    {newerVersionAvailable && !readViewLoading && readViewReady && (
+                      <div className="mx-auto mb-2 flex items-center justify-center" style={{ maxWidth: 900 }}>
+                        <button
+                          onClick={applyNewerVersion}
+                          className="text-xs px-3 py-1.5 rounded-full bg-[var(--accent-light)] text-[var(--accent-text)] border border-[var(--accent)] hover:opacity-80"
+                        >
+                          🔄 Dostępna nowsza wersja (zmiana innego instruktora) — kliknij, aby odświeżyć
+                        </button>
+                      </div>
+                    )}
                     {paginationError && (
                       <div className="text-xs text-red-500 font-mono text-center mb-1">BLAD PAGINACJI: {paginationError}</div>
                     )}
