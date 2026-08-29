@@ -264,6 +264,24 @@ function sanitizePastedHtml(html: string): string {
 function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
   const imgRef = useRef<HTMLImageElement>(null);
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [showSizeModal, setShowSizeModal] = useState(false);
+  const [sizeW, setSizeW] = useState("");
+  const [sizeH, setSizeH] = useState("");
+
+  const openSizeModal = () => {
+    setSizeW(node.attrs.width ? String(parseInt(node.attrs.width, 10)) : "");
+    setSizeH(node.attrs.height ? String(parseInt(node.attrs.height, 10)) : "");
+    setShowSizeModal(true);
+  };
+  const applySizeModal = () => {
+    const w = parseInt(sizeW, 10);
+    const h = parseInt(sizeH, 10);
+    const attrs: any = {};
+    if (w > 0) attrs.width = `${w}px`;
+    if (h > 0) attrs.height = `${h}px`;
+    if (Object.keys(attrs).length) updateAttributes(attrs);
+    setShowSizeModal(false);
+  };
 
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -319,6 +337,7 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPercent(25)}>25%</button>
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPercent(50)}>50%</button>
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setPercent(100)}>100%</button>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={openSizeModal}>📐</button>
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => updateAttributes({ align: "left" })}>⬅</button>
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => updateAttributes({ align: "center" })}>⬛</button>
           <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => updateAttributes({ align: "right" })}>➡</button>
@@ -330,6 +349,22 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
           onMouseDown={startResize}
           style={{ position: "absolute", right: -6, bottom: -6, width: 12, height: 12, background: "#4fc3f7", border: "1px solid #fff", borderRadius: 2, cursor: "nwse-resize", zIndex: 20 }}
         />
+      )}
+      {showSizeModal && createPortal(
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100000 }} onClick={() => setShowSizeModal(false)}>
+          <div style={{ background: "#fff", borderRadius: 6, padding: 16, minWidth: 240 }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontWeight: 600, marginBottom: 10 }}>📐 Rozmiar obrazu</h3>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Szerokość (px)</label>
+            <input type="number" value={sizeW} onChange={(e) => setSizeW(e.target.value)} style={{ width: "100%", marginBottom: 8 }} placeholder="np. 400" />
+            <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Wysokość (px)</label>
+            <input type="number" value={sizeH} onChange={(e) => setSizeH(e.target.value)} style={{ width: "100%", marginBottom: 12 }} placeholder="auto" />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setShowSizeModal(false)}>Anuluj</button>
+              <button type="button" onClick={applySizeModal}>Zastosuj</button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </NodeViewWrapper>
   );
@@ -636,6 +671,25 @@ function syncTableWidths(view: any) {
     // nigdy nie resizowanej tabeli.
     const total = colWidths.reduce((a, w) => a + (w || DEFAULT_SYNCED_COL_WIDTH), 0);
     dom.style.width = `${total}px`;
+    // Wbudowany resizable-NodeView Tiptapa renderuje <table> samodzielnie
+    // i NIE stosuje style'a wygenerowanego przez renderHTML atrybutu align
+    // (dlatego przyciski pozycji tabeli nie miały żadnego widocznego efektu
+    // na żywo, mimo że sam atrybut poprawnie się zapisywał) - wymuszamy
+    // pozycjonowanie bezpośrednio na realnym DOM-ie, tak jak szerokość wyżej.
+    const align = node.attrs.align || "left";
+    if (align === "center") {
+      dom.style.marginLeft = "auto";
+      dom.style.marginRight = "auto";
+      dom.style.float = "none";
+    } else if (align === "right") {
+      dom.style.marginLeft = "auto";
+      dom.style.marginRight = "0";
+      dom.style.float = "none";
+    } else {
+      dom.style.marginLeft = "0";
+      dom.style.marginRight = "auto";
+      dom.style.float = "none";
+    }
   });
 }
 function createTableWidthSyncExtension() {
@@ -660,6 +714,83 @@ function createTableWidthSyncExtension() {
                 if (frame !== null) cancelAnimationFrame(frame);
               },
             };
+          },
+        }),
+      ];
+    },
+  });
+}
+
+// Nowy UX dla tabel: zamiast wyłącznie panelu bocznego (który znika po
+// przypadkowym kliknięciu poza komórkę), pasek narzędzi doczepiony
+// bezpośrednio NAD klikniętą tabelą - ten sam mechanizm dekoracji-widgetu
+// co nagłówek/stopka paginacji. Widoczny gdy kursor/zaznaczenie jest
+// gdziekolwiek wewnątrz danej tabeli (w tym CellSelection z "Zaznacz całą
+// tabelę"), znika dopiero gdy selekcja faktycznie opuści tabelę.
+type TableToolbarActions = {
+  align: (a: "left" | "center" | "right") => void;
+  selectAll: () => void;
+  openSize: () => void;
+  remove: () => void;
+};
+const TABLE_INLINE_TOOLBAR_KEY = new PluginKey("tableInlineToolbar");
+
+function findEnclosingTable(state: any): { pos: number } | null {
+  const { $from } = state.selection;
+  for (let d = $from.depth; d > 0; d--) {
+    if ($from.node(d).type.spec.tableRole === "table") return { pos: $from.before(d) };
+  }
+  return null;
+}
+
+function buildTableInlineToolbarWidget(actions: TableToolbarActions) {
+  return () => {
+    const bar = document.createElement("div");
+    bar.contentEditable = "false";
+    bar.className = "table-inline-toolbar";
+    const mkBtn = (icon: string, title: string, onClick: () => void) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = icon;
+      b.title = title;
+      b.onmousedown = (e) => e.preventDefault();
+      b.onclick = onClick;
+      return b;
+    };
+    bar.appendChild(mkBtn("⬅", "Tabela do lewej", () => actions.align("left")));
+    bar.appendChild(mkBtn("↔", "Tabela wyśrodkowana", () => actions.align("center")));
+    bar.appendChild(mkBtn("➡", "Tabela do prawej", () => actions.align("right")));
+    bar.appendChild(mkBtn("⬚", "Zaznacz całą tabelę", () => actions.selectAll()));
+    bar.appendChild(mkBtn("📐", "Rozmiar tabeli", () => actions.openSize()));
+    bar.appendChild(mkBtn("🗑", "Usuń tabelę", () => actions.remove()));
+    return bar;
+  };
+}
+
+function createTableInlineToolbarExtension(actionsRef: { current: TableToolbarActions }) {
+  const computeDecos = (state: any) => {
+    const found = findEnclosingTable(state);
+    if (!found) return DecorationSet.empty;
+    return DecorationSet.create(state.doc, [
+      Decoration.widget(found.pos, buildTableInlineToolbarWidget(actionsRef.current), { side: -1, key: `tbl-toolbar-${found.pos}` }),
+    ]);
+  };
+  return Extension.create({
+    name: "tableInlineToolbar",
+    addProseMirrorPlugins() {
+      return [
+        new Plugin({
+          key: TABLE_INLINE_TOOLBAR_KEY,
+          state: {
+            init: (_config: any, state: any) => computeDecos(state),
+            apply(_tr: any, _old: any, _oldState: any, newState: any) {
+              return computeDecos(newState);
+            },
+          },
+          props: {
+            decorations(state) {
+              return TABLE_INLINE_TOOLBAR_KEY.getState(state);
+            },
           },
         }),
       ];
@@ -788,11 +919,14 @@ export function DocumentationEditorTiptapPoC({
   const [showPlainPasteModal, setShowPlainPasteModal] = useState(false);
   const [showTableSizeModal, setShowTableSizeModal] = useState(false);
   const [tableSizeInfo, setTableSizeInfo] = useState("");
-  const [tableSizeW, setTableSizeW] = useState("");
+  const [tableSizeCols, setTableSizeCols] = useState<string[]>([]);
   const [tableSizeH, setTableSizeH] = useState("");
   const [plainPasteText, setPlainPasteText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docxInputRef = useRef<HTMLInputElement>(null);
+  const tableToolbarActionsRef = useRef<TableToolbarActions>({
+    align: () => {}, selectAll: () => {}, openSize: () => {}, remove: () => {},
+  });
   const hfConfigRef = useRef<HfPagCfg>({
     headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
     footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
@@ -817,6 +951,7 @@ export function DocumentationEditorTiptapPoC({
       NumberedHeading.configure({ levels: [1, 2, 3] }),
       AlignableTable,
       createTableWidthSyncExtension(),
+      createTableInlineToolbarExtension(tableToolbarActionsRef),
       TableRow,
       TableHeader,
       TableCell,
@@ -865,44 +1000,71 @@ export function DocumentationEditorTiptapPoC({
   }, [editor]);
   const openTableSizeModal = useCallback(() => {
     if (!editor) return;
-    const wAttr = editor.getAttributes("tableCell").colwidth || editor.getAttributes("tableHeader").colwidth;
     const hAttr = editor.getAttributes("tableRow").height;
-    setTableSizeW(wAttr && wAttr[0] ? String(wAttr[0]) : "");
     setTableSizeH(hAttr ? String(parseInt(hAttr, 10)) : "");
     let info = "Zaznacz komórkę w tabeli";
     try {
       const { $from } = editor.state.selection;
-      let tableNode = null, tablePos = -1, cellNode = null, cellPos = -1;
+      let tableNode: any = null;
       for (let d = $from.depth; d > 0; d--) {
         const node = $from.node(d);
-        const role = node.type.spec.tableRole;
-        if (!cellNode && (role === "cell" || role === "header_cell")) { cellNode = node; cellPos = $from.before(d); }
-        if (role === "table") { tableNode = node; tablePos = $from.before(d); break; }
+        if (node.type.spec.tableRole === "table") { tableNode = node; break; }
       }
-      if (tableNode && cellNode) {
+      if (tableNode) {
         const map = TableMap.get(tableNode);
-        const rect = map.findCell(cellPos - tablePos - 1);
-        info = `Tabela: kolumna ${rect.left + 1}/${map.width}, wiersz ${rect.top + 1}/${map.height}`;
+        const cols: string[] = new Array(map.width).fill("");
+        for (let col = 0; col < map.width; col++) {
+          for (let row = 0; row < map.height; row++) {
+            const cellPos = map.map[row * map.width + col];
+            const cell = tableNode.nodeAt(cellPos);
+            const w = cell?.attrs?.colwidth?.[0];
+            if (w) { cols[col] = String(w); break; }
+          }
+        }
+        setTableSizeCols(cols);
+        info = `Tabela: ${map.width} kolumn(y), ${map.height} wiersz(y)`;
+      } else {
+        setTableSizeCols([]);
       }
     } catch (e) {
-      // best-effort info only
+      setTableSizeCols([]);
     }
     setTableSizeInfo(info);
     setShowTableSizeModal(true);
   }, [editor]);
   const applyTableSize = useCallback(() => {
     if (!editor) return;
-    const w = parseInt(tableSizeW, 10);
-    const h = parseInt(tableSizeH, 10);
-    if (w > 0) {
-      const isHeader = editor.isActive("tableHeader");
-      editor.chain().focus().updateAttributes(isHeader ? "tableHeader" : "tableCell", { colwidth: [w] }).run();
+    const { state, view } = editor;
+    const { $from } = state.selection;
+    let tableNode: any = null, tablePos = -1;
+    for (let d = $from.depth; d > 0; d--) {
+      const node = $from.node(d);
+      if (node.type.spec.tableRole === "table") { tableNode = node; tablePos = $from.before(d); break; }
     }
+    if (tableNode) {
+      const map = TableMap.get(tableNode);
+      let tr = state.tr;
+      for (let col = 0; col < map.width; col++) {
+        const w = parseInt(tableSizeCols[col] || "", 10);
+        if (!(w > 0)) continue;
+        const touched = new Set<number>();
+        for (let row = 0; row < map.height; row++) {
+          const relPos = map.map[row * map.width + col];
+          if (touched.has(relPos)) continue;
+          touched.add(relPos);
+          const absPos = tablePos + 1 + relPos;
+          const cell = tr.doc.nodeAt(absPos);
+          if (cell) tr = tr.setNodeMarkup(absPos, undefined, { ...cell.attrs, colwidth: [w] });
+        }
+      }
+      view.dispatch(tr);
+    }
+    const h = parseInt(tableSizeH, 10);
     if (h > 0) {
       editor.chain().focus().updateAttributes("tableRow", { height: `${h}px` }).run();
     }
     setShowTableSizeModal(false);
-  }, [editor, tableSizeW, tableSizeH]);
+  }, [editor, tableSizeCols, tableSizeH]);
   const alignWholeTable = useCallback((align: "left" | "center" | "right" | "justify") => {
     if (!editor) return;
     const { state, view } = editor;
@@ -944,6 +1106,23 @@ export function DocumentationEditorTiptapPoC({
       }
     }
   }, [editor]);
+
+  const setTablePosition = useCallback((align: "left" | "center" | "right") => {
+    if (!editor) return;
+    editor.chain().focus().updateAttributes("table", { align }).run();
+  }, [editor]);
+  const removeTable = useCallback(() => {
+    if (!editor) return;
+    editor.chain().focus().deleteTable().run();
+  }, [editor]);
+  useEffect(() => {
+    tableToolbarActionsRef.current = {
+      align: setTablePosition,
+      selectAll: selectWholeTable,
+      openSize: openTableSizeModal,
+      remove: removeTable,
+    };
+  }, [setTablePosition, selectWholeTable, openTableSizeModal, removeTable]);
 
   const addComment = useCallback(() => {
     if (!editor || editor.state.selection.empty) {
@@ -1221,16 +1400,10 @@ export function DocumentationEditorTiptapPoC({
                 <GroupBtn icon="➖⏵" label="Usuń wiersz" onClick={() => editor.chain().focus().deleteRow().run()} />
                 <GroupBtn icon="➕⏷" label="Dodaj kolumnę" onClick={() => editor.chain().focus().addColumnAfter().run()} />
                 <GroupBtn icon="➖⏷" label="Usuń kolumnę" onClick={() => editor.chain().focus().deleteColumn().run()} />
-                <GroupBtn icon="📐" label="Rozmiar tabeli" onClick={openTableSizeModal} />
-                <GroupBtn icon="⬚" label="Zaznacz całą tabelę" onClick={selectWholeTable} />
                 <GroupBtn icon="⬅" label="Tekst w tabeli: lewo" onClick={() => alignWholeTable("left")} />
                 <GroupBtn icon="↔" label="Tekst w tabeli: środek" onClick={() => alignWholeTable("center")} />
                 <GroupBtn icon="➡" label="Tekst w tabeli: prawo" onClick={() => alignWholeTable("right")} />
                 <GroupBtn icon="☰" label="Tekst w tabeli: justuj" onClick={() => alignWholeTable("justify")} />
-                <GroupBtn icon="⬅" label="Tabela do lewej" active={editor.getAttributes("table").align === "left"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()} />
-                <GroupBtn icon="↔" label="Tabela wyśrodkowana" active={editor.getAttributes("table").align === "center"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()} />
-                <GroupBtn icon="➡" label="Tabela do prawej" active={editor.getAttributes("table").align === "right"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()} />
-                <GroupBtn icon="🗑" label="Usuń tabelę" danger onClick={() => editor.chain().focus().deleteTable().run()} />
               </Group>
             )}
           </div>
@@ -1283,6 +1456,9 @@ export function DocumentationEditorTiptapPoC({
 .doc-editor-tiptap-poc .ProseMirror table { border-collapse: collapse; table-layout: fixed; margin: 8px 0; }
 .doc-editor-tiptap-poc .ProseMirror table td, .doc-editor-tiptap-poc .ProseMirror table th { border: 1px solid #999; min-width: 60px; padding: 4px 8px; position: relative; }
 .doc-editor-tiptap-poc .ProseMirror .selectedCell:after { z-index: 2; position: absolute; content: ""; left: 0; right: 0; top: 0; bottom: 0; background: rgba(79, 195, 247, 0.35); pointer-events: none; }
+.doc-editor-tiptap-poc .table-inline-toolbar { display: flex; gap: 4px; margin: 4px 0; padding: 4px 6px; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); width: max-content; }
+.doc-editor-tiptap-poc .table-inline-toolbar button { border: 1px solid #ddd; background: #fff; border-radius: 4px; padding: 2px 7px; cursor: pointer; font-size: 13px; line-height: 1.6; }
+.doc-editor-tiptap-poc .table-inline-toolbar button:hover { background: #efedff; border-color: #6d5cfc; }
 .doc-editor-tiptap-poc .ProseMirror table th { background: #eee; font-weight: bold; }
 .doc-editor-tiptap-poc .page { box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
 .doc-editor-tiptap-poc .simple-page-break-line { position: absolute; left: -96px; right: -96px; height: 5px; background: #888; transform: translateY(-5px); pointer-events: none; z-index: 1; }
@@ -1315,12 +1491,25 @@ ${docContentCss("#doc-editor-content")}
       )}
       {showTableSizeModal && createPortal(
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100000 }} onClick={() => setShowTableSizeModal(false)}>
-          <div style={{ background: "#fff", borderRadius: 6, padding: 16, minWidth: 280 }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ background: "#fff", borderRadius: 6, padding: 16, minWidth: 280, maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ fontWeight: 600, marginBottom: 4 }}>📐 Rozmiar tabeli</h3>
             <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>{tableSizeInfo}</div>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Szerokość kolumny (px)</label>
-            <input type="number" value={tableSizeW} onChange={(e) => setTableSizeW(e.target.value)} style={{ width: "100%", marginBottom: 8 }} placeholder="np. 150" />
-            <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Wysokość wiersza (px)</label>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Szerokość kolumn (px)</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+              {tableSizeCols.map((v, i) => (
+                <label key={i} style={{ fontSize: 11, color: "#666" }}>
+                  K{i + 1}
+                  <input
+                    type="number"
+                    value={v}
+                    onChange={(e) => setTableSizeCols((cols) => cols.map((c, ci) => (ci === i ? e.target.value : c)))}
+                    style={{ width: 64, display: "block" }}
+                    placeholder="auto"
+                  />
+                </label>
+              ))}
+            </div>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Wysokość bieżącego wiersza (px)</label>
             <input type="number" value={tableSizeH} onChange={(e) => setTableSizeH(e.target.value)} style={{ width: "100%", marginBottom: 12 }} placeholder="np. 40" />
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button type="button" className="dt-btn" onClick={() => setShowTableSizeModal(false)}>Anuluj</button>

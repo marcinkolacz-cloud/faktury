@@ -1,0 +1,15 @@
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -1005,10 +1005,10 @@
+     let info = "Zaznacz komórkę w tabeli";
+     try {
+       const { $from } = editor.state.selection;
+-      let tableNode: any = null, tablePos = -1;
++      let tableNode: any = null;
+       for (let d = $from.depth; d > 0; d--) {
+         const node = $from.node(d);
+-        if (node.type.spec.tableRole === "table") { tableNode = node; tablePos = $from.before(d); break; }
++        if (node.type.spec.tableRole === "table") { tableNode = node; break; }
+       }
+       if (tableNode) {
+         const map = TableMap.get(tableNode);
