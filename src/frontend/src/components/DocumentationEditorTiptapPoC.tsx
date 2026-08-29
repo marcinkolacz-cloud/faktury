@@ -367,6 +367,18 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
         alt={node.attrs.alt || ""}
         style={{ ...style, outline: selected ? "2px solid #4fc3f7" : "none" }}
         draggable={editor.isEditable}
+        onDragStart={(e) => {
+          // Uchwyt resize (12x12px, w rogu) jest bardzo maly - kliknieciem
+          // o piksel za wczesnie/pozno w probie resize latwo trafic w sam
+          // <img>, ktory ma draggable=true (natywny drag&drop przenoszenia
+          // obrazka w dokumencie). Przegladarka wtedy odpala WLASNY drag
+          // obrazka, a ProseMirror przy upuszczeniu (nawet w tym samym
+          // miejscu) wstawia go jako NOWY wezel obok istniejacego - stad
+          // "klon" obrazka. Gdy obrazek jest zaznaczony (widoczne uchwyty),
+          // blokujemy natywny drag calkowicie - przenoszenie przez
+          // drag&drop dziala tylko na NIEzaznaczonym obrazku.
+          if (selected) e.preventDefault();
+        }}
       />
       {selected && (
         <span
@@ -677,19 +689,10 @@ function buildGapEl(pageNum: number, totalPages: number) {
   return el;
 }
 
-function buildSpacerEl(px: number) {
-  const el = document.createElement("div");
-  el.contentEditable = "false";
-  el.style.height = `${Math.max(0, Math.round(px))}px`;
-  return el;
-}
-
-function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingPageNum: number, totalPages: number, leftoverH: number, contentH: number) {
+function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingPageNum: number, totalPages: number) {
   return () => {
     const wrap = document.createElement("div");
     wrap.contentEditable = "false";
-    const spacerH = contentH - leftoverH;
-    if (spacerH > 0) wrap.appendChild(buildSpacerEl(spacerH));
     if (cfg.enableFooter && !(cfg.skipFirstPage && endingPageNum === 1)) wrap.appendChild(buildFooterEl(cfg, endingPageNum, totalPages));
     wrap.appendChild(buildGapEl(endingPageNum, totalPages));
     if (cfg.enableHeader && !(cfg.skipFirstPage && startingPageNum === 1)) wrap.appendChild(buildHeaderEl(cfg, startingPageNum, totalPages));
@@ -709,16 +712,14 @@ const MIN_LEAD = 60; // px - unikaj osamotnionego nagłówka na dole strony (jak
 // tiptap-pagination-plus (2026-08-28). Sumowanie wysokości per-blok jest
 // na to odporne i jest DOKŁADNIE tym samym algorytmem co paginateInner w
 // podglądzie (buildChapterPreviewHtml) - stąd liczba stron się zgadza.
-function computeBreakOffsets(view: any, contentH: number): { breakOffsets: number[]; leftovers: number[]; finalLeftover: number } {
+function computeBreakOffsets(view: any, contentH: number): number[] {
   const breakOffsets: number[] = [];
-  const leftovers: number[] = [];
   let currentH = 0;
   view.state.doc.forEach((_node: any, offset: number) => {
     const domNode = view.nodeDOM(offset);
     if (!(domNode instanceof HTMLElement)) return;
     if (domNode.classList.contains(PAGE_BREAK_CLASS)) {
       breakOffsets.push(offset);
-      leftovers.push(currentH);
       currentH = 0;
       return;
     }
@@ -726,16 +727,14 @@ function computeBreakOffsets(view: any, contentH: number): { breakOffsets: numbe
     const isHeading = /^H[1-4]$/.test(domNode.tagName);
     if (currentH > 0 && currentH + h > contentH) {
       breakOffsets.push(offset);
-      leftovers.push(currentH);
       currentH = 0;
     } else if (isHeading && currentH > 0 && (contentH - currentH) < (h + MIN_LEAD)) {
       breakOffsets.push(offset);
-      leftovers.push(currentH);
       currentH = 0;
     }
     currentH += h;
   });
-  return { breakOffsets, leftovers, finalLeftover: currentH };
+  return breakOffsets;
 }
 
 function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
@@ -745,7 +744,7 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   const headerHPx = cmToPx(cfg.headerHeightCm);
   const footerHPx = cmToPx(cfg.footerHeightCm);
   const contentH = PAGE_H_PX - headerHPx - footerHPx;
-  const { breakOffsets, leftovers, finalLeftover } = computeBreakOffsets(view, contentH);
+  const breakOffsets = computeBreakOffsets(view, contentH);
   const totalPages = breakOffsets.length + 1;
   cfg.onPageCountChange?.(totalPages);
   const decos: Decoration[] = [];
@@ -753,21 +752,14 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
     const endingPage = i + 1;
     const startingPage = i + 2;
     const key = `spb-${offset}`;
-    decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, startingPage, totalPages, leftovers[i], contentH), { side: -1, key }));
+    decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, startingPage, totalPages), { side: -1, key }));
   });
   if (cfg.enableHeader && !cfg.skipFirstPage) {
     decos.push(Decoration.widget(0, () => buildHeaderEl(cfg, 1, totalPages), { side: -1, key: "spb-header-first" }));
   }
   if (cfg.enableFooter && !(totalPages === 1 && cfg.skipFirstPage)) {
     const endPos = view.state.doc.content.size;
-    const spacerH = contentH - finalLeftover;
-    decos.push(Decoration.widget(endPos, () => {
-      const wrap = document.createElement("div");
-      wrap.contentEditable = "false";
-      if (spacerH > 0) wrap.appendChild(buildSpacerEl(spacerH));
-      wrap.appendChild(buildFooterEl(cfg, totalPages, totalPages));
-      return wrap;
-    }, { side: 1, key: "spb-footer-last" }));
+    decos.push(Decoration.widget(endPos, () => buildFooterEl(cfg, totalPages, totalPages), { side: 1, key: "spb-footer-last" }));
   }
   return DecorationSet.create(view.state.doc, decos);
 }
