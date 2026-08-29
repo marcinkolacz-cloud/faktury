@@ -382,6 +382,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const activeBookId = activeId !== null ? (chapterBook[activeId] ?? null) : null;
   const activeIdRef = useRef<number | null>(null);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  useEffect(() => { setLivePageCount(null); }, [activeId]);
   const [loading, setLoading] = useState(true);
   const [, setLoadingChapterContent] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -391,6 +392,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   useEffect(() => { showChainVersionRef.current = showChainVersion; }, [showChainVersion]);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [toolbarSlotEl, setToolbarSlotEl] = useState<HTMLDivElement | null>(null);
+  const [livePageCount, setLivePageCount] = useState<number | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   // 210mm in CSS px at the standard 96dpi reference used everywhere else
   // in this file (print preview, export) - must stay ONE authoritative
   // width so "Dopasuj do ekranu" only zooms (transform:scale), never
@@ -1039,6 +1042,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     if (tiptapHtmlRef.current === html || !tiptapHtmlRef.current) setDirty(false);
     recentlySavedRef.current = { id: active.id, until: Date.now() + RECENT_SAVE_GUARD_MS };
     setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: html } : c)));
+    setLastSavedAt(new Date());
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1200);
     if (!silent) {
@@ -1266,19 +1270,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           });
           flush();
           if (pages.length === 0) pages = [''];
-          // TYMCZASOWE (diagnostyka 4-vs-3-stron, do usunięcia po ustaleniu przyczyny)
-          (function(){
-            var totalH = 0, blockCount = 0;
-            units.forEach(function(el){
-              if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) return;
-              totalH += el.getBoundingClientRect().height;
-              blockCount += 1;
-            });
-            var badge = document.createElement('div');
-            badge.style.cssText = 'position:fixed;top:4px;right:4px;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;opacity:0.9;white-space:pre;';
-            badge.textContent = 'PODGLĄD Σ=' + Math.round(totalH) + 'px  bloków=' + blockCount + '  contentH=' + PAGE_H + '  strony=' + pages.length;
-            document.body.appendChild(badge);
-          })();
           pagesEl.innerHTML = pages.map(function(html, i){
             var isFirst = i === 0;
             var isOdd = (i + 1) % 2 === 1;
@@ -1575,11 +1566,19 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                 <div
                   onMouseDown={onEditWinDragStart}
                   title="Przeciągnij, żeby przesunąć okno"
-                  className="flex items-center gap-2 px-3 py-1.5 bg-[var(--accent)] text-white text-xs font-medium cursor-move select-none shrink-0"
+                  className="flex items-center gap-3 px-3 py-1.5 bg-[var(--accent)] text-white text-xs font-medium cursor-move select-none shrink-0 flex-wrap"
                 >
                   <span className="text-sm leading-none">✥</span>
-                  <span>Przeciągnij, żeby przesunąć okno</span>
-                  <span className="ml-auto opacity-80 truncate">{active.title}</span>
+                  <span className="truncate">{active.title}</span>
+                  <span className="ml-auto flex items-center gap-3 opacity-95 font-normal">
+                    <span title="Liczba stron (na żywo, w edytorze)">📄 {livePageCount != null ? `${livePageCount} str.` : "licz…"}</span>
+                    <span title="Kiedy ostatnio zapisano na Bartolini Drive">
+                      💾 {dirty ? "niezapisane zmiany" : lastSavedAt ? `zapisano ${lastSavedAt.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "brak zapisu w tej sesji"}
+                    </span>
+                    <span title={chapterBackupFlags[active.id] ? "Ma kopię zapasową on-chain (w kanistrze)" : "Brak kopii zapasowej on-chain — tylko na OneDrive"}>
+                      {chapterBackupFlags[active.id] ? "🛟 backup: tak" : "🛟 backup: nie"}
+                    </span>
+                  </span>
                 </div>
               )}
               <style>{docContentCss("#doc-editor-content")}</style>
@@ -1683,6 +1682,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         key={`${active.id}-${tiptapRemountTick}`}
                         initialHtml={active.contentHtml || "<p></p>"}
                         onChangeHtml={(html) => { tiptapHtmlRef.current = html; setDirty(true); }}
+                        onPageCountChange={setLivePageCount}
                         h1OffsetBefore={h1Offset}
                         headerLeft={hfSettings.headerText || `${deviceLabel} — Instrukcja obsługi`}
                         headerCenter={hfSettings.headerTextCenter}

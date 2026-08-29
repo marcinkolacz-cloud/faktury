@@ -445,6 +445,7 @@ type HfPagCfg = {
   headerFontSize: number; footerFontSize: number;
   headerBorder: boolean; footerBorder: boolean;
   skipFirstPage: boolean;
+  onPageCountChange?: (count: number) => void;
 };
 
 function cmToPx(cm: number) { return Math.round(cm * 10 * MM_TO_PX); }
@@ -552,27 +553,7 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   const contentH = PAGE_H_PX - headerHPx - footerHPx;
   const breakOffsets = computeBreakOffsets(view, contentH);
   const totalPages = breakOffsets.length + 1;
-  // TYMCZASOWE (diagnostyka 4-vs-3-stron, do usunięcia po ustaleniu przyczyny):
-  // widoczny licznik sumy wysokości bloków / ich liczby, żeby porównać 1:1
-  // z tym samym licznikiem w podglądzie bez potrzeby DevTools.
-  {
-    let totalH = 0;
-    let blockCount = 0;
-    view.state.doc.forEach((_node: any, offset: number) => {
-      const domNode = view.nodeDOM(offset);
-      if (!(domNode instanceof HTMLElement) || domNode.classList.contains(PAGE_BREAK_CLASS)) return;
-      totalH += domNode.getBoundingClientRect().height;
-      blockCount += 1;
-    });
-    let badge = document.getElementById("doc-debug-badge");
-    if (!badge) {
-      badge = document.createElement("div");
-      badge.id = "doc-debug-badge";
-      badge.style.cssText = "position:fixed;top:4px;right:4px;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;opacity:0.9;white-space:pre;";
-      document.body.appendChild(badge);
-    }
-    badge.textContent = `EDYTOR  Σ=${Math.round(totalH)}px  bloków=${blockCount}  contentH=${contentH}  strony=${totalPages}`;
-  }
+  cfg.onPageCountChange?.(totalPages);
   const decos: Decoration[] = [];
   breakOffsets.forEach((offset, i) => {
     const endingPage = i + 1;
@@ -673,6 +654,9 @@ type Props = {
   // treści - żeby fizycznie siedział w tym samym miejscu co reszta
   // przycisków (Edytuj/Zapisz/Podgląd...).
   toolbarPortalEl?: HTMLDivElement | null;
+  // Wywoływane za każdym przeliczeniem paginacji na żywo - żeby pasek
+  // tytułowy w DocumentationModule.tsx mógł pokazać aktualną liczbę stron.
+  onPageCountChange?: (count: number) => void;
 };
 export function DocumentationEditorTiptapPoC({
   initialHtml,
@@ -698,6 +682,7 @@ export function DocumentationEditorTiptapPoC({
   skipFirstPage = true,
   onImageUpload,
   toolbarPortalEl,
+  onPageCountChange,
 }: Props) {
   const [uploading, setUploading] = useState(false);
   const [importingDocx, setImportingDocx] = useState(false);
@@ -714,6 +699,7 @@ export function DocumentationEditorTiptapPoC({
     headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
     footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
     headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage,
+    onPageCountChange,
   });
   const forceRecomputeRef = useRef<(() => void) | null>(null);
   useEffect(() => {
@@ -721,11 +707,12 @@ export function DocumentationEditorTiptapPoC({
       headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
       footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
       headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage,
+      onPageCountChange,
     };
     // Zmiana ustawien nagl/stopki (modal) NIE jest zmiana editor.state.doc,
     // wiec silnik paginacji sam by tego nie przeliczyl - wymuszamy recompute.
     forceRecomputeRef.current?.();
-  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage]);
+  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, onPageCountChange]);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false }),
