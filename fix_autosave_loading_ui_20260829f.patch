@@ -1,0 +1,77 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 1e4b7ad..c1dcfac 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -840,6 +840,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     if (!editMode || activeId === null) return;
+     setLockStolenBy(null);
+     const myPrincipal = identity?.getPrincipal().toText();
++    if (!myPrincipal) return;
+     const check = () => {
+       actor.heartbeatEditLock(activeId).catch(() => {});
+       // Bezpiecznik na przypadek znaleziony w audycie: gdyby nasza blokada
+@@ -847,7 +848,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+       // to widzieć od razu zamiast po cichu dalej "edytować" i nadpisać
+       // czyjeś zmiany przy kolejnym zapisie. Nazwa z listy z modułu admin
+       // (listPrincipalDisplayNames), tak samo jak przy próbie wejścia
+-      // w edycję zajętego rozdziału.
++      // w edycję zajętego rozdziału. WYŁĄCZNIE informacyjne - nie blokuje
++      // autozapisu (zrobienie tego wcześniej okazało się zbyt ryzykowne:
++      // fałszywe wykrycie potrafiło całkowicie wyłączyć zapisywanie).
+       actor.getEditLock(activeId).then((lock: any) => {
+         const holderText = lock && lock.length > 0 ? lock[0].toText() : "";
+         if (holderText && holderText !== myPrincipal) {
+@@ -1126,12 +1129,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   // (e.g. transient OneDrive/token error) used to leave `dirty` stuck true
+   // forever with no further retry scheduled, silently losing edits.
+   useEffect(() => {
+-    if (!autoSave || !editMode || lockStolenBy) return;
++    if (!autoSave || !editMode) return;
+     const interval = window.setInterval(() => {
+       if (dirtyRef.current && !savingRef.current) saveChapter(true);
+     }, 3000);
+     return () => window.clearInterval(interval);
+-  }, [autoSave, editMode, lockStolenBy]);
++  }, [autoSave, editMode]);
+ 
+   const getChaptersForExport = async (): Promise<Chapter[]> => {
+     const liveHtml = active && tiptapHtmlRef.current ? tiptapHtmlRef.current.replace(/\s*data-num="[^"]*"/g, "") : null;
+@@ -1648,17 +1651,17 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+               {editMode && canEdit && active && lockStolenBy && (
+                 <div className="flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white text-xs font-medium shrink-0">
+                   <span>⚠️</span>
+-                  <span>Ten dokument edytuje teraz: <strong>{lockStolenBy}</strong> — Twoje zmiany mogą nie zostać zapisane. Autozapis wstrzymany, zapisz ręcznie i wyjdź z edycji.</span>
++                  <span>Ten dokument edytuje teraz: <strong>{lockStolenBy}</strong> — jeśli oboje zapiszecie, jedna wersja nadpisze drugą. Ustalcie kto kończy edycję.</span>
+                 </div>
+               )}
+               <style>{docContentCss("#doc-editor-content")}</style>
+               {!active ? (
+-                <div className="p-8 text-sm text-[var(--text-muted)] flex flex-col items-center gap-2">
++                <div className="p-8 text-sm text-[var(--text-muted)] flex items-center justify-center">
+                   {loading ? (
+-                    <>
+-                      <div className="w-6 h-6 rounded-full border-2 border-[var(--border-color)] border-t-[var(--accent)] animate-spin" />
+-                      <span className="text-green-600 font-medium">Tekst się ładuje, proszę czekać…</span>
+-                    </>
++                    <div className="flex flex-col items-center gap-3 px-8 py-6 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-lg">
++                      <div className="w-8 h-8 rounded-full border-[3px] border-[var(--border-color)] border-t-[var(--accent)] animate-spin" />
++                      <span className="text-green-600 font-semibold text-sm">Tekst się ładuje, proszę czekać…</span>
++                    </div>
+                   ) : (
+                     chapters.length === 0 ? "Brak rozdziałów — dodaj pierwszy w panelu po lewej." : "Wybierz rozdział z listy."
+                   )}
+@@ -1741,9 +1744,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                       <div className="text-xs text-red-500 font-mono text-center mb-1">BLAD PAGINACJI: {paginationError}</div>
+                     )}
+                     {(readViewLoading || !readViewReady) && (
+-                      <div className="mx-auto flex flex-col items-center justify-center gap-2 py-16 text-sm text-[var(--text-secondary)]" style={{ maxWidth: 900 }}>
+-                        <div className="w-6 h-6 rounded-full border-2 border-[var(--border-color)] border-t-[var(--accent)] animate-spin" />
+-                        <span className="text-green-600 font-medium">Tekst się ładuje, proszę czekać…</span>
++                      <div className="mx-auto flex items-center justify-center py-16" style={{ maxWidth: 900 }}>
++                        <div className="flex flex-col items-center gap-3 px-8 py-6 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-lg">
++                          <div className="w-8 h-8 rounded-full border-[3px] border-[var(--border-color)] border-t-[var(--accent)] animate-spin" />
++                          <span className="text-green-600 font-semibold text-sm">Tekst się ładuje, proszę czekać…</span>
++                        </div>
+                       </div>
+                     )}
+                     <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
