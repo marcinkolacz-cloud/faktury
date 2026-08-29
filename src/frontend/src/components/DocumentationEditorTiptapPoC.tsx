@@ -310,6 +310,8 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
   };
 
   const align = node.attrs.align || "center";
+  const indentLeftPx = node.attrs.indentLeft ? parseFloat(node.attrs.indentLeft) : 0;
+  const indentRightPx = node.attrs.indentRight ? parseFloat(node.attrs.indentRight) : 0;
   // Float/margin muszą siedzieć na WRAPPERZE (który jest elementem w
   // normalnym przepływie akapitu), nie na samym <img> - wcześniej wrapper
   // miał "display:inline-block" i float na <img> był w nim uwięziony,
@@ -323,10 +325,10 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
     wrapperStyle.width = node.attrs.width || "fit-content";
   } else if (align === "right") {
     wrapperStyle.float = "right";
-    wrapperStyle.margin = "0 0 8px 8px";
+    wrapperStyle.margin = `0 ${indentRightPx}px 8px 8px`;
   } else {
     wrapperStyle.float = "left";
-    wrapperStyle.margin = "0 8px 8px 0";
+    wrapperStyle.margin = `0 8px 8px ${indentLeftPx}px`;
   }
   const style: React.CSSProperties = { display: "block" };
   if (node.attrs.width) style.width = node.attrs.width;
@@ -407,13 +409,25 @@ const AlignableImage = ImageExt.extend({
           return "left";
         },
         renderHTML: (a: any) => {
+          const l = a.indentLeft ? parseFloat(a.indentLeft) : 0;
+          const r = a.indentRight ? parseFloat(a.indentRight) : 0;
           const style = a.align === "center"
             ? "float:none;display:block;margin-left:auto;margin-right:auto;"
             : a.align === "right"
-            ? "float:right;margin:0 0 8px 8px;"
-            : "float:left;margin:0 8px 8px 0;";
+            ? `float:right;margin:0 ${r}px 8px 8px;`
+            : `float:left;margin:0 8px 8px ${l}px;`;
           return { "data-align": a.align, style };
         },
+      },
+      indentLeft: {
+        default: null,
+        parseHTML: () => null,
+        renderHTML: () => ({}),
+      },
+      indentRight: {
+        default: null,
+        parseHTML: () => null,
+        renderHTML: () => ({}),
       },
     };
   },
@@ -477,9 +491,11 @@ const AlignableTable = Table.extend({
       align: {
         default: "left",
         renderHTML: (a: any) => {
+          const l = a.indentLeft ? parseFloat(a.indentLeft) : 0;
+          const r = a.indentRight ? parseFloat(a.indentRight) : 0;
           if (a.align === "center") return { style: "margin-left:auto;margin-right:auto;" };
-          if (a.align === "right") return { style: "margin-left:auto;margin-right:0;" };
-          return { style: "margin-left:0;margin-right:auto;" };
+          if (a.align === "right") return { style: `margin-left:auto;margin-right:${r}px;` };
+          return { style: `margin-left:${l}px;margin-right:auto;` };
         },
         parseHTML: (el: HTMLElement) => {
           const s = el.style.marginLeft === "auto" && el.style.marginRight === "auto"
@@ -489,6 +505,20 @@ const AlignableTable = Table.extend({
             : "left";
           return s;
         },
+      },
+      // Wcięcie z "Wcięcie całego dokumentu" (indentLeft/indentRight) - nie
+      // pisze własnego style'a (żeby nie kolidować z margin z "align"
+      // powyżej) - jest tylko odczytywane przez align.renderHTML (eksport)
+      // i przez syncTableWidths (żywy edytor, patrz niżej).
+      indentLeft: {
+        default: null,
+        parseHTML: (el: HTMLElement) => (el.style.marginLeft && el.style.marginLeft !== "auto" ? el.style.marginLeft : null),
+        renderHTML: () => ({}),
+      },
+      indentRight: {
+        default: null,
+        parseHTML: (el: HTMLElement) => (el.style.marginRight && el.style.marginRight !== "auto" ? el.style.marginRight : null),
+        renderHTML: () => ({}),
       },
     };
   },
@@ -727,16 +757,18 @@ function syncTableWidths(view: any) {
     // na żywo, mimo że sam atrybut poprawnie się zapisywał) - wymuszamy
     // pozycjonowanie bezpośrednio na realnym DOM-ie, tak jak szerokość wyżej.
     const align = node.attrs.align || "left";
+    const indentLeftPx = node.attrs.indentLeft ? parseFloat(node.attrs.indentLeft) : 0;
+    const indentRightPx = node.attrs.indentRight ? parseFloat(node.attrs.indentRight) : 0;
     if (align === "center") {
       dom.style.marginLeft = "auto";
       dom.style.marginRight = "auto";
       dom.style.float = "none";
     } else if (align === "right") {
       dom.style.marginLeft = "auto";
-      dom.style.marginRight = "0";
+      dom.style.marginRight = `${indentRightPx}px`;
       dom.style.float = "none";
     } else {
-      dom.style.marginLeft = "0";
+      dom.style.marginLeft = `${indentLeftPx}px`;
       dom.style.marginRight = "auto";
       dom.style.float = "none";
     }
@@ -1106,7 +1138,7 @@ export function DocumentationEditorTiptapPoC({
     const { state, view } = editor;
     let tr = state.tr;
     state.doc.descendants((node: any, pos: number) => {
-      if (node.type.name === "paragraph" || node.type.name === "heading") {
+      if (node.type.name === "paragraph" || node.type.name === "heading" || node.type.name === "table" || node.type.name === "image") {
         tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, indentLeft: leftPx, indentRight: rightPx });
       }
     });

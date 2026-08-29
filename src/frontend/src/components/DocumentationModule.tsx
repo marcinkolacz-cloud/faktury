@@ -1514,7 +1514,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     (async () => {
       const token = `${active.id}-${Date.now()}-${Math.random()}`;
       try {
-        const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active], token);
+        // gridView=false (nie true) - dokladnie to samo ulozenie co
+        // "Podglad wydruku" (dziala poprawnie: osobne kartki A4 jedna pod
+        // druga). Z gridView=true (flex-wrap) strony renderowaly sie jako
+        // jeden ciagly, nieprzelamany scroll zamiast oddzielnych kartek.
+        const html = await buildChapterPreviewHtml(false, false, new Set([active.id]), [active], token);
         if (!cancelled) {
           readViewTokenRef.current = token;
           setReadViewToken(token);
