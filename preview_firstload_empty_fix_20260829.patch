@@ -1,0 +1,38 @@
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -384,7 +384,7 @@
+   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+   useEffect(() => { setLivePageCount(null); }, [activeId]);
+   const [loading, setLoading] = useState(true);
+-  const [, setLoadingChapterContent] = useState(false);
++  const [loadingChapterContent, setLoadingChapterContent] = useState(false);
+   const [editMode, setEditMode] = useState(false);
+   const [fitToScreen, setFitToScreen] = useState(false);
+   const [showChainVersion, setShowChainVersion] = useState(false);
+@@ -1488,6 +1488,17 @@
+   useEffect(() => {
+     if (editMode) return;
+     if (!active) { setReadViewHtml(""); return; }
++    // Zanim tresc rozdzialu faktycznie doszla z Drive (fetchChapterContent w
++    // osobnym efekcie po zmianie activeId), active.contentHtml bywa jeszcze
++    // puste/nieaktualne - budowanie podgladu z tego dawalo widoczna PUSTA
++    // kartke A4 juz po ~0.5s (bo pusta tresc paginuje sie natychmiast), a
++    // prawdziwy tekst podmienial ja dopiero kilka sekund pozniej, gdy Drive
++    // odpowie. Trzymaj spinner az contentHtml bedzie realnie zaladowane.
++    if (loadingChapterContent) {
++      setReadViewLoading(true);
++      setReadViewReady(false);
++      return;
++    }
+     let cancelled = false;
+     setReadViewLoading(true);
+     setReadViewReady(false);
+@@ -1518,7 +1529,7 @@
+     })();
+     return () => { cancelled = true; };
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [editMode, active?.id, active?.contentHtml]);
++  }, [editMode, active?.id, active?.contentHtml, loadingChapterContent]);
+   // Gotowość podglądu sterowana natywnym zdarzeniem onLoad iframe zamiast
+   // postMessage+token - przeglądarka GWARANTUJE że load/error zawsze się
+   // odpali dla aktualnej nawigacji tego konkretnego elementu, więc znika
