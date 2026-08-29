@@ -1431,6 +1431,15 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // tresci, ktore inaczej przedwczesnie chowaly okno ladowania (ukazujac
   // na chwile pusta/nieukonczona strone, zanim realna tresc dojdzie).
   const readViewTokenRef = useRef<string | null>(null);
+  // Token trzymany tez w stanie i uzyty jako React "key" na iframe: jesli
+  // po powrocie z edycji swiezo zbudowany HTML wyjdzie BAJT W BAJT taki
+  // sam jak poprzedni (np. wejscie w edycje i wyjscie bez zadnej zmiany),
+  // samo ustawienie tego samego stringa w srcDoc NIC nie robi - przegladarka
+  // nie przeladowuje iframe, wiec jego skrypt nigdy ponownie nie wysyla
+  // postMessage("ready") i okno ladowania kreci sie w nieskonczonosc. Zmiana
+  // "key" wymusza pelny remount iframe (a wiec i realny reload) za kazdym
+  // razem, niezaleznie od tego czy tresc faktycznie sie zmienila.
+  const [readViewToken, setReadViewToken] = useState<string | null>(null);
   useEffect(() => {
     if (editMode) return;
     if (!active) { setReadViewHtml(""); return; }
@@ -1439,6 +1448,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     setReadViewReady(false);
     const token = `${active.id}-${Date.now()}-${Math.random()}`;
     readViewTokenRef.current = token;
+    setReadViewToken(token);
     (async () => {
       try {
         const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active], token);
@@ -1800,7 +1810,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         </div>
                       </div>
                     )}
-                    <iframe ref={readViewIframeRef} title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
+                    <iframe key={readViewToken || "initial"} ref={readViewIframeRef} title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
                     </>
                   )}
                   {editMode && canEdit && active && (
