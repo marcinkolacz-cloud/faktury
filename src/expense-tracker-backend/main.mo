@@ -12,6 +12,7 @@ import Random "mo:core/Random";
 import Char "mo:core/Char";
 import Float "mo:core/Float";
 import Nat "mo:core/Nat";
+import Nat8 "mo:core/Nat8";
 import Types "types";
 import AccessLib "lib/access";
 import InvitesLib "lib/invites";
@@ -40,8 +41,13 @@ import ChatArchiveApi "mixins/ChatArchiveApi";
 import AgentKnowledgeApi "mixins/AgentKnowledgeApi";
 import LogbookApi "mixins/LogbookApi";
 import AuditLogApi "mixins/AuditLogApi";
+import MixinObjectStorage "mo:caffeineai-object-storage/Mixin";
 
 persistent actor {
+  // Test wiazania caffeineai-object-storage (2026-08-29) - TYLKO backend2,
+  // do usuniecia jesli integracja z reczna klasa Backend po stronie
+  // frontendu okaze sie niepraktyczna.
+  include MixinObjectStorage();
   let projects = Map.empty<Nat, Types.Project>();
   let advancePayments = Map.empty<Nat, Types.AdvancePayment>();
   let expenses = Map.empty<Nat, Types.Expense>();
@@ -98,6 +104,9 @@ persistent actor {
   transient let deviceManualEditLocks = Map.empty<Nat, (Principal, Int, Int)>();
   // Nietrwały bufor chunkowanego zapisu treści rozdziału (omija limit ingress IC ~2MB).
   transient let deviceManualChapterUploadBuffers = Map.empty<Nat, Text>();
+  let deviceManualImages = Map.empty<Text, Blob>();
+  let deviceManualImageContentType = Map.empty<Text, Text>();
+  transient let deviceManualImageUploadBuffers = Map.empty<Text, List.List<Nat8>>();
   let documentationEditors = Map.empty<Principal, Bool>();
   let docHeaderFooterSettings = Map.empty<Text, Types.DocHeaderFooterSettings>();
   let deviceManualVariables = Map.empty<Nat, [Types.ManualVariable]>();
@@ -262,7 +271,7 @@ persistent actor {
   include ContractsApi(contracts, contractsTrashed, contractDriveFolders, accessRoles, moduleAccess);
   include EmailSubscribersApi(emailSubscribers, accessRoles, moduleAccess);
   include DevicesApi(devices, devicesTrashed, deviceServiceEntriesV2, accessRoles, moduleAccess);
-  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, deviceManualVariables, deviceManualChapterBackupEnabled, deviceManualChapterBackupTrash, docFolders, accessRoles, moduleAccess, documentBooks, chapterBookId, bookManualVariables, bookHeaderFooterSettings);
+  include DeviceManualApi(deviceManualChapters, deviceManualChaptersTrashed, deviceManualEditLocks, deviceManualChapterUploadBuffers, documentationEditors, docHeaderFooterSettings, deviceManualVariables, deviceManualChapterBackupEnabled, deviceManualChapterBackupTrash, docFolders, accessRoles, moduleAccess, documentBooks, chapterBookId, bookManualVariables, bookHeaderFooterSettings, deviceManualImages, deviceManualImageContentType, deviceManualImageUploadBuffers);
   include LogbookApi(logbookEntries, logbookEntriesTrashed, logbookEntrySignatures, logbookEntryDeviceId, logbookEntryLinkedTicket, devices, logbookInstructorPinHash, logbookInstructorSalt, logbookInstructorName, logbookInstructorActive, logbookInstructorCreatedAt, logbookSessions, logbookLoginAttempts, recentLogbookSubmissions, accessRoles, moduleAccess, tickets, ticketTokens, ticketExtras, recentSubmissionTimes);
   include KsefApi(pendingInvoices, accessRoles, invoiceSharedToTeam, invoiceLineItems, invoiceOneDriveLink, moduleAccess);
 
@@ -677,5 +686,38 @@ persistent actor {
 
   public query ({ caller }) func isCallerAdmin() : async Bool {
     isAdmin(caller);
+  };
+
+  // Serwuje surowe bajty obrazkow backupu dokumentacji pod
+  // /manualImage/<id> - celowo bez autoryzacji (http_request query nie ma
+  // wiarygodnego callera na IC), bezpieczenstwo opiera sie na losowym,
+  // nieodgadnialnym id (patrz beginManualImageUpload).
+  public query func http_request(req : { method : Text; url : Text; headers : [(Text, Text)]; body : Blob }) : async {
+    status_code : Nat16;
+    headers : [(Text, Text)];
+    body : Blob;
+    upgrade : ?Bool;
+  } {
+    let prefix = "/manualImage/";
+    if (req.method != "GET" or not Text.startsWith(req.url, #text prefix)) {
+      return { status_code = 404; headers = [("Content-Type", "text/plain")]; body = Text.encodeUtf8("Not Found"); upgrade = null };
+    };
+    let afterPrefix = Text.trimStart(req.url, #text prefix);
+    let id = switch (Text.split(afterPrefix, #char '?').next()) {
+      case (?v) { v };
+      case null { afterPrefix };
+    };
+    switch (deviceManualImages.get(id)) {
+      case null { { status_code = 404; headers = [("Content-Type", "text/plain")]; body = Text.encodeUtf8("Nie znaleziono obrazka"); upgrade = null } };
+      case (?bytes) {
+        let contentType = switch (deviceManualImageContentType.get(id)) { case (?ct) ct; case null "application/octet-stream" };
+        {
+          status_code = 200;
+          headers = [("Content-Type", contentType), ("Cache-Control", "public, max-age=31536000, immutable")];
+          body = bytes;
+          upgrade = null;
+        };
+      };
+    };
   };
 };

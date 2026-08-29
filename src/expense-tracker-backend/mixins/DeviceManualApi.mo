@@ -7,6 +7,9 @@ import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
 import Array "mo:core/Array";
 import Text "mo:core/Text";
+import Blob "mo:core/Blob";
+import Random "mo:core/Random";
+import Nat8 "mo:core/Nat8";
 import AccessLib "../lib/access";
 
 // Instrukcja obsługi per urządzenie — rozdziały przechowywane w kanistrze
@@ -32,6 +35,13 @@ mixin (
   chapterBookId : Map.Map<Nat, Nat>,
   bookManualVariables : Map.Map<Nat, [Types.ManualVariable]>,
   bookHeaderFooterSettings : Map.Map<Nat, Types.DocHeaderFooterSettings>,
+  // Obrazki dokumentacji przechowywane jako surowe bajty na kanistrze
+  // (zamiast OneDrive) — droga na zniknięcie obrazków z kopii backupu,
+  // bez narzutu base64 (chunkowany upload jak przy legacy tresci
+  // rozdzialow, patrz beginChapterUpload/appendChapterChunk wyzej).
+  deviceManualImages : Map.Map<Text, Blob>,
+  deviceManualImageContentType : Map.Map<Text, Text>,
+  deviceManualImageUploadBuffers : Map.Map<Text, List.List<Nat8>>,
 ) {
   func requireManualRead(caller : Principal) {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
@@ -1048,5 +1058,60 @@ mixin (
     var result = List.empty<(Nat, Int)>();
     for ((id, ts) in deviceManualChaptersTrashed.entries()) { result.add((id, ts)); };
     result.toArray();
+  };
+
+  // Chunkowany upload obrazka backupu dokumentacji (surowe bajty, bez
+  // base64) — beginManualImageUpload rezerwuje losowe, nieodgadnialne id
+  // (jak fileId w fget-personal-drive), appendManualImageChunk dokłada
+  // kolejne kawałki, commitManualImageUpload finalizuje zapis. Serwowanie
+  // pod /manualImage/<id> — patrz http_request w main.mo.
+  public shared ({ caller }) func beginManualImageUpload() : async Text {
+    requireManualWrite(caller);
+    let entropy = Blob.toArray(await Random.blob());
+    let hex = "0123456789abcdef";
+    let hexChars = Text.toArray(hex);
+    var id = "img_";
+    var i = 0;
+    while (i < 32) {
+      let byte = Nat8.toNat(entropy[i / 2]);
+      let idx = if (i % 2 == 0) { byte / 16 } else { byte % 16 };
+      id #= Text.fromChar(hexChars[idx]);
+      i += 1;
+    };
+    deviceManualImageUploadBuffers.add(id, List.empty<Nat8>());
+    id;
+  };
+
+  public shared ({ caller }) func appendManualImageChunk(id : Text, chunk : Blob) : async Bool {
+    requireManualWrite(caller);
+    switch (deviceManualImageUploadBuffers.get(id)) {
+      case (?buf) {
+        for (b in chunk.vals()) { buf.add(b); };
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  public shared ({ caller }) func commitManualImageUpload(id : Text, contentType : Text) : async Bool {
+    requireManualWrite(caller);
+    switch (deviceManualImageUploadBuffers.get(id)) {
+      case (?buf) {
+        deviceManualImages.add(id, Blob.fromArray(buf.toArray()));
+        deviceManualImageContentType.add(id, contentType);
+        deviceManualImageUploadBuffers.remove(id);
+        true;
+      };
+      case null { false };
+    };
+  };
+
+  // Usuwanie nieużywanego już obrazka backupu (np. po nadpisaniu kopii
+  // rozdziału nowszą wersją) — admin-only, symetrycznie do reszty kosza.
+  public shared ({ caller }) func deleteManualImage(id : Text) : async Bool {
+    requireManualWrite(caller);
+    deviceManualImages.remove(id);
+    deviceManualImageContentType.remove(id);
+    true;
   };
 };
