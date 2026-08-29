@@ -1484,6 +1484,16 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     const token = `${active.id}-${Date.now()}-${Math.random()}`;
     readViewTokenRef.current = token;
     setReadViewToken(token);
+    // Failsafe niezależny od przyczyny zawieszenia (obraz z Drive wiszący
+    // bez load/error, zgubiona wiadomość postMessage, cross-origin itp.):
+    // jeśli po 8s nadal nie przyszło "ready" dla TEGO tokenu, odblokuj
+    // spinner mimo wszystko - nieaktualny/niedopracowany podgląd jest
+    // lepszy niż okno kręcące się w nieskończoność.
+    const failsafe = window.setTimeout(() => {
+      if (cancelled || readViewTokenRef.current !== token) return;
+      setReadViewReady(true);
+      setPaginationError("Podgląd nie potwierdził gotowości w 8s - pokazano mimo to.");
+    }, 8000);
     (async () => {
       try {
         const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active], token);
@@ -1503,7 +1513,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         if (!cancelled) setReadViewLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; window.clearTimeout(failsafe); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editMode, active?.id, active?.contentHtml]);
   useEffect(() => {
