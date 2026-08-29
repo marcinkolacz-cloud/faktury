@@ -1,4 +1,5 @@
 import { odList, odCreateFolder, odUploadFile, odDelete, odDownloadUrl, odDownloadFileBlob, odRename } from "./oneDriveConfig";
+import { driveTimingReset, driveMark } from "./driveTiming";
 
 const ROOT_FOLDER = "Dokumentacje";
 
@@ -20,7 +21,9 @@ const folderListCache = new Map<string, { items: any[]; expiry: number }>();
 async function listFolderCached(path: string): Promise<any[]> {
   const cached = folderListCache.get(path);
   if (cached && Date.now() < cached.expiry) return cached.items;
-  const listing = await odList(path);
+  // Listing rozdzialow/plikow tekstowych nie potrzebuje miniatur -
+  // pomija Graph-side $expand=thumbnails (patrz oneDriveConfig.odList).
+  const listing = await odList(path, true);
   const items = listing.items || [];
   folderListCache.set(path, { items, expiry: Date.now() + FOLDER_LIST_TTL_MS });
   return items;
@@ -43,14 +46,19 @@ async function ensureFolder(parentPath: string, name: string): Promise<void> {
 // changes) used to find and replace the OLD file when the title or order
 // changes, so renaming never leaves an orphaned duplicate behind.
 export async function loadChapterContentFromDrive(deviceLabel: string, chapterId: number): Promise<string> {
+  driveTimingReset();
   const deviceFolder = sanitizeName(deviceLabel);
   const folderPath = `${ROOT_FOLDER}/${deviceFolder}`;
   const idTag = `[${chapterId}]`;
   const items = await listFolderCached(folderPath);
+  driveMark("list");
   const match = items.find((i: any) => typeof i.name === "string" && i.name.includes(idTag));
   if (!match) return "";
   const blob = await odDownloadFileBlob(match.id);
-  return await blob.text();
+  driveMark("download");
+  const text = await blob.text();
+  driveMark("text");
+  return text;
 }
 
 export async function syncChapterToDrive(

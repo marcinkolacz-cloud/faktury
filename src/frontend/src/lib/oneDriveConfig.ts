@@ -1,3 +1,4 @@
+import { driveMark } from "./driveTiming";
 export const ONEDRIVE_WORKER_URL = "https://onedrive-proxy.marcinkolacz.workers.dev";
 
 let registeredActor: any = null;
@@ -44,6 +45,7 @@ async function getDriveToken(): Promise<string> {
 
 async function authHeaders(extra: Record<string, string> = {}) {
   const token = await getDriveToken();
+  driveMark("token");
   return { Authorization: "Bearer " + token, ...extra };
 }
 
@@ -99,8 +101,9 @@ export async function odUploadFilePublic(path: string, file: File, bearerToken: 
 }
 
 
-export async function odList(path: string) {
-  const resp = await fetch(ONEDRIVE_WORKER_URL + "/list?path=" + encodeURIComponent(path), { headers: await authHeaders() });
+export async function odList(path: string, skipThumbs: boolean = false) {
+  const qs = "/list?path=" + encodeURIComponent(path) + (skipThumbs ? "&thumbs=0" : "");
+  const resp = await fetch(ONEDRIVE_WORKER_URL + qs, { headers: await authHeaders() });
   return resp.json();
 }
 

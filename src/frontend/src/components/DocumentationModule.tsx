@@ -4,6 +4,7 @@ import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
 import { setDriveActor, warmDriveToken } from "../lib/oneDriveConfig";
 import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive } from "../lib/documentationDriveSync";
+import { driveTimingSummary, driveMark } from "../lib/driveTiming";
 import { isTocHeadingTitle } from "../lib/headingNumbering";
 import { docContentCss } from "../lib/docContentStyle";
 import { ManualVariablesPanel } from "./ManualVariablesPanel";
@@ -449,6 +450,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
   const [paginationError, setPaginationError] = useState<string>("");
+  const [driveTimingInfo, setDriveTimingInfo] = useState<string>(""); // TYMCZASOWE - diagnostyka szybkosci ladowania z Drive
   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
   // all-selected so behavior matches the previous always-everything
   // export; only truly NEW chapter ids get auto-added as selected, so a
@@ -1394,24 +1396,26 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             try { parent.postMessage({ type: 'docPreviewPageCount', count: pages.length, token: __TOKEN__ }, '*'); } catch (e) {}
           }
           var finalImgs = Array.prototype.slice.call(pagesEl.querySelectorAll('img'));
+          try { parent.postMessage({ type: 'docPreviewTiming', label: 'images2-start-' + finalImgs.length, token: __TOKEN__ }, '*'); } catch (e) {}
           if (finalImgs.length === 0) {
             requestAnimationFrame(notifyReady);
           } else {
             var remaining2 = finalImgs.length;
             finalImgs.forEach(function(img){
-              if (img.complete) { remaining2--; if (remaining2 === 0) requestAnimationFrame(notifyReady); }
-              else { img.onload = img.onerror = function(){ remaining2--; if (remaining2 === 0) requestAnimationFrame(notifyReady); }; }
+              if (img.complete) { remaining2--; if (remaining2 === 0) { try { parent.postMessage({ type: 'docPreviewTiming', label: 'images2-done', token: __TOKEN__ }, '*'); } catch (e) {} requestAnimationFrame(notifyReady); } }
+              else { img.onload = img.onerror = function(){ remaining2--; if (remaining2 === 0) { try { parent.postMessage({ type: 'docPreviewTiming', label: 'images2-done', token: __TOKEN__ }, '*'); } catch (e) {} requestAnimationFrame(notifyReady); } }; }
             });
           }
         }
 
         function waitImagesThenPaginate(){
           var imgs = Array.prototype.slice.call(measure.querySelectorAll('img'));
+          try { parent.postMessage({ type: 'docPreviewTiming', label: 'images1-start-' + imgs.length, token: __TOKEN__ }, '*'); } catch (e) {}
           if (imgs.length === 0) { requestAnimationFrame(paginate); return; }
           var remaining = imgs.length;
           imgs.forEach(function(img){
-            if (img.complete) { remaining--; if (remaining === 0) requestAnimationFrame(paginate); }
-            else { img.onload = img.onerror = function(){ remaining--; if (remaining === 0) requestAnimationFrame(paginate); }; }
+            if (img.complete) { remaining--; if (remaining === 0) { try { parent.postMessage({ type: 'docPreviewTiming', label: 'images1-done', token: __TOKEN__ }, '*'); } catch (e) {} requestAnimationFrame(paginate); } }
+            else { img.onload = img.onerror = function(){ remaining--; if (remaining === 0) { try { parent.postMessage({ type: 'docPreviewTiming', label: 'images1-done', token: __TOKEN__ }, '*'); } catch (e) {} requestAnimationFrame(paginate); } }; }
           });
         }
         if (document.fonts && document.fonts.ready) {
@@ -1543,6 +1547,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           readViewTokenRef.current = token;
           setReadViewToken(token);
           setReadViewHtml(html);
+          setDriveTimingInfo(driveTimingSummary());
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -1602,6 +1607,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       if (e.data && e.data.type === "docPreviewPageCount") {
         setPreviewPageCount(e.data.count);
         setPaginationError(e.data.error || "");
+      }
+      if (e.data && e.data.type === "docPreviewTiming") {
+        driveMark(String(e.data.label));
+        setDriveTimingInfo(driveTimingSummary());
       }
     };
     window.addEventListener("message", onMsg);
@@ -1931,6 +1940,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     )}
                     {paginationError && (
                       <div className="text-xs text-red-500 font-mono text-center mb-1">BLAD PAGINACJI: {paginationError}</div>
+                    )}
+                    {driveTimingInfo && (
+                      <div className="text-xs text-blue-500 font-mono text-center mb-1">CZAS LADOWANIA: {driveTimingInfo}</div>
                     )}
                     {(readViewLoading || !readViewReady) && (
                       <div className="mx-auto flex items-center justify-center py-16" style={{ maxWidth: 900 }}>
