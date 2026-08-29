@@ -1,0 +1,239 @@
+diff --git a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+index 6bb8a60..2443107 100755
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -859,6 +859,50 @@ export function DocumentationEditorTiptapPoC({
+   const pickImage = () => fileInputRef.current?.click();
+   const pickDocx = () => docxInputRef.current?.click();
+ 
++  // Ten sam wygląd co RailButton w lewym sidebarze (DocumentationModule.tsx) -
++  // zduplikowany lokalnie, żeby toolbar edytora (teraz pionowy, doklejony
++  // do sidebara) wyglądał spójnie bez przenoszenia komponentu między
++  // plikami.
++  const RailBtn = ({ icon, label, onClick, onMouseDown, active, disabled, title, danger }: {
++    icon: React.ReactNode; label: string; onClick?: () => void; onMouseDown?: (e: React.MouseEvent) => void;
++    active?: boolean; disabled?: boolean; title?: string; danger?: boolean;
++  }) => (
++    <button
++      type="button"
++      onMouseDown={onMouseDown ?? ((e) => e.preventDefault())}
++      onClick={onClick}
++      disabled={disabled}
++      title={title || label}
++      className={`flex flex-col items-center gap-0.5 w-16 py-2 rounded-lg text-[10px] leading-tight disabled:opacity-40 transition-all duration-100 active:scale-90 ${
++        active
++          ? "bg-[var(--accent)] text-white active:bg-[var(--accent)]/80"
++          : danger
++          ? "text-[var(--text-secondary)] hover:bg-red-50 hover:text-red-600"
++          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)] active:bg-[var(--accent)]/20"
++      }`}
++    >
++      <span className="text-lg leading-none">{icon}</span>
++      <span className="text-center px-0.5">{label}</span>
++    </button>
++  );
++  const RailSelect = ({ icon, label, children, onChange }: { icon: React.ReactNode; label: string; children: React.ReactNode; onChange: (v: string) => void }) => (
++    <label className="flex flex-col items-center gap-0.5 w-16 py-2 rounded-lg text-[10px] leading-tight text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)] cursor-pointer" title={label}>
++      <span className="text-lg leading-none">{icon}</span>
++      <span>{label}</span>
++      <select
++        defaultValue=""
++        onMouseDown={(e) => e.stopPropagation()}
++        onChange={(e) => { const v = e.target.value; e.target.value = ""; onChange(v); }}
++        style={{ position: "absolute", opacity: 0, width: 1, height: 1, pointerEvents: "none" }}
++        tabIndex={-1}
++      >
++        {children}
++      </select>
++    </label>
++  );
++
++  if (!editor) return null;
++
+   const onFileChosen = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+     const file = e.target.files?.[0];
+     e.target.value = "";
+@@ -911,7 +955,7 @@ export function DocumentationEditorTiptapPoC({
+   return (
+     <div
+       className="doc-editor-tiptap-poc"
+-      style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}
++      style={{ position: "relative", display: "flex", flexDirection: "row", height: "100%" }}
+       onDragOver={(e) => e.preventDefault()}
+       onDrop={async (e) => {
+         const file = e.dataTransfer.files?.[0];
+@@ -939,16 +983,14 @@ export function DocumentationEditorTiptapPoC({
+     >
+       <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={onFileChosen} />
+       <input ref={docxInputRef} type="file" accept=".docx" style={{ display: "none" }} onChange={onDocxChosen} />
+-      <div className="toolbar dt-toolbar">
+-        <button type="button" className="dt-btn" data-active={editor.isActive("bold")} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().toggleBold().run()}><b>B</b></button>
+-        <button type="button" className="dt-btn" data-active={editor.isActive("italic")} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().toggleItalic().run()}><i>I</i></button>
+-        <button type="button" className="dt-btn" data-active={editor.isActive("bulletList")} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().toggleBulletList().run()}>• Lista</button>
+-        <select
+-          defaultValue=""
+-          onMouseDown={(e) => e.stopPropagation()}
+-          onChange={(e) => {
+-            const v = e.target.value;
+-            e.target.value = "";
++      <div className="dt-toolbar">
++        <RailBtn icon={<b>B</b>} label="Pogrubienie" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} />
++        <RailBtn icon={<i>I</i>} label="Kursywa" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} />
++        <RailBtn icon="•" label="Lista" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()} />
++        <RailSelect
++          icon="Aa"
++          label="Styl"
++          onChange={(v) => {
+             if (v === "section") applySectionStyle();
+             else if (v === "p") editor.chain().focus().setParagraph().run();
+             else if (v === "h1" || v === "h2" || v === "h3") editor.chain().focus().toggleHeading({ level: Number(v[1]) as 1 | 2 | 3 }).run();
+@@ -960,33 +1002,24 @@ export function DocumentationEditorTiptapPoC({
+           <option value="h1">Heading 1 — Rozdział</option>
+           <option value="h2">Heading 2 — Podrozdział</option>
+           <option value="h3">Heading 3 — Punkt</option>
+-        </select>
+-        <select
+-          defaultValue=""
+-          onMouseDown={(e) => e.stopPropagation()}
+-          onChange={(e) => {
+-            const v = e.target.value;
+-            e.target.value = "";
+-            if (v) editor.chain().focus().setFontSize(v).run();
+-          }}
+-        >
++        </RailSelect>
++        <RailSelect icon="🔠" label="Rozmiar" onChange={(v) => { if (v) editor.chain().focus().setFontSize(v).run(); }}>
+           <option value="" disabled>Rozmiar</option>
+           <option value="10px">Bardzo mała</option>
+           <option value="13px">Mała</option>
+           <option value="16px">Normalna</option>
+           <option value="18px">Duża</option>
+           <option value="24px">Większa</option>
+-        </select>
+-        <button type="button" className="dt-btn" data-active={editor.isActive({ textAlign: "left" })} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().setTextAlign("left").run()}>⬅</button>
+-        <button type="button" className="dt-btn" data-active={editor.isActive({ textAlign: "center" })} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().setTextAlign("center").run()}>↔</button>
+-        <button type="button" className="dt-btn" data-active={editor.isActive({ textAlign: "right" })} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().setTextAlign("right").run()}>➡</button>
+-        <button type="button" className="dt-btn" data-active={editor.isActive({ textAlign: "justify" })} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().setTextAlign("justify").run()}>☰</button>
+-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => setShowPlainPasteModal(true)}>🧹 Wklej tekst</button>
+-        <button
+-          type="button"
+-          className="dt-btn"
+-          data-active={editor.isActive("table")}
+-          onMouseDown={(e) => e.preventDefault()}
++        </RailSelect>
++        <RailBtn icon="⬅" label="Lewo" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()} />
++        <RailBtn icon="↔" label="Środek" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()} />
++        <RailBtn icon="➡" label="Prawo" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()} />
++        <RailBtn icon="☰" label="Justuj" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()} />
++        <RailBtn icon="🧹" label="Wklej tekst" onClick={() => setShowPlainPasteModal(true)} />
++        <RailBtn
++          icon="🔲"
++          label="Tabela"
++          active={editor.isActive("table")}
+           onClick={() => {
+             if (editor.isActive("table")) {
+               alert("Kursor jest już wewnątrz tabeli — zagnieżdżanie tabel nie jest obsługiwane.");
+@@ -994,34 +1027,34 @@ export function DocumentationEditorTiptapPoC({
+             }
+             editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+           }}
+-        >🔲 Tabela</button>
++        />
+         {editor.isActive("table") && (
+           <>
+-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().addRowAfter().run()}>+Wiersz</button>
+-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteRow().run()}>-Wiersz</button>
+-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().addColumnAfter().run()}>+Kolumna</button>
+-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteColumn().run()}>-Kolumna</button>
+-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={openTableSizeModal}>📐 Rozmiar</button>
+-            <button type="button" className="dt-btn" data-active={editor.getAttributes("table").align === "left"} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()}>⬅</button>
+-            <button type="button" className="dt-btn" data-active={editor.getAttributes("table").align === "center"} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()}>↔</button>
+-            <button type="button" className="dt-btn" data-active={editor.getAttributes("table").align === "right"} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()}>➡</button>
+-            <button type="button" className="dt-btn dt-btn-danger" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteTable().run()}>🗑 Usuń tabelę</button>
++            <div className="dt-toolbar-sep" />
++            <RailBtn icon="➕⏵" label="Wiersz" onClick={() => editor.chain().focus().addRowAfter().run()} />
++            <RailBtn icon="➖⏵" label="-Wiersz" onClick={() => editor.chain().focus().deleteRow().run()} />
++            <RailBtn icon="➕⏷" label="Kolumna" onClick={() => editor.chain().focus().addColumnAfter().run()} />
++            <RailBtn icon="➖⏷" label="-Kolumna" onClick={() => editor.chain().focus().deleteColumn().run()} />
++            <RailBtn icon="📐" label="Rozmiar tab." onClick={openTableSizeModal} />
++            <RailBtn icon="⬅" label="Tab. lewo" active={editor.getAttributes("table").align === "left"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()} />
++            <RailBtn icon="↔" label="Tab. środek" active={editor.getAttributes("table").align === "center"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()} />
++            <RailBtn icon="➡" label="Tab. prawo" active={editor.getAttributes("table").align === "right"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()} />
++            <RailBtn icon="🗑" label="Usuń tab." danger onClick={() => editor.chain().focus().deleteTable().run()} />
++            <div className="dt-toolbar-sep" />
+           </>
+         )}
+-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={insertBreak}>⏎ Podział strony</button>
+-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={pickImage} disabled={uploading}>{uploading ? "Wysyłanie…" : "🖼 Obraz"}</button>
+-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={pickDocx} disabled={importingDocx}>{importingDocx ? "Importowanie…" : "📄 Import z Worda"}</button>
+-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={addComment}>💬 Komentarz</button>
++        <RailBtn icon="⏎" label="Podział str." onClick={insertBreak} />
++        <RailBtn icon="🖼" label={uploading ? "Wysyłanie…" : "Obraz"} disabled={uploading} onClick={pickImage} />
++        <RailBtn icon="📄" label={importingDocx ? "Import…" : "Import Word"} disabled={importingDocx} onClick={pickDocx} />
++        <RailBtn icon="💬" label="Komentarz" onClick={addComment} />
+       </div>
+       <div className="dt-page-scroll" style={{ background: "#888", padding: "24px 0", display: "flex", justifyContent: "center" }}>
+         <style>{`
+-.dt-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; position: sticky; top: 0; z-index: 60; background: var(--bg-card, #fff); border-bottom: 1px solid var(--border-color, #ddd); }
++.dt-toolbar { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; position: sticky; top: 0; left: 0; z-index: 60; width: 72px; flex-shrink: 0; height: 100%; overflow-y: auto; background: var(--bg-card, #fff); border-right: 1px solid var(--border-color, #ddd); }
++.dt-toolbar-sep { width: 40px; height: 1px; background: var(--border-color, #ddd); margin: 4px 0; }
+ .dt-btn { border: 1px solid var(--border-color, #ddd); background: var(--bg-card, #fff); color: var(--text-primary, #222); border-radius: 6px; padding: 5px 9px; font-size: 13px; cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+ .dt-btn:hover { background: var(--accent-light, #efedff); border-color: var(--accent, #6d5cfc); }
+-.dt-btn[data-active="true"] { background: var(--accent, #6d5cfc); border-color: var(--accent, #6d5cfc); color: #fff; }
+-.dt-btn:disabled { opacity: 0.5; cursor: default; }
+-.dt-btn-danger:hover { background: #fdeaea; border-color: #d33; color: #b00; }
+-.dt-page-scroll { flex: 1; overflow-y: auto; }
++.dt-page-scroll { flex: 1; overflow-y: auto; min-width: 0; }
+ .doc-editor-tiptap-poc .ProseMirror {
+   position: relative;
+   width: 794px;
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 28942e2..5a8de21 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -1304,11 +1304,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   // realnie spaginowany HTML co w "Podgląd wydruku"/"2 strony".
+   const [readViewHtml, setReadViewHtml] = useState("");
+   const [readViewLoading, setReadViewLoading] = useState(false);
++  const [readViewReady, setReadViewReady] = useState(false);
+   useEffect(() => {
+     if (editMode) return;
+     if (!active) { setReadViewHtml(""); return; }
+     let cancelled = false;
+     setReadViewLoading(true);
++    setReadViewReady(false);
+     (async () => {
+       try {
+         const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active]);
+@@ -1328,11 +1330,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+       if (e.data && e.data.type === "docPreviewPageCount") {
+         setPreviewPageCount(e.data.count);
+         setPaginationError(e.data.error || "");
++        if (!editMode) setReadViewReady(true);
+       }
+     };
+     window.addEventListener("message", onMsg);
+     return () => window.removeEventListener("message", onMsg);
+-  }, []);
++  // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [editMode]);
+   const PDF_WORKER_URL = "https://bartolini-pdf-export.marcinkolacz.workers.dev";
+   const exportPdfV2 = async () => {
+     const selected = chapters.filter((c) => selectedForPrint.has(c.id));
+@@ -1609,10 +1613,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                     {paginationError && (
+                       <div className="text-xs text-red-500 font-mono text-center mb-1">BLAD PAGINACJI: {paginationError}</div>
+                     )}
+-                    {readViewLoading && (
+-                      <div className="text-xs text-[var(--text-muted)] text-center mb-2">⏳ Wczytywanie podglądu…</div>
++                    {(readViewLoading || !readViewReady) && (
++                      <div className="mx-auto flex flex-col items-center justify-center gap-2 py-16 text-sm text-[var(--text-secondary)]" style={{ maxWidth: 900 }}>
++                        <div className="w-6 h-6 rounded-full border-2 border-[var(--border-color)] border-t-[var(--accent)] animate-spin" />
++                        <span>Tekst się ładuje, proszę czekać…</span>
++                      </div>
+                     )}
+-                    <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none" }} />
++                    <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
+                     </>
+                   )}
+                   {editMode && canEdit && active && (

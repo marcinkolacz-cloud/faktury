@@ -5,6 +5,7 @@ import { TopBar } from "./TopBar";
 import { setDriveActor, warmDriveToken } from "../lib/oneDriveConfig";
 import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive } from "../lib/documentationDriveSync";
 import { isTocHeadingTitle } from "../lib/headingNumbering";
+import { docContentCss } from "../lib/docContentStyle";
 import { ManualVariablesPanel } from "./ManualVariablesPanel";
 import { DocumentationEditorTiptapPoC } from "./DocumentationEditorTiptapPoC";
 
@@ -26,27 +27,8 @@ type Chapter = { id: number; title: string; contentHtml: string; order: number }
 // "2.4" instead of "2.1"). Live numbering is written by Tiptap's own
 // HeadingNumbering extension (real node attribute, immune to nesting
 // depth) into a data-num attribute that this CSS just displays verbatim.
-const COUNTER_CSS = `
-#doc-editor-content { font-family: Calibri, "Segoe UI", Arial, sans-serif; }
-#doc-editor-content p, #doc-editor-content div, #doc-editor-content li { font-family: Calibri, "Segoe UI", Arial, sans-serif; color: #000; font-weight: normal; font-size: 10pt; margin: 0; }
-#doc-editor-content ul { list-style: disc outside; padding-left: 24px; margin: 0; }
-#doc-editor-content ol { list-style: decimal outside; padding-left: 24px; margin: 0; }
-#doc-editor-content li { list-style: inherit; display: list-item; }
-#doc-editor-content h1 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 14pt; color: #000; font-weight: bold; margin: 18px 0 10px; }
-#doc-editor-content h1::before { content: attr(data-num); }
-#doc-editor-content h2 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 12pt; color: #000; font-weight: bold; margin: 14px 0 8px; }
-#doc-editor-content h2::before { content: attr(data-num); }
-#doc-editor-content h3 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #000; font-weight: bold; margin: 10px 0 6px; }
-#doc-editor-content h3::before { content: attr(data-num); }
-#doc-editor-content img { max-width: 100%; height: auto; }
-#doc-editor-content .manual-page-break { border-top: 2px dashed #4fc3f7; text-align: center; color: #4fc3f7; font-size: 10px; margin: 16px 0; user-select: none; }
-#doc-editor-content .manual-page-break::before { content: attr(data-label); }
-#doc-editor-content table, #doc-editor-content td, #doc-editor-content th { border-color: var(--text-secondary) !important; }
-#doc-editor-content td[style*="background:#eee"], #doc-editor-content th[style*="background:#eee"] { background: var(--bg-hover) !important; }
-#doc-editor-content table td, #doc-editor-content table th { resize: both; overflow: hidden; }
-#doc-editor-content .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }
-#doc-editor-content .doc-comment-anchor.doc-comment-active { background: #ffe066; }
-`;
+// COUNTER_CSS przeniesiony do lib/docContentStyle.ts (docContentCss) - jedno
+// źródło współdzielone z żywym edytorem, żeby wygląd był klonem 1:1.
 // Repair pre-existing table cells saved before the border-shorthand bug
 // was fixed (see numberHeadingsForExport below for the full explanation):
 // a border-width with no border-style renders no border at all.
@@ -79,6 +61,15 @@ function numberHeadingsForExport(chapters: Chapter[], includeIds?: Set<number>):
   chapters.forEach((ch) => {
     const doc = new DOMParser().parseFromString(ch.contentHtml, "text/html");
     repairTableBorders(doc.body);
+    // Pusty akapit (sam Enter, bez tekstu) w ProseMirror ma realną wysokość
+    // (edytor wstawia niewidoczny "trailing break"), ale zapisane/wyeksportowane
+    // <p></p> bez zawartości zapada się do 0px w zwykłym renderowaniu (podgląd,
+    // Word, PDF) - stąd puste linie "znikają" tylko poza edytorem. Wymuszamy
+    // <br> w naprawdę pustych blokach, żeby zajmowały tyle samo miejsca co
+    // w żywym edytorze.
+    doc.body.querySelectorAll("p, div, li").forEach((el) => {
+      if (el.childNodes.length === 0) el.innerHTML = "<br>";
+    });
     doc.body.querySelectorAll("h1, h2, h3").forEach((el) => {
       if (isTocHeadingTitle(el.textContent || "")) {
         return;
@@ -399,6 +390,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const showChainVersionRef = useRef(false);
   useEffect(() => { showChainVersionRef.current = showChainVersion; }, [showChainVersion]);
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [toolbarSlotEl, setToolbarSlotEl] = useState<HTMLDivElement | null>(null);
   // 210mm in CSS px at the standard 96dpi reference used everywhere else
   // in this file (print preview, export) - must stay ONE authoritative
   // width so "Dopasuj do ekranu" only zooms (transform:scale), never
@@ -498,12 +490,21 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // Floating, draggable + resizable editor window (opens near-fullscreen
   // by default) - replaces the old fixed inset-0 fullscreen overlay so the
   // person can shrink/move it instead of always being locked to 100%.
-  const [editWinRect, setEditWinRect] = useState(() => ({
-    x: Math.max(20, Math.round(window.innerWidth * 0.02)),
-    y: Math.max(20, Math.round(window.innerHeight * 0.03)),
-    width: Math.round(window.innerWidth * 0.96),
-    height: Math.round(window.innerHeight * 0.94),
-  }));
+  // Startuje tuż obok głównego lewego menu aplikacji (TopBar.tsx ustawia
+  // document.body.style.paddingLeft na jego bieżącą szerokość - zwiniętą
+  // lub rozwiniętą), więc nigdy go domyślnie nie zasłania.
+  const getMainSidebarWidth = () => parseInt(document.body.style.paddingLeft || "64", 10) || 64;
+  const computeDefaultEditWinRect = () => {
+    const sidebarW = getMainSidebarWidth();
+    const margin = 12;
+    return {
+      x: sidebarW + margin,
+      y: margin,
+      width: Math.max(400, window.innerWidth - sidebarW - margin * 2),
+      height: Math.max(300, window.innerHeight - margin * 2),
+    };
+  };
+  const [editWinRect, setEditWinRect] = useState(computeDefaultEditWinRect);
   const editDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const onEditWinDragStart = (e: React.MouseEvent) => {
     editDragRef.current = { startX: e.clientX, startY: e.clientY, origX: editWinRect.x, origY: editWinRect.y };
@@ -511,7 +512,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       if (!editDragRef.current) return;
       const { startX, startY, origX, origY } = editDragRef.current;
       setEditWinRect((r) => {
-        const nx = Math.min(Math.max(0, origX + (ev.clientX - startX)), window.innerWidth - 100);
+        const minX = getMainSidebarWidth();
+        const nx = Math.min(Math.max(minX, origX + (ev.clientX - startX)), window.innerWidth - 100);
         const ny = Math.min(Math.max(0, origY + (ev.clientY - startY)), window.innerHeight - 60);
         return { ...r, x: nx, y: ny };
       });
@@ -790,6 +792,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       const got = await actor.acquireEditLock(activeId);
       if (got) {
         setLockedBy(null);
+        setEditWinRect(computeDefaultEditWinRect());
         setEditMode(true);
       } else {
         const lock = await actor.getEditLock(activeId);
@@ -1145,14 +1148,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // must use the exact same usable width/height or text wraps differently
     // and pagination diverges from what the editor shows.
     const innerContentWidthPx = contentWidthPx;
-    // The preview is a standalone iframe (no access to the app's own
-    // stylesheet), but chapter HTML relies on COUNTER_CSS's rules (font,
-    // default bold weight, table border/background via CSS vars, list
-    // styles, comment highlight) which live under "#doc-editor-content"
-    // in the real editor. Re-scope that same CSS onto ".page-content" and
-    // supply light-theme fallback values for the vars it references, so
-    // tables/lists/fonts/colors render the same as in the editor.
-    const previewCounterCss = COUNTER_CSS.replace(/#doc-editor-content/g, ".page-content");
+    // Preview is a standalone iframe (no access to the app's own
+    // stylesheet); docContentCss(".page-content") below supplies the same
+    // font/table/list/comment rules the live editor uses under
+    // "#doc-editor-content" (see lib/docContentStyle.ts), plus light-theme
+    // fallback values for the CSS vars it references.
     const contentHeightPx = Math.round(CONTENT_H_MM * MM_TO_PX);
     return `<html><head><meta charset="utf-8"/><title>Podgląd wydruku</title>
       <style>
@@ -1166,13 +1166,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         .page-header>span:nth-child(2){text-align:center;}
         .page-header>span:nth-child(3){text-align:right;}
         .page-footer{position:absolute;left:1.27cm;right:1.27cm;bottom:0;height:${hfSettings.footerHeightCm}cm;box-sizing:border-box;padding:6px 0;font-size:${hfSettings.footerFontSize}pt;color:#555;${hfSettings.footerBorder ? "border-top:1px solid #ccc;" : ""}display:flex;align-items:center;justify-content:space-between;}
-        .page-content{padding:0;line-height:1.625;font-size:15px;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
+        .page-content{padding:0;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
         .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:6px;font-size:8pt;color:#999;text-align:center;}
         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
         ${forPrint ? "@page{size:A4;margin:0;} body{background:#fff;} .sheet{box-shadow:none;margin:0;} .sheet + .sheet{page-break-before:always;} .page-number{display:none;}" : ""}
         img{max-width:100%;}
         #measure{position:absolute;left:-99999px;top:0;width:${innerContentWidthPx}px;padding:0;max-width:none;visibility:hidden;--text-secondary:#5c574d;--bg-hover:#efece3;}
-        ${previewCounterCss}
+        ${docContentCss(".page-content")}
       </style>
       </head><body>
       <div id="measure" class="page-content">${body}</div>
@@ -1266,6 +1266,19 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           });
           flush();
           if (pages.length === 0) pages = [''];
+          // TYMCZASOWE (diagnostyka 4-vs-3-stron, do usunięcia po ustaleniu przyczyny)
+          (function(){
+            var totalH = 0, blockCount = 0;
+            units.forEach(function(el){
+              if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) return;
+              totalH += el.getBoundingClientRect().height;
+              blockCount += 1;
+            });
+            var badge = document.createElement('div');
+            badge.style.cssText = 'position:fixed;top:4px;right:4px;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;opacity:0.9;white-space:pre;';
+            badge.textContent = 'PODGLĄD Σ=' + Math.round(totalH) + 'px  bloków=' + blockCount + '  contentH=' + PAGE_H + '  strony=' + pages.length;
+            document.body.appendChild(badge);
+          })();
           pagesEl.innerHTML = pages.map(function(html, i){
             var isFirst = i === 0;
             var isOdd = (i + 1) % 2 === 1;
@@ -1325,11 +1338,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // realnie spaginowany HTML co w "Podgląd wydruku"/"2 strony".
   const [readViewHtml, setReadViewHtml] = useState("");
   const [readViewLoading, setReadViewLoading] = useState(false);
+  const [readViewReady, setReadViewReady] = useState(false);
   useEffect(() => {
     if (editMode) return;
     if (!active) { setReadViewHtml(""); return; }
     let cancelled = false;
     setReadViewLoading(true);
+    setReadViewReady(false);
     (async () => {
       try {
         const html = await buildChapterPreviewHtml(false, true, new Set([active.id]), [active]);
@@ -1349,11 +1364,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       if (e.data && e.data.type === "docPreviewPageCount") {
         setPreviewPageCount(e.data.count);
         setPaginationError(e.data.error || "");
+        if (!editMode) setReadViewReady(true);
       }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode]);
   const PDF_WORKER_URL = "https://bartolini-pdf-export.marcinkolacz.workers.dev";
   const exportPdfV2 = async () => {
     const selected = chapters.filter((c) => selectedForPrint.has(c.id));
@@ -1551,13 +1568,31 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             </div>
 
             <div
-              className={editMode ? "fixed z-[200] flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] overflow-hidden rounded-lg shadow-2xl" : "flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] relative"}
+              className={editMode ? "fixed z-[200] flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] overflow-hidden rounded-lg shadow-2xl border-2 border-[var(--accent)]" : "flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] relative"}
               style={editMode ? { left: editWinRect.x, top: editWinRect.y, width: editWinRect.width, height: editWinRect.height } : undefined}
             >
-              <style>{COUNTER_CSS}</style>
+              {editMode && canEdit && active && (
+                <div
+                  onMouseDown={onEditWinDragStart}
+                  title="Przeciągnij, żeby przesunąć okno"
+                  className="flex items-center gap-2 px-3 py-1.5 bg-[var(--accent)] text-white text-xs font-medium cursor-move select-none shrink-0"
+                >
+                  <span className="text-sm leading-none">✥</span>
+                  <span>Przeciągnij, żeby przesunąć okno</span>
+                  <span className="ml-auto opacity-80 truncate">{active.title}</span>
+                </div>
+              )}
+              <style>{docContentCss("#doc-editor-content")}</style>
               {!active ? (
-                <div className="p-8 text-sm text-[var(--text-muted)]">
-                  {chapters.length === 0 ? "Brak rozdziałów — dodaj pierwszy w panelu po lewej." : "Wybierz rozdział z listy."}
+                <div className="p-8 text-sm text-[var(--text-muted)] flex flex-col items-center gap-2">
+                  {loading ? (
+                    <>
+                      <div className="w-6 h-6 rounded-full border-2 border-[var(--border-color)] border-t-[var(--accent)] animate-spin" />
+                      <span className="text-green-600 font-medium">Tekst się ładuje, proszę czekać…</span>
+                    </>
+                  ) : (
+                    chapters.length === 0 ? "Brak rozdziałów — dodaj pierwszy w panelu po lewej." : "Wybierz rozdział z listy."
+                  )}
                 </div>
               ) : (
                 <>
@@ -1622,6 +1657,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                       </>
                     )}
                   </div>
+                  {editMode && canEdit && (
+                    <div ref={setToolbarSlotEl} className="w-52 shrink-0 flex flex-col gap-1 py-3 px-2 border-r border-[var(--border-color)] bg-[var(--bg-card)] overflow-y-auto" />
+                  )}
                   <div className="flex-1 flex flex-col overflow-hidden">
                   <div className="flex-1 flex overflow-hidden">
                   <div ref={commentAreaRef} className="relative overflow-auto bg-[var(--bg-page)] py-6 flex-1">
@@ -1630,21 +1668,17 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     {paginationError && (
                       <div className="text-xs text-red-500 font-mono text-center mb-1">BLAD PAGINACJI: {paginationError}</div>
                     )}
-                    {readViewLoading && (
-                      <div className="text-xs text-[var(--text-muted)] text-center mb-2">⏳ Wczytywanie podglądu…</div>
+                    {(readViewLoading || !readViewReady) && (
+                      <div className="mx-auto flex flex-col items-center justify-center gap-2 py-16 text-sm text-[var(--text-secondary)]" style={{ maxWidth: 900 }}>
+                        <div className="w-6 h-6 rounded-full border-2 border-[var(--border-color)] border-t-[var(--accent)] animate-spin" />
+                        <span className="text-green-600 font-medium">Tekst się ładuje, proszę czekać…</span>
+                      </div>
                     )}
-                    <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none" }} />
+                    <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
                     </>
                   )}
                   {editMode && canEdit && active && (
                     <div className="mx-auto" style={{ maxWidth: 900, transform: `scale(${zoomLevel / 100})`, transformOrigin: "top center" }}>
-                      <div
-                        onMouseDown={onEditWinDragStart}
-                        title="Przeciągnij, żeby przesunąć okno"
-                        className="text-[10px] text-[var(--text-muted)] px-2 py-1 cursor-move select-none"
-                      >
-                        ✥ Przeciągnij, żeby przesunąć okno
-                      </div>
                       <DocumentationEditorTiptapPoC
                         key={`${active.id}-${tiptapRemountTick}`}
                         initialHtml={active.contentHtml || "<p></p>"}
@@ -1668,6 +1702,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         headerBorder={hfSettings.headerBorder}
                         footerBorder={hfSettings.footerBorder}
                         skipFirstPage={hfSettings.skipFirstPage}
+                        toolbarPortalEl={toolbarSlotEl}
                         onImageUpload={async (blob, filename) => {
                           const ext = filename.toLowerCase().endsWith(".png") ? "png" : "jpg";
                           return uploadChapterImage(deviceLabel, blob, ext);

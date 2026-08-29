@@ -1,0 +1,308 @@
+diff --git a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+index dd36cb6..5be4079 100755
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -24,6 +24,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
+ import { Decoration, DecorationSet } from "@tiptap/pm/view";
+ import { TableMap } from "@tiptap/pm/tables";
+ import { convertDocxToHtml } from "../lib/docxImport";
++import { docContentCss } from "../lib/docContentStyle";
+ 
+ declare module "@tiptap/core" {
+   interface Commands<ReturnType> {
+@@ -505,34 +506,41 @@ function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingP
+   };
+ }
+ 
+-// Counts how many pages the current document would split into, using the
+-// exact same measurement logic as the real pass below - needed because
+-// each page-break widget's "Strona X / Y" label needs the total Y, which
+-// isn't known until the whole document has been walked once.
+-function countSimplePages(view: any, contentH: number): number {
+-  const dom = view.dom as HTMLElement;
+-  const proseRect = dom.getBoundingClientRect();
+-  let pageStartTop: number | null = null;
+-  let pageNum = 1;
++const MIN_LEAD = 60; // px - unikaj osamotnionego nagłówka na dole strony (jak w paginateInner podglądu)
++
++// Wylicza offsety ProseMirror, gdzie ma wypaść podział strony, SUMUJĄC
++// własną wysokość każdego bloku (getBoundingClientRect().height), zamiast
++// mierzyć odległość (top/bottom) między pozycjami dwóch bloków w DOM.
++// To drugie jest zanieczyszczone przez WŁASNE, wcześniej wstawione widgety
++// nagłówka/stopki/przerwy tego samego pluginu, które fizycznie siedzą
++// między węzłami dokumentu i przesuwają ich pozycję w dół - dokładnie ten
++// sam mechanizm sprzężenia zwrotnego, który wcześniej zepsuł
++// tiptap-pagination-plus (2026-08-28). Sumowanie wysokości per-blok jest
++// na to odporne i jest DOKŁADNIE tym samym algorytmem co paginateInner w
++// podglądzie (buildChapterPreviewHtml) - stąd liczba stron się zgadza.
++function computeBreakOffsets(view: any, contentH: number): number[] {
++  const breakOffsets: number[] = [];
++  let currentH = 0;
+   view.state.doc.forEach((_node: any, offset: number) => {
+     const domNode = view.nodeDOM(offset);
+     if (!(domNode instanceof HTMLElement)) return;
+     if (domNode.classList.contains(PAGE_BREAK_CLASS)) {
+-      pageNum += 1;
+-      pageStartTop = null;
++      breakOffsets.push(offset);
++      currentH = 0;
+       return;
+     }
+-    const rect = domNode.getBoundingClientRect();
+-    const relTop = rect.top - proseRect.top;
+-    const relBottom = rect.bottom - proseRect.top;
+-    if (pageStartTop === null) {
+-      pageStartTop = relTop;
+-    } else if (relBottom - pageStartTop > contentH) {
+-      pageNum += 1;
+-      pageStartTop = relTop;
++    const h = domNode.getBoundingClientRect().height;
++    const isHeading = /^H[1-4]$/.test(domNode.tagName);
++    if (currentH > 0 && currentH + h > contentH) {
++      breakOffsets.push(offset);
++      currentH = 0;
++    } else if (isHeading && currentH > 0 && (contentH - currentH) < (h + MIN_LEAD)) {
++      breakOffsets.push(offset);
++      currentH = 0;
+     }
++    currentH += h;
+   });
+-  return pageNum;
++  return breakOffsets;
+ }
+ 
+ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
+@@ -542,36 +550,40 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
+   const headerHPx = cmToPx(cfg.headerHeightCm);
+   const footerHPx = cmToPx(cfg.footerHeightCm);
+   const contentH = PAGE_H_PX - headerHPx - footerHPx;
+-  const totalPages = countSimplePages(view, contentH);
+-  const decos: Decoration[] = [];
+-  let pageStartTop: number | null = null;
+-  let pageNum = 1;
+-  view.state.doc.forEach((_node: any, offset: number) => {
+-    const domNode = view.nodeDOM(offset);
+-    if (!(domNode instanceof HTMLElement)) return;
+-    if (domNode.classList.contains(PAGE_BREAK_CLASS)) {
+-      const endingPage = pageNum;
+-      pageNum += 1;
+-      decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, pageNum, totalPages), { side: -1, key: `spb-manual-${offset}` }));
+-      pageStartTop = null;
+-      return;
+-    }
+-    const rect = domNode.getBoundingClientRect();
+-    const relTop = rect.top - proseRect.top;
+-    const relBottom = rect.bottom - proseRect.top;
+-    if (pageStartTop === null) {
+-      pageStartTop = relTop;
+-    } else if (relBottom - pageStartTop > contentH) {
+-      const endingPage = pageNum;
+-      pageNum += 1;
+-      decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, pageNum, totalPages), { side: -1, key: `spb-${offset}` }));
+-      pageStartTop = relTop;
++  const breakOffsets = computeBreakOffsets(view, contentH);
++  const totalPages = breakOffsets.length + 1;
++  // TYMCZASOWE (diagnostyka 4-vs-3-stron, do usunięcia po ustaleniu przyczyny):
++  // widoczny licznik sumy wysokości bloków / ich liczby, żeby porównać 1:1
++  // z tym samym licznikiem w podglądzie bez potrzeby DevTools.
++  {
++    let totalH = 0;
++    let blockCount = 0;
++    view.state.doc.forEach((_node: any, offset: number) => {
++      const domNode = view.nodeDOM(offset);
++      if (!(domNode instanceof HTMLElement) || domNode.classList.contains(PAGE_BREAK_CLASS)) return;
++      totalH += domNode.getBoundingClientRect().height;
++      blockCount += 1;
++    });
++    let badge = document.getElementById("doc-debug-badge");
++    if (!badge) {
++      badge = document.createElement("div");
++      badge.id = "doc-debug-badge";
++      badge.style.cssText = "position:fixed;top:4px;right:4px;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;opacity:0.9;white-space:pre;";
++      document.body.appendChild(badge);
+     }
++    badge.textContent = `EDYTOR  Σ=${Math.round(totalH)}px  bloków=${blockCount}  contentH=${contentH}  strony=${totalPages}`;
++  }
++  const decos: Decoration[] = [];
++  breakOffsets.forEach((offset, i) => {
++    const endingPage = i + 1;
++    const startingPage = i + 2;
++    const key = `spb-${offset}`;
++    decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, startingPage, totalPages), { side: -1, key }));
+   });
+   if (cfg.enableHeader && !cfg.skipFirstPage) {
+     decos.push(Decoration.widget(0, () => buildHeaderEl(cfg, 1, totalPages), { side: -1, key: "spb-header-first" }));
+   }
+-  if (cfg.enableFooter && !(pageNum === 1 && cfg.skipFirstPage)) {
++  if (cfg.enableFooter && !(totalPages === 1 && cfg.skipFirstPage)) {
+     const endPos = view.state.doc.content.size;
+     decos.push(Decoration.widget(endPos, () => buildFooterEl(cfg), { side: 1, key: "spb-footer-last" }));
+   }
+@@ -729,6 +741,11 @@ export function DocumentationEditorTiptapPoC({
+     // onCreate: ({ editor }) => settlePaginationAfterImagesLoad(editor), // wylaczone razem z PaginationPlus (2026-08-28)
+     onUpdate: ({ editor }) => onChangeHtml(editor.getHTML()),
+     editorProps: {
++      // Po migracji na Tiptap ten id nigdzie nie był ustawiony, więc cały
++      // wygląd tekstu (Calibri, rozmiary p/h1-h3, listy, tabele) z
++      // docContentCss nie stosował się w ogóle w żywym edytorze - stąd
++      // rozjazd wysokości akapitów względem podglądu/PDF, które go dostają.
++      attributes: { id: "doc-editor-content" },
+       handlePaste(_view, event) {
+         const html = event.clipboardData?.getData("text/html");
+         if (!html) return false;
+@@ -1063,6 +1080,7 @@ export function DocumentationEditorTiptapPoC({
+ .doc-editor-tiptap-poc .tableWrapper { overflow-x: auto; }
+ .doc-editor-tiptap-poc .column-resize-handle { position: absolute; right: -3px; top: 0; bottom: -2px; width: 6px; background-color: #4fc3f7; cursor: col-resize; z-index: 10; }
+ .doc-editor-tiptap-poc .ProseMirror table.resize-cursor { cursor: col-resize; }
++${docContentCss("#doc-editor-content")}
+         `}</style>
+         <EditorContent editor={editor} />
+       </div>
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 5531400..31f2def 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -5,6 +5,7 @@ import { TopBar } from "./TopBar";
+ import { setDriveActor, warmDriveToken } from "../lib/oneDriveConfig";
+ import { syncChapterToDrive, uploadChapterImage, loadChapterContentFromDrive, renameChapterOnDrive } from "../lib/documentationDriveSync";
+ import { isTocHeadingTitle } from "../lib/headingNumbering";
++import { docContentCss } from "../lib/docContentStyle";
+ import { ManualVariablesPanel } from "./ManualVariablesPanel";
+ import { DocumentationEditorTiptapPoC } from "./DocumentationEditorTiptapPoC";
+ 
+@@ -26,27 +27,8 @@ type Chapter = { id: number; title: string; contentHtml: string; order: number }
+ // "2.4" instead of "2.1"). Live numbering is written by Tiptap's own
+ // HeadingNumbering extension (real node attribute, immune to nesting
+ // depth) into a data-num attribute that this CSS just displays verbatim.
+-const COUNTER_CSS = `
+-#doc-editor-content { font-family: Calibri, "Segoe UI", Arial, sans-serif; }
+-#doc-editor-content p, #doc-editor-content div, #doc-editor-content li { font-family: Calibri, "Segoe UI", Arial, sans-serif; color: #000; font-weight: normal; font-size: 10pt; margin: 0; }
+-#doc-editor-content ul { list-style: disc outside; padding-left: 24px; margin: 0; }
+-#doc-editor-content ol { list-style: decimal outside; padding-left: 24px; margin: 0; }
+-#doc-editor-content li { list-style: inherit; display: list-item; }
+-#doc-editor-content h1 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 14pt; color: #000; font-weight: bold; margin: 18px 0 10px; }
+-#doc-editor-content h1::before { content: attr(data-num); }
+-#doc-editor-content h2 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 12pt; color: #000; font-weight: bold; margin: 14px 0 8px; }
+-#doc-editor-content h2::before { content: attr(data-num); }
+-#doc-editor-content h3 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #000; font-weight: bold; margin: 10px 0 6px; }
+-#doc-editor-content h3::before { content: attr(data-num); }
+-#doc-editor-content img { max-width: 100%; height: auto; }
+-#doc-editor-content .manual-page-break { border-top: 2px dashed #4fc3f7; text-align: center; color: #4fc3f7; font-size: 10px; margin: 16px 0; user-select: none; }
+-#doc-editor-content .manual-page-break::before { content: attr(data-label); }
+-#doc-editor-content table, #doc-editor-content td, #doc-editor-content th { border-color: var(--text-secondary) !important; }
+-#doc-editor-content td[style*="background:#eee"], #doc-editor-content th[style*="background:#eee"] { background: var(--bg-hover) !important; }
+-#doc-editor-content table td, #doc-editor-content table th { resize: both; overflow: hidden; }
+-#doc-editor-content .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }
+-#doc-editor-content .doc-comment-anchor.doc-comment-active { background: #ffe066; }
+-`;
++// COUNTER_CSS przeniesiony do lib/docContentStyle.ts (docContentCss) - jedno
++// źródło współdzielone z żywym edytorem, żeby wygląd był klonem 1:1.
+ // Repair pre-existing table cells saved before the border-shorthand bug
+ // was fixed (see numberHeadingsForExport below for the full explanation):
+ // a border-width with no border-style renders no border at all.
+@@ -1145,14 +1127,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     // must use the exact same usable width/height or text wraps differently
+     // and pagination diverges from what the editor shows.
+     const innerContentWidthPx = contentWidthPx;
+-    // The preview is a standalone iframe (no access to the app's own
+-    // stylesheet), but chapter HTML relies on COUNTER_CSS's rules (font,
+-    // default bold weight, table border/background via CSS vars, list
+-    // styles, comment highlight) which live under "#doc-editor-content"
+-    // in the real editor. Re-scope that same CSS onto ".page-content" and
+-    // supply light-theme fallback values for the vars it references, so
+-    // tables/lists/fonts/colors render the same as in the editor.
+-    const previewCounterCss = COUNTER_CSS.replace(/#doc-editor-content/g, ".page-content");
++    // Preview is a standalone iframe (no access to the app's own
++    // stylesheet); docContentCss(".page-content") below supplies the same
++    // font/table/list/comment rules the live editor uses under
++    // "#doc-editor-content" (see lib/docContentStyle.ts), plus light-theme
++    // fallback values for the CSS vars it references.
+     const contentHeightPx = Math.round(CONTENT_H_MM * MM_TO_PX);
+     return `<html><head><meta charset="utf-8"/><title>Podgląd wydruku</title>
+       <style>
+@@ -1166,13 +1145,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+         .page-header>span:nth-child(2){text-align:center;}
+         .page-header>span:nth-child(3){text-align:right;}
+         .page-footer{position:absolute;left:1.27cm;right:1.27cm;bottom:0;height:${hfSettings.footerHeightCm}cm;box-sizing:border-box;padding:6px 0;font-size:${hfSettings.footerFontSize}pt;color:#555;${hfSettings.footerBorder ? "border-top:1px solid #ccc;" : ""}display:flex;align-items:center;justify-content:space-between;}
+-        .page-content{padding:0;line-height:1.625;font-size:15px;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
++        .page-content{padding:0;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
+         .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:6px;font-size:8pt;color:#999;text-align:center;}
+         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
+         ${forPrint ? "@page{size:A4;margin:0;} body{background:#fff;} .sheet{box-shadow:none;margin:0;} .sheet + .sheet{page-break-before:always;} .page-number{display:none;}" : ""}
+         img{max-width:100%;}
+         #measure{position:absolute;left:-99999px;top:0;width:${innerContentWidthPx}px;padding:0;max-width:none;visibility:hidden;--text-secondary:#5c574d;--bg-hover:#efece3;}
+-        ${previewCounterCss}
++        ${docContentCss(".page-content")}
+       </style>
+       </head><body>
+       <div id="measure" class="page-content">${body}</div>
+@@ -1266,6 +1245,19 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+           });
+           flush();
+           if (pages.length === 0) pages = [''];
++          // TYMCZASOWE (diagnostyka 4-vs-3-stron, do usunięcia po ustaleniu przyczyny)
++          (function(){
++            var totalH = 0, blockCount = 0;
++            units.forEach(function(el){
++              if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) return;
++              totalH += el.getBoundingClientRect().height;
++              blockCount += 1;
++            });
++            var badge = document.createElement('div');
++            badge.style.cssText = 'position:fixed;top:4px;right:4px;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;opacity:0.9;white-space:pre;';
++            badge.textContent = 'PODGLĄD Σ=' + Math.round(totalH) + 'px  bloków=' + blockCount + '  contentH=' + PAGE_H + '  strony=' + pages.length;
++            document.body.appendChild(badge);
++          })();
+           pagesEl.innerHTML = pages.map(function(html, i){
+             var isFirst = i === 0;
+             var isOdd = (i + 1) % 2 === 1;
+@@ -1554,7 +1546,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+               className={editMode ? "fixed z-[200] flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] overflow-hidden rounded-lg shadow-2xl" : "flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] relative"}
+               style={editMode ? { left: editWinRect.x, top: editWinRect.y, width: editWinRect.width, height: editWinRect.height } : undefined}
+             >
+-              <style>{COUNTER_CSS}</style>
++              <style>{docContentCss("#doc-editor-content")}</style>
+               {!active ? (
+                 <div className="p-8 text-sm text-[var(--text-muted)]">
+                   {chapters.length === 0 ? "Brak rozdziałów — dodaj pierwszy w panelu po lewej." : "Wybierz rozdział z listy."}
+diff --git a/src/frontend/src/lib/docContentStyle.ts b/src/frontend/src/lib/docContentStyle.ts
+new file mode 100644
+index 0000000..273bb14
+--- /dev/null
++++ b/src/frontend/src/lib/docContentStyle.ts
+@@ -0,0 +1,35 @@
++// JEDNO źródło wyglądu treści dokumentu (Calibri, rozmiary p/h1/h2/h3,
++// listy, tabele, komentarze, interlinia). Używane przez:
++//  - żywy edytor (DocumentationEditorTiptapPoC.tsx, scope "#doc-editor-content")
++//  - podgląd/PDF (DocumentationModule.tsx buildChapterPreviewHtml, scope ".page-content")
++// Wcześniej te dwa miejsca miały każde swoją kopię (COUNTER_CSS vs
++// previewCounterCss) i po migracji na Tiptap "#doc-editor-content" przestał
++// być podpięty w edytorze w ogóle, więc żywy edytor renderował się na
++// domyślnych stylach przeglądarki zamiast na tym wyglądzie - stąd rozjazd
++// wysokości akapitów między edytorem a podglądem. Trzymanie tego w jednym
++// miejscu ma to uniemożliwić na przyszłość.
++export const DOC_CONTENT_LINE_HEIGHT = 1.625;
++
++export function docContentCss(selector: string): string {
++  return `
++${selector} { font-family: Calibri, "Segoe UI", Arial, sans-serif; line-height: ${DOC_CONTENT_LINE_HEIGHT}; }
++${selector} p, ${selector} div, ${selector} li { font-family: Calibri, "Segoe UI", Arial, sans-serif; color: #000; font-weight: normal; font-size: 10pt; margin: 0; }
++${selector} ul { list-style: disc outside; padding-left: 24px; margin: 0; }
++${selector} ol { list-style: decimal outside; padding-left: 24px; margin: 0; }
++${selector} li { list-style: inherit; display: list-item; }
++${selector} h1 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 14pt; color: #000; font-weight: bold; margin: 18px 0 10px; }
++${selector} h1::before { content: attr(data-num); }
++${selector} h2 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 12pt; color: #000; font-weight: bold; margin: 14px 0 8px; }
++${selector} h2::before { content: attr(data-num); }
++${selector} h3 { font-family: Calibri, "Segoe UI", Arial, sans-serif; font-size: 11pt; color: #000; font-weight: bold; margin: 10px 0 6px; }
++${selector} h3::before { content: attr(data-num); }
++${selector} img { max-width: 100%; height: auto; }
++${selector} .manual-page-break { border-top: 2px dashed #4fc3f7; text-align: center; color: #4fc3f7; font-size: 10px; margin: 16px 0; user-select: none; }
++${selector} .manual-page-break::before { content: attr(data-label); }
++${selector} table, ${selector} td, ${selector} th { border-color: var(--text-secondary) !important; }
++${selector} td[style*="background:#eee"], ${selector} th[style*="background:#eee"] { background: var(--bg-hover) !important; }
++${selector} table td, ${selector} table th { resize: both; overflow: hidden; }
++${selector} .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }
++${selector} .doc-comment-anchor.doc-comment-active { background: #ffe066; }
++`;
++}

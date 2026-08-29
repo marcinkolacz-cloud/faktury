@@ -1,0 +1,212 @@
+diff --git a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+index 4d6c6e3..d2369b3 100755
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -865,20 +865,20 @@ export function DocumentationEditorTiptapPoC({
+   const pickImage = () => fileInputRef.current?.click();
+   const pickDocx = () => docxInputRef.current?.click();
+ 
+-  // Kompaktowa ikona (bez podpisu) do wnętrza rozwiniętej grupy - szeroko
+-  // ograniczony sidebar (w-24 = 96px) mieści 2-3 takie obok siebie w rzędzie
+-  // ("poziomo"), w przeciwieństwie do pełnowymiarowego RailBtn z podpisem.
+-  const MiniBtn = ({ icon, title, onClick, onMouseDown, active, disabled, danger }: {
+-    icon: React.ReactNode; title: string; onClick?: () => void; onMouseDown?: (e: React.MouseEvent) => void;
++  // Osobna, szersza (w-52) kolumna toolbara obok edytora - przyciski mają
++  // ikonę + czytelną etykietę obok siebie, ułożone poziomo (flex-wrap),
++  // zamiast gołych, ściśniętych ikon.
++  const GroupBtn = ({ icon, label, onClick, onMouseDown, active, disabled, danger }: {
++    icon: React.ReactNode; label: string; onClick?: () => void; onMouseDown?: (e: React.MouseEvent) => void;
+     active?: boolean; disabled?: boolean; danger?: boolean;
+   }) => (
+     <button
+       type="button"
+-      title={title}
++      title={label}
+       onMouseDown={onMouseDown ?? ((e) => e.preventDefault())}
+       onClick={onClick}
+       disabled={disabled}
+-      className={`w-8 h-8 flex items-center justify-center rounded-md text-sm disabled:opacity-40 transition-all duration-100 active:scale-90 ${
++      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs whitespace-nowrap disabled:opacity-40 transition-all duration-100 active:scale-95 ${
+         active
+           ? "bg-[var(--accent)] text-white"
+           : danger
+@@ -886,17 +886,19 @@ export function DocumentationEditorTiptapPoC({
+           : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)]"
+       }`}
+     >
+-      {icon}
++      <span className="text-sm leading-none w-4 text-center">{icon}</span>
++      <span>{label}</span>
+     </button>
+   );
+-  const MiniSelect = ({ icon, title, children, onChange }: { icon: React.ReactNode; title: string; children: React.ReactNode; onChange: (v: string) => void }) => (
+-    <label className="w-8 h-8 flex items-center justify-center rounded-md text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)] cursor-pointer relative" title={title}>
+-      {icon}
++  const GroupSelect = ({ icon, label, children, onChange }: { icon: React.ReactNode; label: string; children: React.ReactNode; onChange: (v: string) => void }) => (
++    <label className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)] cursor-pointer relative w-full">
++      <span className="text-sm leading-none w-4 text-center">{icon}</span>
++      <span>{label}</span>
+       <select
+         defaultValue=""
+         onMouseDown={(e) => e.stopPropagation()}
+         onChange={(e) => { const v = e.target.value; e.target.value = ""; onChange(v); }}
+-        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
++        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%" }}
+       >
+         {children}
+       </select>
+@@ -904,8 +906,8 @@ export function DocumentationEditorTiptapPoC({
+   );
+ 
+   // Grupy toolbara są domyślnie zwinięte i rozwijają się poziomo (flex-wrap)
+-  // wewnątrz tego samego lewego sidebara co reszta przycisków - klik na
+-  // nagłówek grupy przełącza widoczność.
++  // w osobnej kolumnie obok edytora - klik na nagłówek grupy przełącza
++  // widoczność.
+   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+   const toggleGroup = (id: string) => setOpenGroups((prev) => {
+     const next = new Set(prev);
+@@ -1012,12 +1014,12 @@ export function DocumentationEditorTiptapPoC({
+         const toolbar = (
+           <div className="dt-toolbar">
+             <Group id="format" icon="Aa" label="Format">
+-              <MiniBtn icon={<b>B</b>} title="Pogrubienie" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} />
+-              <MiniBtn icon={<i>I</i>} title="Kursywa" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} />
+-              <MiniBtn icon="•" title="Lista" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()} />
+-              <MiniSelect
++              <GroupBtn icon={<b>B</b>} label="Pogrubienie" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} />
++              <GroupBtn icon={<i>I</i>} label="Kursywa" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} />
++              <GroupBtn icon="•" label="Lista" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()} />
++              <GroupSelect
+                 icon="H"
+-                title="Styl"
++                label="Styl"
+                 onChange={(v) => {
+                   if (v === "section") applySectionStyle();
+                   else if (v === "p") editor.chain().focus().setParagraph().run();
+@@ -1030,27 +1032,27 @@ export function DocumentationEditorTiptapPoC({
+                 <option value="h1">Heading 1 — Rozdział</option>
+                 <option value="h2">Heading 2 — Podrozdział</option>
+                 <option value="h3">Heading 3 — Punkt</option>
+-              </MiniSelect>
+-              <MiniSelect icon="🔠" title="Rozmiar" onChange={(v) => { if (v) editor.chain().focus().setFontSize(v).run(); }}>
++              </GroupSelect>
++              <GroupSelect icon="🔠" label="Rozmiar" onChange={(v) => { if (v) editor.chain().focus().setFontSize(v).run(); }}>
+                 <option value="" disabled>Rozmiar</option>
+                 <option value="10px">Bardzo mała</option>
+                 <option value="13px">Mała</option>
+                 <option value="16px">Normalna</option>
+                 <option value="18px">Duża</option>
+                 <option value="24px">Większa</option>
+-              </MiniSelect>
++              </GroupSelect>
+             </Group>
+             <Group id="align" icon="☰" label="Wyrównanie">
+-              <MiniBtn icon="⬅" title="Lewo" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()} />
+-              <MiniBtn icon="↔" title="Środek" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()} />
+-              <MiniBtn icon="➡" title="Prawo" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()} />
+-              <MiniBtn icon="☰" title="Justuj" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()} />
++              <GroupBtn icon="⬅" label="Lewo" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()} />
++              <GroupBtn icon="↔" label="Środek" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()} />
++              <GroupBtn icon="➡" label="Prawo" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()} />
++              <GroupBtn icon="☰" label="Justuj" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()} />
+             </Group>
+             <Group id="insert" icon="➕" label="Wstaw">
+-              <MiniBtn icon="🧹" title="Wklej tekst" onClick={() => setShowPlainPasteModal(true)} />
+-              <MiniBtn
++              <GroupBtn icon="🧹" label="Wklej tekst" onClick={() => setShowPlainPasteModal(true)} />
++              <GroupBtn
+                 icon="🔲"
+-                title="Tabela"
++                label="Tabela"
+                 active={editor.isActive("table")}
+                 onClick={() => {
+                   if (editor.isActive("table")) {
+@@ -1060,22 +1062,22 @@ export function DocumentationEditorTiptapPoC({
+                   editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+                 }}
+               />
+-              <MiniBtn icon="⏎" title="Podział strony" onClick={insertBreak} />
+-              <MiniBtn icon="🖼" title={uploading ? "Wysyłanie…" : "Obraz"} disabled={uploading} onClick={pickImage} />
+-              <MiniBtn icon="📄" title={importingDocx ? "Import…" : "Import z Worda"} disabled={importingDocx} onClick={pickDocx} />
+-              <MiniBtn icon="💬" title="Komentarz" onClick={addComment} />
++              <GroupBtn icon="⏎" label="Podział strony" onClick={insertBreak} />
++              <GroupBtn icon="🖼" label={uploading ? "Wysyłanie…" : "Obraz"} disabled={uploading} onClick={pickImage} />
++              <GroupBtn icon="📄" label={importingDocx ? "Import…" : "Import z Worda"} disabled={importingDocx} onClick={pickDocx} />
++              <GroupBtn icon="💬" label="Komentarz" onClick={addComment} />
+             </Group>
+             {editor.isActive("table") && (
+               <Group id="table" icon="🔲" label="Tabela">
+-                <MiniBtn icon="➕⏵" title="Dodaj wiersz" onClick={() => editor.chain().focus().addRowAfter().run()} />
+-                <MiniBtn icon="➖⏵" title="Usuń wiersz" onClick={() => editor.chain().focus().deleteRow().run()} />
+-                <MiniBtn icon="➕⏷" title="Dodaj kolumnę" onClick={() => editor.chain().focus().addColumnAfter().run()} />
+-                <MiniBtn icon="➖⏷" title="Usuń kolumnę" onClick={() => editor.chain().focus().deleteColumn().run()} />
+-                <MiniBtn icon="📐" title="Rozmiar tabeli" onClick={openTableSizeModal} />
+-                <MiniBtn icon="⬅" title="Tabela do lewej" active={editor.getAttributes("table").align === "left"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()} />
+-                <MiniBtn icon="↔" title="Tabela wyśrodkowana" active={editor.getAttributes("table").align === "center"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()} />
+-                <MiniBtn icon="➡" title="Tabela do prawej" active={editor.getAttributes("table").align === "right"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()} />
+-                <MiniBtn icon="🗑" title="Usuń tabelę" danger onClick={() => editor.chain().focus().deleteTable().run()} />
++                <GroupBtn icon="➕⏵" label="Dodaj wiersz" onClick={() => editor.chain().focus().addRowAfter().run()} />
++                <GroupBtn icon="➖⏵" label="Usuń wiersz" onClick={() => editor.chain().focus().deleteRow().run()} />
++                <GroupBtn icon="➕⏷" label="Dodaj kolumnę" onClick={() => editor.chain().focus().addColumnAfter().run()} />
++                <GroupBtn icon="➖⏷" label="Usuń kolumnę" onClick={() => editor.chain().focus().deleteColumn().run()} />
++                <GroupBtn icon="📐" label="Rozmiar tabeli" onClick={openTableSizeModal} />
++                <GroupBtn icon="⬅" label="Tabela do lewej" active={editor.getAttributes("table").align === "left"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()} />
++                <GroupBtn icon="↔" label="Tabela wyśrodkowana" active={editor.getAttributes("table").align === "center"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()} />
++                <GroupBtn icon="➡" label="Tabela do prawej" active={editor.getAttributes("table").align === "right"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()} />
++                <GroupBtn icon="🗑" label="Usuń tabelę" danger onClick={() => editor.chain().focus().deleteTable().run()} />
+               </Group>
+             )}
+           </div>
+@@ -1085,12 +1087,14 @@ export function DocumentationEditorTiptapPoC({
+       <div className="dt-page-scroll" style={{ background: "#888", padding: "24px 0", display: "flex", justifyContent: "center" }}>
+         <style>{`
+ .dt-toolbar { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; ${toolbarPortalEl ? "" : "padding: 8px 4px; position: sticky; top: 0; left: 0; z-index: 60; width: 72px; flex-shrink: 0; height: 100%; overflow-y: auto; background: var(--bg-card, #fff); border-right: 1px solid var(--border-color, #ddd);"} }
+-.dt-group-header { display: flex; align-items: center; gap: 4px; width: 100%; padding: 6px 4px; border-radius: 6px; background: none; border: none; cursor: pointer; color: var(--text-secondary, #555); transition: background 0.1s; }
++.dt-group { border-bottom: 1px solid var(--border-color, #eee); padding-bottom: 2px; margin-bottom: 2px; }
++.dt-group:last-child { border-bottom: none; }
++.dt-group-header { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 6px; border-radius: 6px; background: none; border: none; cursor: pointer; color: var(--text-secondary, #555); transition: background 0.1s; }
+ .dt-group-header:hover { background: var(--bg-hover, #f2f2f2); color: var(--accent, #6d5cfc); }
+-.dt-group-icon { font-size: 13px; width: 16px; text-align: center; }
+-.dt-group-label { flex: 1; text-align: left; font-size: 10px; font-weight: 600; }
+-.dt-group-chevron { font-size: 9px; opacity: 0.6; }
+-.dt-group-body { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px 2px 6px; justify-content: center; }
++.dt-group-icon { font-size: 15px; width: 18px; text-align: center; }
++.dt-group-label { flex: 1; text-align: left; font-size: 12px; font-weight: 600; }
++.dt-group-chevron { font-size: 10px; opacity: 0.6; }
++.dt-group-body { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 2px 8px 6px; justify-content: flex-start; }
+ .dt-toolbar-sep { width: 40px; height: 1px; background: var(--border-color, #ddd); margin: 4px 0; }
+ .dt-btn { border: 1px solid var(--border-color, #ddd); background: var(--bg-card, #fff); color: var(--text-primary, #222); border-radius: 6px; padding: 5px 9px; font-size: 13px; cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+ .dt-btn:hover { background: var(--accent-light, #efedff); border-color: var(--accent, #6d5cfc); }
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 3778ad5..4db44db 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -1562,7 +1562,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+               ) : (
+                 <>
+                   <div className="flex-1 flex overflow-hidden">
+-                  <div className={`${editMode ? "w-24" : "w-14"} shrink-0 flex flex-col items-center gap-1 py-3 border-r border-[var(--border-color)] bg-[var(--bg-card)] overflow-y-auto`}>
++                  <div className="w-14 shrink-0 flex flex-col items-center gap-1 py-3 border-r border-[var(--border-color)] bg-[var(--bg-card)] overflow-y-auto">
+                     {canEdit ? (
+                       <RailButton
+                         icon="✏"
+@@ -1596,8 +1596,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                         <RailButton icon="🔗" label="Zmienne" title="Zmienne referencyjne" onClick={() => setShowVarsPanel(true)} />
+                         <RailButton icon="⚙️" label="Nagłówek" title="Nagłówek i stopka" onClick={openSettings} />
+                         <RailButton icon={autoSave ? "☑️" : "⬜"} label="Auto-zapis" active={autoSave} title="Auto-zapis (3s)" onClick={() => setAutoSave((v) => !v)} />
+-                        <div className="w-8 h-px bg-[var(--border-color)] my-1" />
+-                        <div ref={setToolbarSlotEl} className="w-full flex flex-col items-center gap-1" />
+                       </>
+                     )}
+                     {!editMode && canEdit && (
+@@ -1624,6 +1622,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                       </>
+                     )}
+                   </div>
++                  {editMode && canEdit && (
++                    <div ref={setToolbarSlotEl} className="w-52 shrink-0 flex flex-col gap-1 py-3 px-2 border-r border-[var(--border-color)] bg-[var(--bg-card)] overflow-y-auto" />
++                  )}
+                   <div className="flex-1 flex flex-col overflow-hidden">
+                   <div className="flex-1 flex overflow-hidden">
+                   <div ref={commentAreaRef} className="relative overflow-auto bg-[var(--bg-page)] py-6 flex-1">

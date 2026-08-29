@@ -24,6 +24,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { TableMap } from "@tiptap/pm/tables";
 import { convertDocxToHtml } from "../lib/docxImport";
+import { docContentCss } from "../lib/docContentStyle";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -505,34 +506,41 @@ function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingP
   };
 }
 
-// Counts how many pages the current document would split into, using the
-// exact same measurement logic as the real pass below - needed because
-// each page-break widget's "Strona X / Y" label needs the total Y, which
-// isn't known until the whole document has been walked once.
-function countSimplePages(view: any, contentH: number): number {
-  const dom = view.dom as HTMLElement;
-  const proseRect = dom.getBoundingClientRect();
-  let pageStartTop: number | null = null;
-  let pageNum = 1;
+const MIN_LEAD = 60; // px - unikaj osamotnionego nagłówka na dole strony (jak w paginateInner podglądu)
+
+// Wylicza offsety ProseMirror, gdzie ma wypaść podział strony, SUMUJĄC
+// własną wysokość każdego bloku (getBoundingClientRect().height), zamiast
+// mierzyć odległość (top/bottom) między pozycjami dwóch bloków w DOM.
+// To drugie jest zanieczyszczone przez WŁASNE, wcześniej wstawione widgety
+// nagłówka/stopki/przerwy tego samego pluginu, które fizycznie siedzą
+// między węzłami dokumentu i przesuwają ich pozycję w dół - dokładnie ten
+// sam mechanizm sprzężenia zwrotnego, który wcześniej zepsuł
+// tiptap-pagination-plus (2026-08-28). Sumowanie wysokości per-blok jest
+// na to odporne i jest DOKŁADNIE tym samym algorytmem co paginateInner w
+// podglądzie (buildChapterPreviewHtml) - stąd liczba stron się zgadza.
+function computeBreakOffsets(view: any, contentH: number): number[] {
+  const breakOffsets: number[] = [];
+  let currentH = 0;
   view.state.doc.forEach((_node: any, offset: number) => {
     const domNode = view.nodeDOM(offset);
     if (!(domNode instanceof HTMLElement)) return;
     if (domNode.classList.contains(PAGE_BREAK_CLASS)) {
-      pageNum += 1;
-      pageStartTop = null;
+      breakOffsets.push(offset);
+      currentH = 0;
       return;
     }
-    const rect = domNode.getBoundingClientRect();
-    const relTop = rect.top - proseRect.top;
-    const relBottom = rect.bottom - proseRect.top;
-    if (pageStartTop === null) {
-      pageStartTop = relTop;
-    } else if (relBottom - pageStartTop > contentH) {
-      pageNum += 1;
-      pageStartTop = relTop;
+    const h = domNode.getBoundingClientRect().height;
+    const isHeading = /^H[1-4]$/.test(domNode.tagName);
+    if (currentH > 0 && currentH + h > contentH) {
+      breakOffsets.push(offset);
+      currentH = 0;
+    } else if (isHeading && currentH > 0 && (contentH - currentH) < (h + MIN_LEAD)) {
+      breakOffsets.push(offset);
+      currentH = 0;
     }
+    currentH += h;
   });
-  return pageNum;
+  return breakOffsets;
 }
 
 function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
@@ -542,36 +550,40 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   const headerHPx = cmToPx(cfg.headerHeightCm);
   const footerHPx = cmToPx(cfg.footerHeightCm);
   const contentH = PAGE_H_PX - headerHPx - footerHPx;
-  const totalPages = countSimplePages(view, contentH);
+  const breakOffsets = computeBreakOffsets(view, contentH);
+  const totalPages = breakOffsets.length + 1;
+  // TYMCZASOWE (diagnostyka 4-vs-3-stron, do usunięcia po ustaleniu przyczyny):
+  // widoczny licznik sumy wysokości bloków / ich liczby, żeby porównać 1:1
+  // z tym samym licznikiem w podglądzie bez potrzeby DevTools.
+  {
+    let totalH = 0;
+    let blockCount = 0;
+    view.state.doc.forEach((_node: any, offset: number) => {
+      const domNode = view.nodeDOM(offset);
+      if (!(domNode instanceof HTMLElement) || domNode.classList.contains(PAGE_BREAK_CLASS)) return;
+      totalH += domNode.getBoundingClientRect().height;
+      blockCount += 1;
+    });
+    let badge = document.getElementById("doc-debug-badge");
+    if (!badge) {
+      badge = document.createElement("div");
+      badge.id = "doc-debug-badge";
+      badge.style.cssText = "position:fixed;top:4px;right:4px;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;opacity:0.9;white-space:pre;";
+      document.body.appendChild(badge);
+    }
+    badge.textContent = `EDYTOR  Σ=${Math.round(totalH)}px  bloków=${blockCount}  contentH=${contentH}  strony=${totalPages}`;
+  }
   const decos: Decoration[] = [];
-  let pageStartTop: number | null = null;
-  let pageNum = 1;
-  view.state.doc.forEach((_node: any, offset: number) => {
-    const domNode = view.nodeDOM(offset);
-    if (!(domNode instanceof HTMLElement)) return;
-    if (domNode.classList.contains(PAGE_BREAK_CLASS)) {
-      const endingPage = pageNum;
-      pageNum += 1;
-      decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, pageNum, totalPages), { side: -1, key: `spb-manual-${offset}` }));
-      pageStartTop = null;
-      return;
-    }
-    const rect = domNode.getBoundingClientRect();
-    const relTop = rect.top - proseRect.top;
-    const relBottom = rect.bottom - proseRect.top;
-    if (pageStartTop === null) {
-      pageStartTop = relTop;
-    } else if (relBottom - pageStartTop > contentH) {
-      const endingPage = pageNum;
-      pageNum += 1;
-      decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, pageNum, totalPages), { side: -1, key: `spb-${offset}` }));
-      pageStartTop = relTop;
-    }
+  breakOffsets.forEach((offset, i) => {
+    const endingPage = i + 1;
+    const startingPage = i + 2;
+    const key = `spb-${offset}`;
+    decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, startingPage, totalPages), { side: -1, key }));
   });
   if (cfg.enableHeader && !cfg.skipFirstPage) {
     decos.push(Decoration.widget(0, () => buildHeaderEl(cfg, 1, totalPages), { side: -1, key: "spb-header-first" }));
   }
-  if (cfg.enableFooter && !(pageNum === 1 && cfg.skipFirstPage)) {
+  if (cfg.enableFooter && !(totalPages === 1 && cfg.skipFirstPage)) {
     const endPos = view.state.doc.content.size;
     decos.push(Decoration.widget(endPos, () => buildFooterEl(cfg), { side: 1, key: "spb-footer-last" }));
   }
@@ -656,6 +668,11 @@ type Props = {
   footerBorder?: boolean;
   skipFirstPage?: boolean;
   onImageUpload?: (blob: Blob, filename: string) => Promise<string>;
+  // Gdy podany, toolbar renderuje się przez portal w tym elemencie (lewy
+  // sidebar w DocumentationModule.tsx) zamiast jako osobna kolumna obok
+  // treści - żeby fizycznie siedział w tym samym miejscu co reszta
+  // przycisków (Edytuj/Zapisz/Podgląd...).
+  toolbarPortalEl?: HTMLDivElement | null;
 };
 export function DocumentationEditorTiptapPoC({
   initialHtml,
@@ -680,6 +697,7 @@ export function DocumentationEditorTiptapPoC({
   footerBorder = true,
   skipFirstPage = true,
   onImageUpload,
+  toolbarPortalEl,
 }: Props) {
   const [uploading, setUploading] = useState(false);
   const [importingDocx, setImportingDocx] = useState(false);
@@ -729,6 +747,11 @@ export function DocumentationEditorTiptapPoC({
     // onCreate: ({ editor }) => settlePaginationAfterImagesLoad(editor), // wylaczone razem z PaginationPlus (2026-08-28)
     onUpdate: ({ editor }) => onChangeHtml(editor.getHTML()),
     editorProps: {
+      // Po migracji na Tiptap ten id nigdzie nie był ustawiony, więc cały
+      // wygląd tekstu (Calibri, rozmiary p/h1-h3, listy, tabele) z
+      // docContentCss nie stosował się w ogóle w żywym edytorze - stąd
+      // rozjazd wysokości akapitów względem podglądu/PDF, które go dostają.
+      attributes: { id: "doc-editor-content" },
       handlePaste(_view, event) {
         const html = event.clipboardData?.getData("text/html");
         if (!html) return false;
@@ -863,6 +886,71 @@ export function DocumentationEditorTiptapPoC({
   const pickImage = () => fileInputRef.current?.click();
   const pickDocx = () => docxInputRef.current?.click();
 
+  // Osobna, szersza (w-52) kolumna toolbara obok edytora - przyciski mają
+  // ikonę + czytelną etykietę obok siebie, ułożone poziomo (flex-wrap),
+  // zamiast gołych, ściśniętych ikon.
+  const GroupBtn = ({ icon, label, onClick, onMouseDown, active, disabled, danger }: {
+    icon: React.ReactNode; label: string; onClick?: () => void; onMouseDown?: (e: React.MouseEvent) => void;
+    active?: boolean; disabled?: boolean; danger?: boolean;
+  }) => (
+    <button
+      type="button"
+      title={label}
+      onMouseDown={onMouseDown ?? ((e) => e.preventDefault())}
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs whitespace-nowrap disabled:opacity-40 transition-all duration-100 active:scale-95 ${
+        active
+          ? "bg-[var(--accent)] text-white"
+          : danger
+          ? "text-[var(--text-secondary)] hover:bg-red-50 hover:text-red-600"
+          : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)]"
+      }`}
+    >
+      <span className="text-sm leading-none w-4 text-center">{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+  const GroupSelect = ({ icon, label, children, onChange }: { icon: React.ReactNode; label: string; children: React.ReactNode; onChange: (v: string) => void }) => (
+    <label className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--accent)] cursor-pointer relative w-full">
+      <span className="text-sm leading-none w-4 text-center">{icon}</span>
+      <span>{label}</span>
+      <select
+        defaultValue=""
+        onMouseDown={(e) => e.stopPropagation()}
+        onChange={(e) => { const v = e.target.value; e.target.value = ""; onChange(v); }}
+        style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%" }}
+      >
+        {children}
+      </select>
+    </label>
+  );
+
+  // Grupy toolbara są domyślnie zwinięte i rozwijają się poziomo (flex-wrap)
+  // w osobnej kolumnie obok edytora - klik na nagłówek grupy przełącza
+  // widoczność.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (id: string) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const Group = ({ id, icon, label, children }: { id: string; icon: string; label: string; children: React.ReactNode }) => {
+    const open = openGroups.has(id);
+    return (
+      <div className="dt-group">
+        <button type="button" className="dt-group-header" onClick={() => toggleGroup(id)}>
+          <span className="dt-group-icon">{icon}</span>
+          <span className="dt-group-label">{label}</span>
+          <span className="dt-group-chevron">{open ? "▾" : "▸"}</span>
+        </button>
+        {open && <div className="dt-group-body">{children}</div>}
+      </div>
+    );
+  };
+
+  if (!editor) return null;
+
   const onFileChosen = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -915,7 +1003,7 @@ export function DocumentationEditorTiptapPoC({
   return (
     <div
       className="doc-editor-tiptap-poc"
-      style={{ position: "relative", display: "flex", flexDirection: "column", height: "100%" }}
+      style={{ position: "relative", display: "flex", flexDirection: "row", height: "100%" }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={async (e) => {
         const file = e.dataTransfer.files?.[0];
@@ -943,89 +1031,95 @@ export function DocumentationEditorTiptapPoC({
     >
       <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={onFileChosen} />
       <input ref={docxInputRef} type="file" accept=".docx" style={{ display: "none" }} onChange={onDocxChosen} />
-      <div className="toolbar dt-toolbar">
-        <button type="button" className="dt-btn" data-active={editor.isActive("bold")} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().toggleBold().run()}><b>B</b></button>
-        <button type="button" className="dt-btn" data-active={editor.isActive("italic")} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().toggleItalic().run()}><i>I</i></button>
-        <button type="button" className="dt-btn" data-active={editor.isActive("bulletList")} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().toggleBulletList().run()}>• Lista</button>
-        <select
-          defaultValue=""
-          onMouseDown={(e) => e.stopPropagation()}
-          onChange={(e) => {
-            const v = e.target.value;
-            e.target.value = "";
-            if (v === "section") applySectionStyle();
-            else if (v === "p") editor.chain().focus().setParagraph().run();
-            else if (v === "h1" || v === "h2" || v === "h3") editor.chain().focus().toggleHeading({ level: Number(v[1]) as 1 | 2 | 3 }).run();
-          }}
-        >
-          <option value="" disabled>Styl</option>
-          <option value="p">Normal</option>
-          <option value="section">Sekcja (bez numeracji)</option>
-          <option value="h1">Heading 1 — Rozdział</option>
-          <option value="h2">Heading 2 — Podrozdział</option>
-          <option value="h3">Heading 3 — Punkt</option>
-        </select>
-        <select
-          defaultValue=""
-          onMouseDown={(e) => e.stopPropagation()}
-          onChange={(e) => {
-            const v = e.target.value;
-            e.target.value = "";
-            if (v) editor.chain().focus().setFontSize(v).run();
-          }}
-        >
-          <option value="" disabled>Rozmiar</option>
-          <option value="10px">Bardzo mała</option>
-          <option value="13px">Mała</option>
-          <option value="16px">Normalna</option>
-          <option value="18px">Duża</option>
-          <option value="24px">Większa</option>
-        </select>
-        <button type="button" className="dt-btn" data-active={editor.isActive({ textAlign: "left" })} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().setTextAlign("left").run()}>⬅</button>
-        <button type="button" className="dt-btn" data-active={editor.isActive({ textAlign: "center" })} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().setTextAlign("center").run()}>↔</button>
-        <button type="button" className="dt-btn" data-active={editor.isActive({ textAlign: "right" })} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().setTextAlign("right").run()}>➡</button>
-        <button type="button" className="dt-btn" data-active={editor.isActive({ textAlign: "justify" })} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().setTextAlign("justify").run()}>☰</button>
-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => setShowPlainPasteModal(true)}>🧹 Wklej tekst</button>
-        <button
-          type="button"
-          className="dt-btn"
-          data-active={editor.isActive("table")}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            if (editor.isActive("table")) {
-              alert("Kursor jest już wewnątrz tabeli — zagnieżdżanie tabel nie jest obsługiwane.");
-              return;
-            }
-            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-          }}
-        >🔲 Tabela</button>
-        {editor.isActive("table") && (
-          <>
-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().addRowAfter().run()}>+Wiersz</button>
-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteRow().run()}>-Wiersz</button>
-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().addColumnAfter().run()}>+Kolumna</button>
-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteColumn().run()}>-Kolumna</button>
-            <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={openTableSizeModal}>📐 Rozmiar</button>
-            <button type="button" className="dt-btn" data-active={editor.getAttributes("table").align === "left"} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()}>⬅</button>
-            <button type="button" className="dt-btn" data-active={editor.getAttributes("table").align === "center"} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()}>↔</button>
-            <button type="button" className="dt-btn" data-active={editor.getAttributes("table").align === "right"} onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()}>➡</button>
-            <button type="button" className="dt-btn dt-btn-danger" onMouseDown={(e) => e.preventDefault()} onClick={() => editor.chain().focus().deleteTable().run()}>🗑 Usuń tabelę</button>
-          </>
-        )}
-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={insertBreak}>⏎ Podział strony</button>
-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={pickImage} disabled={uploading}>{uploading ? "Wysyłanie…" : "🖼 Obraz"}</button>
-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={pickDocx} disabled={importingDocx}>{importingDocx ? "Importowanie…" : "📄 Import z Worda"}</button>
-        <button type="button" className="dt-btn" onMouseDown={(e) => e.preventDefault()} onClick={addComment}>💬 Komentarz</button>
-      </div>
+      {(() => {
+        const toolbar = (
+          <div className="dt-toolbar">
+            <Group id="format" icon="Aa" label="Format">
+              <GroupBtn icon={<b>B</b>} label="Pogrubienie" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} />
+              <GroupBtn icon={<i>I</i>} label="Kursywa" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} />
+              <GroupBtn icon="•" label="Lista" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()} />
+              <GroupSelect
+                icon="H"
+                label="Styl"
+                onChange={(v) => {
+                  if (v === "section") applySectionStyle();
+                  else if (v === "p") editor.chain().focus().setParagraph().run();
+                  else if (v === "h1" || v === "h2" || v === "h3") editor.chain().focus().toggleHeading({ level: Number(v[1]) as 1 | 2 | 3 }).run();
+                }}
+              >
+                <option value="" disabled>Styl</option>
+                <option value="p">Normal</option>
+                <option value="section">Sekcja (bez numeracji)</option>
+                <option value="h1">Heading 1 — Rozdział</option>
+                <option value="h2">Heading 2 — Podrozdział</option>
+                <option value="h3">Heading 3 — Punkt</option>
+              </GroupSelect>
+              <GroupSelect icon="🔠" label="Rozmiar" onChange={(v) => { if (v) editor.chain().focus().setFontSize(v).run(); }}>
+                <option value="" disabled>Rozmiar</option>
+                <option value="10px">Bardzo mała</option>
+                <option value="13px">Mała</option>
+                <option value="16px">Normalna</option>
+                <option value="18px">Duża</option>
+                <option value="24px">Większa</option>
+              </GroupSelect>
+            </Group>
+            <Group id="align" icon="☰" label="Wyrównanie">
+              <GroupBtn icon="⬅" label="Lewo" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()} />
+              <GroupBtn icon="↔" label="Środek" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()} />
+              <GroupBtn icon="➡" label="Prawo" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()} />
+              <GroupBtn icon="☰" label="Justuj" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()} />
+            </Group>
+            <Group id="insert" icon="➕" label="Wstaw">
+              <GroupBtn icon="🧹" label="Wklej tekst" onClick={() => setShowPlainPasteModal(true)} />
+              <GroupBtn
+                icon="🔲"
+                label="Tabela"
+                active={editor.isActive("table")}
+                onClick={() => {
+                  if (editor.isActive("table")) {
+                    alert("Kursor jest już wewnątrz tabeli — zagnieżdżanie tabel nie jest obsługiwane.");
+                    return;
+                  }
+                  editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+                }}
+              />
+              <GroupBtn icon="⏎" label="Podział strony" onClick={insertBreak} />
+              <GroupBtn icon="🖼" label={uploading ? "Wysyłanie…" : "Obraz"} disabled={uploading} onClick={pickImage} />
+              <GroupBtn icon="📄" label={importingDocx ? "Import…" : "Import z Worda"} disabled={importingDocx} onClick={pickDocx} />
+              <GroupBtn icon="💬" label="Komentarz" onClick={addComment} />
+            </Group>
+            {editor.isActive("table") && (
+              <Group id="table" icon="🔲" label="Tabela">
+                <GroupBtn icon="➕⏵" label="Dodaj wiersz" onClick={() => editor.chain().focus().addRowAfter().run()} />
+                <GroupBtn icon="➖⏵" label="Usuń wiersz" onClick={() => editor.chain().focus().deleteRow().run()} />
+                <GroupBtn icon="➕⏷" label="Dodaj kolumnę" onClick={() => editor.chain().focus().addColumnAfter().run()} />
+                <GroupBtn icon="➖⏷" label="Usuń kolumnę" onClick={() => editor.chain().focus().deleteColumn().run()} />
+                <GroupBtn icon="📐" label="Rozmiar tabeli" onClick={openTableSizeModal} />
+                <GroupBtn icon="⬅" label="Tabela do lewej" active={editor.getAttributes("table").align === "left"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "left" }).run()} />
+                <GroupBtn icon="↔" label="Tabela wyśrodkowana" active={editor.getAttributes("table").align === "center"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()} />
+                <GroupBtn icon="➡" label="Tabela do prawej" active={editor.getAttributes("table").align === "right"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()} />
+                <GroupBtn icon="🗑" label="Usuń tabelę" danger onClick={() => editor.chain().focus().deleteTable().run()} />
+              </Group>
+            )}
+          </div>
+        );
+        return toolbarPortalEl ? createPortal(toolbar, toolbarPortalEl) : toolbar;
+      })()}
       <div className="dt-page-scroll" style={{ background: "#888", padding: "24px 0", display: "flex", justifyContent: "center" }}>
         <style>{`
-.dt-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; position: sticky; top: 0; z-index: 60; background: var(--bg-card, #fff); border-bottom: 1px solid var(--border-color, #ddd); }
+.dt-toolbar { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; ${toolbarPortalEl ? "" : "padding: 8px 4px; position: sticky; top: 0; left: 0; z-index: 60; width: 72px; flex-shrink: 0; height: 100%; overflow-y: auto; background: var(--bg-card, #fff); border-right: 1px solid var(--border-color, #ddd);"} }
+.dt-group { border-bottom: 1px solid var(--border-color, #eee); padding-bottom: 2px; margin-bottom: 2px; }
+.dt-group:last-child { border-bottom: none; }
+.dt-group-header { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 6px; border-radius: 6px; background: none; border: none; cursor: pointer; color: var(--text-secondary, #555); transition: background 0.1s; }
+.dt-group-header:hover { background: var(--bg-hover, #f2f2f2); color: var(--accent, #6d5cfc); }
+.dt-group-icon { font-size: 15px; width: 18px; text-align: center; }
+.dt-group-label { flex: 1; text-align: left; font-size: 12px; font-weight: 600; }
+.dt-group-chevron { font-size: 10px; opacity: 0.6; }
+.dt-group-body { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 2px 8px 6px; justify-content: flex-start; }
+.dt-toolbar-sep { width: 40px; height: 1px; background: var(--border-color, #ddd); margin: 4px 0; }
 .dt-btn { border: 1px solid var(--border-color, #ddd); background: var(--bg-card, #fff); color: var(--text-primary, #222); border-radius: 6px; padding: 5px 9px; font-size: 13px; cursor: pointer; transition: background 0.12s, border-color 0.12s; }
 .dt-btn:hover { background: var(--accent-light, #efedff); border-color: var(--accent, #6d5cfc); }
-.dt-btn[data-active="true"] { background: var(--accent, #6d5cfc); border-color: var(--accent, #6d5cfc); color: #fff; }
-.dt-btn:disabled { opacity: 0.5; cursor: default; }
-.dt-btn-danger:hover { background: #fdeaea; border-color: #d33; color: #b00; }
-.dt-page-scroll { flex: 1; overflow-y: auto; }
+.dt-page-scroll { flex: 1; overflow-y: auto; min-width: 0; }
 .doc-editor-tiptap-poc .ProseMirror {
   position: relative;
   width: 794px;
@@ -1063,6 +1157,7 @@ export function DocumentationEditorTiptapPoC({
 .doc-editor-tiptap-poc .tableWrapper { overflow-x: auto; }
 .doc-editor-tiptap-poc .column-resize-handle { position: absolute; right: -3px; top: 0; bottom: -2px; width: 6px; background-color: #4fc3f7; cursor: col-resize; z-index: 10; }
 .doc-editor-tiptap-poc .ProseMirror table.resize-cursor { cursor: col-resize; }
+${docContentCss("#doc-editor-content")}
         `}</style>
         <EditorContent editor={editor} />
       </div>

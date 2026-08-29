@@ -1,0 +1,85 @@
+diff --git a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+index 2443107..54453ee 100755
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -984,6 +984,7 @@ export function DocumentationEditorTiptapPoC({
+       <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" style={{ display: "none" }} onChange={onFileChosen} />
+       <input ref={docxInputRef} type="file" accept=".docx" style={{ display: "none" }} onChange={onDocxChosen} />
+       <div className="dt-toolbar">
++        <div className="dt-toolbar-label">Format</div>
+         <RailBtn icon={<b>B</b>} label="Pogrubienie" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} />
+         <RailBtn icon={<i>I</i>} label="Kursywa" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} />
+         <RailBtn icon="•" label="Lista" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()} />
+@@ -1011,10 +1012,14 @@ export function DocumentationEditorTiptapPoC({
+           <option value="18px">Duża</option>
+           <option value="24px">Większa</option>
+         </RailSelect>
++        <div className="dt-toolbar-sep" />
++        <div className="dt-toolbar-label">Wyrównanie</div>
+         <RailBtn icon="⬅" label="Lewo" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()} />
+         <RailBtn icon="↔" label="Środek" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()} />
+         <RailBtn icon="➡" label="Prawo" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()} />
+         <RailBtn icon="☰" label="Justuj" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()} />
++        <div className="dt-toolbar-sep" />
++        <div className="dt-toolbar-label">Wstaw</div>
+         <RailBtn icon="🧹" label="Wklej tekst" onClick={() => setShowPlainPasteModal(true)} />
+         <RailBtn
+           icon="🔲"
+@@ -1031,6 +1036,7 @@ export function DocumentationEditorTiptapPoC({
+         {editor.isActive("table") && (
+           <>
+             <div className="dt-toolbar-sep" />
++            <div className="dt-toolbar-label">Tabela</div>
+             <RailBtn icon="➕⏵" label="Wiersz" onClick={() => editor.chain().focus().addRowAfter().run()} />
+             <RailBtn icon="➖⏵" label="-Wiersz" onClick={() => editor.chain().focus().deleteRow().run()} />
+             <RailBtn icon="➕⏷" label="Kolumna" onClick={() => editor.chain().focus().addColumnAfter().run()} />
+@@ -1040,9 +1046,9 @@ export function DocumentationEditorTiptapPoC({
+             <RailBtn icon="↔" label="Tab. środek" active={editor.getAttributes("table").align === "center"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "center" }).run()} />
+             <RailBtn icon="➡" label="Tab. prawo" active={editor.getAttributes("table").align === "right"} onClick={() => editor.chain().focus().updateAttributes("table", { align: "right" }).run()} />
+             <RailBtn icon="🗑" label="Usuń tab." danger onClick={() => editor.chain().focus().deleteTable().run()} />
+-            <div className="dt-toolbar-sep" />
+           </>
+         )}
++        <div className="dt-toolbar-sep" />
+         <RailBtn icon="⏎" label="Podział str." onClick={insertBreak} />
+         <RailBtn icon="🖼" label={uploading ? "Wysyłanie…" : "Obraz"} disabled={uploading} onClick={pickImage} />
+         <RailBtn icon="📄" label={importingDocx ? "Import…" : "Import Word"} disabled={importingDocx} onClick={pickDocx} />
+@@ -1052,6 +1058,7 @@ export function DocumentationEditorTiptapPoC({
+         <style>{`
+ .dt-toolbar { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; position: sticky; top: 0; left: 0; z-index: 60; width: 72px; flex-shrink: 0; height: 100%; overflow-y: auto; background: var(--bg-card, #fff); border-right: 1px solid var(--border-color, #ddd); }
+ .dt-toolbar-sep { width: 40px; height: 1px; background: var(--border-color, #ddd); margin: 4px 0; }
++.dt-toolbar-label { width: 100%; text-align: center; font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted, #999); margin-top: 4px; }
+ .dt-btn { border: 1px solid var(--border-color, #ddd); background: var(--bg-card, #fff); color: var(--text-primary, #222); border-radius: 6px; padding: 5px 9px; font-size: 13px; cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+ .dt-btn:hover { background: var(--accent-light, #efedff); border-color: var(--accent, #6d5cfc); }
+ .dt-page-scroll { flex: 1; overflow-y: auto; min-width: 0; }
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 19c3424..b131284 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -1548,8 +1548,15 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+             >
+               <style>{docContentCss("#doc-editor-content")}</style>
+               {!active ? (
+-                <div className="p-8 text-sm text-[var(--text-muted)]">
+-                  {chapters.length === 0 ? "Brak rozdziałów — dodaj pierwszy w panelu po lewej." : "Wybierz rozdział z listy."}
++                <div className="p-8 text-sm text-[var(--text-muted)] flex flex-col items-center gap-2">
++                  {loading ? (
++                    <>
++                      <div className="w-6 h-6 rounded-full border-2 border-[var(--border-color)] border-t-[var(--accent)] animate-spin" />
++                      <span className="text-green-600 font-medium">Tekst się ładuje, proszę czekać…</span>
++                    </>
++                  ) : (
++                    chapters.length === 0 ? "Brak rozdziałów — dodaj pierwszy w panelu po lewej." : "Wybierz rozdział z listy."
++                  )}
+                 </div>
+               ) : (
+                 <>
+@@ -1625,7 +1632,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                     {(readViewLoading || !readViewReady) && (
+                       <div className="mx-auto flex flex-col items-center justify-center gap-2 py-16 text-sm text-[var(--text-secondary)]" style={{ maxWidth: 900 }}>
+                         <div className="w-6 h-6 rounded-full border-2 border-[var(--border-color)] border-t-[var(--accent)] animate-spin" />
+-                        <span>Tekst się ładuje, proszę czekać…</span>
++                        <span className="text-green-600 font-medium">Tekst się ładuje, proszę czekać…</span>
+                       </div>
+                     )}
+                     <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
