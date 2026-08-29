@@ -613,6 +613,7 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
 // ale TYLKO gdy użytkownik jawnie ustawił szerokość wszystkich kolumn
 // (drag albo modal "Rozmiar tabeli") - w przeciwnym razie zostawia auto.
 const TABLE_WIDTH_SYNC_KEY = new PluginKey("tableWidthSync");
+const DEFAULT_SYNCED_COL_WIDTH = 150;
 function syncTableWidths(view: any) {
   view.state.doc.descendants((node: any, pos: number) => {
     if (node.type.spec.tableRole !== "table") return;
@@ -629,11 +630,12 @@ function syncTableWidths(view: any) {
     let dom = view.nodeDOM(pos) as HTMLElement | null;
     if (dom && dom.tagName !== "TABLE") dom = dom.querySelector("table");
     if (!dom) return;
-    if (colWidths.every((w) => w > 0)) {
-      dom.style.width = `${colWidths.reduce((a, b) => a + b, 0)}px`;
-    } else {
-      dom.style.width = "";
-    }
+    // Kolumny bez jawnie ustawionej szerokości dostają wartość domyślną -
+    // tabela ZAWSZE ma jawną (nie "auto"/100%) szerokość, żeby przyciski
+    // pozycji (lewo/środek/prawo) miały efekt nawet na świeżo wstawionej,
+    // nigdy nie resizowanej tabeli.
+    const total = colWidths.reduce((a, w) => a + (w || DEFAULT_SYNCED_COL_WIDTH), 0);
+    dom.style.width = `${total}px`;
   });
 }
 function createTableWidthSyncExtension() {
@@ -1280,6 +1282,7 @@ export function DocumentationEditorTiptapPoC({
 .doc-editor-tiptap-poc .ProseMirror img { max-width: 100%; max-height: 850px; height: auto; }
 .doc-editor-tiptap-poc .ProseMirror table { border-collapse: collapse; table-layout: fixed; margin: 8px 0; }
 .doc-editor-tiptap-poc .ProseMirror table td, .doc-editor-tiptap-poc .ProseMirror table th { border: 1px solid #999; min-width: 60px; padding: 4px 8px; position: relative; }
+.doc-editor-tiptap-poc .ProseMirror .selectedCell:after { z-index: 2; position: absolute; content: ""; left: 0; right: 0; top: 0; bottom: 0; background: rgba(79, 195, 247, 0.35); pointer-events: none; }
 .doc-editor-tiptap-poc .ProseMirror table th { background: #eee; font-weight: bold; }
 .doc-editor-tiptap-poc .page { box-shadow: 0 2px 10px rgba(0,0,0,0.35); }
 .doc-editor-tiptap-poc .simple-page-break-line { position: absolute; left: -96px; right: -96px; height: 5px; background: #888; transform: translateY(-5px); pointer-events: none; z-index: 1; }
