@@ -1397,6 +1397,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [readViewHtml, setReadViewHtml] = useState("");
   const [readViewLoading, setReadViewLoading] = useState(false);
   const [readViewReady, setReadViewReady] = useState(false);
+  const readViewIframeRef = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     if (editMode) return;
     if (!active) { setReadViewHtml(""); return; }
@@ -1422,7 +1423,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       if (e.data && e.data.type === "docPreviewPageCount") {
         setPreviewPageCount(e.data.count);
         setPaginationError(e.data.error || "");
-        if (!editMode) setReadViewReady(true);
+        // Ten sam typ wiadomości wysyła i modal "Podgląd wydruku", i ten
+        // iframe podglądu ogólnego (współdzielą buildChapterPreviewHtml) -
+        // bez sprawdzenia źródła, wcześniejsza/inna wiadomość z modala
+        // potrafiła fałszywie zaliczyć gotowość podglądu ogólnego, przez
+        // co zielony napis znikał zanim WŁAŚCIWY iframe faktycznie skończył.
+        if (!editMode && e.source === readViewIframeRef.current?.contentWindow) setReadViewReady(true);
       }
     };
     window.addEventListener("message", onMsg);
@@ -1751,7 +1757,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         </div>
                       </div>
                     )}
-                    <iframe title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
+                    <iframe ref={readViewIframeRef} title="Podgląd rozdziału" srcDoc={readViewHtml} className="mx-auto block w-full" style={{ maxWidth: 900, minHeight: "calc(100vh - 200px)", border: "none", display: (readViewLoading || !readViewReady) ? "none" : "block" }} />
                     </>
                   )}
                   {editMode && canEdit && active && (
