@@ -1023,6 +1023,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
 
   const saveSettings = async () => {
     if (activeBookId === null) return;
+    // Odświeżenie widoku (hfSettings napędza propsy edytora) następuje
+    // OD RAZU, zanim skończy się wywołanie do kanistra (IC potrafi
+    // odpowiadać z zauważalnym opóźnieniem) - wcześniej czekało na "await",
+    // przez co po kliknięciu "Zapisz" wyglądało jakby nic się nie stało.
+    setHfSettings(hfDraft);
+    saveHfExtras(hfDraft);
+    hfSettingsBeforeEditRef.current = hfDraft;
+    setShowSettings(false);
     try {
       await actor.setBookHeaderFooterSettings(
         activeBookId,
@@ -1032,12 +1040,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         hfDraft.skipFirstPage,
         hfDraft.showPageNumbers,
       );
-      setHfSettings(hfDraft);
-      saveHfExtras(hfDraft);
-      hfSettingsBeforeEditRef.current = hfDraft;
-      setShowSettings(false);
     } catch (e: any) {
-      alert("Błąd zapisu ustawień: " + (e?.message || String(e)));
+      alert("Błąd zapisu ustawień na serwerze (zmiana została zastosowana lokalnie, ale nie zapisana): " + (e?.message || String(e)));
     }
   };
 
@@ -1970,7 +1974,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       </div>
 
       {showSettings && (
-        <div className="fixed inset-0 z-[400]" onClick={closeSettingsWithoutSaving}>
+        <div className="fixed inset-0 z-[400]">
           <div
             className="absolute bg-[var(--bg-card)] text-[var(--text-primary)] rounded-lg shadow-2xl flex flex-col overflow-hidden"
             style={{ left: hfWinRect.x, top: hfWinRect.y, width: hfWinRect.width, height: hfWinRect.height }}

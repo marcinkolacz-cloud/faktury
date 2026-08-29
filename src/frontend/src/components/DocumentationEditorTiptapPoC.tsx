@@ -524,6 +524,14 @@ type HfPagCfg = {
 
 function cmToPx(cm: number) { return Math.round(cm * 10 * MM_TO_PX); }
 function nl2brSimple(t: string) { return (t || "").replace(/\n/g, "<br/>"); }
+// Jedna linia tekstu -> wyśrodkuj pionowo w polu nagłówka/stopki (jak dotąd
+// domyślnie); więcej linii (w KTÓRYMKOLWIEK z pól L/C/P) -> klasyczne
+// wyrównanie od góry, bo wycentrowany wielolinijkowy blok wygląda źle i
+// najedzie na obramowanie.
+function headerFooterAlignItems(left: string, center: string, right: string): "center" | "flex-start" {
+  const multiline = [left, center, right].some((t) => (t || "").includes("\n"));
+  return multiline ? "flex-start" : "center";
+}
 
 function buildHeaderEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
   const isOdd = pageNum % 2 === 1;
@@ -537,6 +545,7 @@ function buildHeaderEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
   el.style.fontSize = `${cfg.headerFontSize}pt`;
   el.style.margin = `0 -${SIDE_MARGIN_PX}px`;
   el.style.padding = `0 ${SIDE_MARGIN_PX}px 6px`;
+  el.style.alignItems = headerFooterAlignItems(left, center, right);
   if (cfg.headerBorder) el.style.borderBottom = "1px solid #ccc";
   el.innerHTML = `<span>${nl2brSimple(left)}</span><span>${nl2brSimple(center)}</span><span>${nl2brSimple(right)}</span>`;
   if (cfg.showPageNumbers) {
@@ -556,6 +565,7 @@ function buildFooterEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
   el.style.fontSize = `${cfg.footerFontSize}pt`;
   el.style.margin = `0 -${SIDE_MARGIN_PX}px`;
   el.style.padding = `6px ${SIDE_MARGIN_PX}px 0`;
+  el.style.alignItems = headerFooterAlignItems(cfg.footerLeft, cfg.footerCenter, cfg.footerRight);
   if (cfg.footerBorder) el.style.borderTop = "1px solid #ccc";
   el.innerHTML = `<span>${nl2brSimple(cfg.footerLeft)}</span><span>${nl2brSimple(cfg.footerCenter)}</span><span>${nl2brSimple(cfg.footerRight)}</span>`;
   if (cfg.showPageNumbers) {
@@ -1101,6 +1111,18 @@ export function DocumentationEditorTiptapPoC({
     view.dispatch(tr);
     editor.commands.focus();
   }, [editor]);
+  const alignWholeDocument = useCallback((align: "left" | "right") => {
+    if (!editor) return;
+    const { state, view } = editor;
+    let tr = state.tr;
+    state.doc.descendants((node: any, pos: number) => {
+      if (node.type.name === "paragraph" || node.type.name === "heading") {
+        tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, textAlign: align });
+      }
+    });
+    view.dispatch(tr);
+    editor.commands.focus();
+  }, [editor]);
   const selectWholeTable = useCallback(() => {
     if (!editor) return;
     const { state, view } = editor;
@@ -1387,6 +1409,10 @@ export function DocumentationEditorTiptapPoC({
               <GroupBtn icon="↔" label="Środek" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()} />
               <GroupBtn icon="➡" label="Prawo" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()} />
               <GroupBtn icon="☰" label="Justuj" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()} />
+              <GroupSelect icon="📑" label="Justuj cały dokument" onChange={(v) => { if (v) alignWholeDocument(v as "left" | "right"); }}>
+                <option value="left">Z lewej</option>
+                <option value="right">Z prawej</option>
+              </GroupSelect>
             </Group>
             <Group id="insert" icon="➕" label="Wstaw">
               <GroupBtn icon="🧹" label="Wklej tekst" onClick={() => setShowPlainPasteModal(true)} />
@@ -1533,7 +1559,14 @@ ${docContentCss("#doc-editor-content")}
         document.body
       )}
       {commentPopup && createPortal((() => {
-        const popupLeft = Math.min(commentPopup.ax + 16, window.innerWidth - 280);
+        // Dymek ma stać W MARGINESIE obok strony, nie tuż przy zaznaczeniu -
+        // inaczej zasłania sąsiedni tekst (zgłoszone). Pozycja pozioma jest
+        // więc pinowana do prawej krawędzi realnego obszaru edycji
+        // (editor.view.dom), pionowa nadal śledzi zaznaczenie (ay) tak, żeby
+        // linia łącząca wskazywała właściwy fragment.
+        const pmRect = editor?.view.dom.getBoundingClientRect();
+        const marginLeft = pmRect ? pmRect.right + 20 : commentPopup.ax + 16;
+        const popupLeft = Math.min(marginLeft, window.innerWidth - 280);
         const popupTop = Math.max(8, commentPopup.ay - 20);
         return (
           <>
