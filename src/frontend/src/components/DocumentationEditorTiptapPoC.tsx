@@ -264,7 +264,7 @@ function sanitizePastedHtml(html: string): string {
 // --- Obrazki: resize/align/drag&drop (§5 inventory) ---
 function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
   const imgRef = useRef<HTMLImageElement>(null);
-  const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+  const dragState = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number } | null>(null);
   const [showSizeModal, setShowSizeModal] = useState(false);
   const [sizeW, setSizeW] = useState("");
   const [sizeH, setSizeH] = useState("");
@@ -309,12 +309,15 @@ function ImageNodeView({ node, updateAttributes, selected, editor }: any) {
     e.stopPropagation();
     const img = imgRef.current;
     if (!img) return;
-    dragState.current = { startX: e.clientX, startWidth: img.getBoundingClientRect().width };
+    const rect = img.getBoundingClientRect();
+    dragState.current = { startX: e.clientX, startY: e.clientY, startWidth: rect.width, startHeight: rect.height };
     const onMove = (ev: MouseEvent) => {
       if (!dragState.current) return;
-      const delta = ev.clientX - dragState.current.startX;
-      const newWidth = Math.max(40, Math.round(dragState.current.startWidth + delta));
-      updateAttributes({ width: `${newWidth}px` });
+      const deltaX = ev.clientX - dragState.current.startX;
+      const deltaY = ev.clientY - dragState.current.startY;
+      const newWidth = Math.max(40, Math.round(dragState.current.startWidth + deltaX));
+      const newHeight = Math.max(40, Math.round(dragState.current.startHeight + deltaY));
+      updateAttributes({ width: `${newWidth}px`, height: `${newHeight}px` });
     };
     const onUp = () => {
       dragState.current = null;
@@ -674,10 +677,19 @@ function buildGapEl(pageNum: number, totalPages: number) {
   return el;
 }
 
-function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingPageNum: number, totalPages: number) {
+function buildSpacerEl(px: number) {
+  const el = document.createElement("div");
+  el.contentEditable = "false";
+  el.style.height = `${Math.max(0, Math.round(px))}px`;
+  return el;
+}
+
+function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingPageNum: number, totalPages: number, leftoverH: number, contentH: number) {
   return () => {
     const wrap = document.createElement("div");
     wrap.contentEditable = "false";
+    const spacerH = contentH - leftoverH;
+    if (spacerH > 0) wrap.appendChild(buildSpacerEl(spacerH));
     if (cfg.enableFooter && !(cfg.skipFirstPage && endingPageNum === 1)) wrap.appendChild(buildFooterEl(cfg, endingPageNum, totalPages));
     wrap.appendChild(buildGapEl(endingPageNum, totalPages));
     if (cfg.enableHeader && !(cfg.skipFirstPage && startingPageNum === 1)) wrap.appendChild(buildHeaderEl(cfg, startingPageNum, totalPages));
@@ -697,14 +709,16 @@ const MIN_LEAD = 60; // px - unikaj osamotnionego nagłówka na dole strony (jak
 // tiptap-pagination-plus (2026-08-28). Sumowanie wysokości per-blok jest
 // na to odporne i jest DOKŁADNIE tym samym algorytmem co paginateInner w
 // podglądzie (buildChapterPreviewHtml) - stąd liczba stron się zgadza.
-function computeBreakOffsets(view: any, contentH: number): number[] {
+function computeBreakOffsets(view: any, contentH: number): { breakOffsets: number[]; leftovers: number[]; finalLeftover: number } {
   const breakOffsets: number[] = [];
+  const leftovers: number[] = [];
   let currentH = 0;
   view.state.doc.forEach((_node: any, offset: number) => {
     const domNode = view.nodeDOM(offset);
     if (!(domNode instanceof HTMLElement)) return;
     if (domNode.classList.contains(PAGE_BREAK_CLASS)) {
       breakOffsets.push(offset);
+      leftovers.push(currentH);
       currentH = 0;
       return;
     }
@@ -712,14 +726,16 @@ function computeBreakOffsets(view: any, contentH: number): number[] {
     const isHeading = /^H[1-4]$/.test(domNode.tagName);
     if (currentH > 0 && currentH + h > contentH) {
       breakOffsets.push(offset);
+      leftovers.push(currentH);
       currentH = 0;
     } else if (isHeading && currentH > 0 && (contentH - currentH) < (h + MIN_LEAD)) {
       breakOffsets.push(offset);
+      leftovers.push(currentH);
       currentH = 0;
     }
     currentH += h;
   });
-  return breakOffsets;
+  return { breakOffsets, leftovers, finalLeftover: currentH };
 }
 
 function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
@@ -729,7 +745,7 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   const headerHPx = cmToPx(cfg.headerHeightCm);
   const footerHPx = cmToPx(cfg.footerHeightCm);
   const contentH = PAGE_H_PX - headerHPx - footerHPx;
-  const breakOffsets = computeBreakOffsets(view, contentH);
+  const { breakOffsets, leftovers, finalLeftover } = computeBreakOffsets(view, contentH);
   const totalPages = breakOffsets.length + 1;
   cfg.onPageCountChange?.(totalPages);
   const decos: Decoration[] = [];
@@ -737,14 +753,21 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
     const endingPage = i + 1;
     const startingPage = i + 2;
     const key = `spb-${offset}`;
-    decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, startingPage, totalPages), { side: -1, key }));
+    decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, startingPage, totalPages, leftovers[i], contentH), { side: -1, key }));
   });
   if (cfg.enableHeader && !cfg.skipFirstPage) {
     decos.push(Decoration.widget(0, () => buildHeaderEl(cfg, 1, totalPages), { side: -1, key: "spb-header-first" }));
   }
   if (cfg.enableFooter && !(totalPages === 1 && cfg.skipFirstPage)) {
     const endPos = view.state.doc.content.size;
-    decos.push(Decoration.widget(endPos, () => buildFooterEl(cfg, totalPages, totalPages), { side: 1, key: "spb-footer-last" }));
+    const spacerH = contentH - finalLeftover;
+    decos.push(Decoration.widget(endPos, () => {
+      const wrap = document.createElement("div");
+      wrap.contentEditable = "false";
+      if (spacerH > 0) wrap.appendChild(buildSpacerEl(spacerH));
+      wrap.appendChild(buildFooterEl(cfg, totalPages, totalPages));
+      return wrap;
+    }, { side: 1, key: "spb-footer-last" }));
   }
   return DecorationSet.create(view.state.doc, decos);
 }

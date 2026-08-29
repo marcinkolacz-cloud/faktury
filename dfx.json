@@ -14,7 +14,16 @@
     },
     "frontend": {
       "type": "assets",
-      "source": ["src/frontend/dist"],
+      "source": [
+        "src/frontend/dist"
+      ],
+      "build": "cd src/frontend && npm run build"
+    },
+    "frontend_test": {
+      "type": "assets",
+      "source": [
+        "src/frontend/dist"
+      ],
       "build": "cd src/frontend && npm run build"
     }
   }
