@@ -145,22 +145,55 @@ async function nextImageNumber(imagesFolderPath: string): Promise<number> {
 // poniżej podmienia src na świeży, uwierzytelniony blob: URL tuż przed
 // wyświetleniem/eksportem - nigdy przy zapisie, żeby na Drive zawsze
 // zostawał stabilny wpis z itemId, a nie wygasający blob:.
+// Pobieranie obrazka pojedynczej pozycji z krotkim retry (2 dodatkowe
+// proby, rosnacy odstep) - pojedynczy przejsciowy blad Workera/Graph
+// (rate-limit, chwilowy timeout) nie powinien trwale gasic obrazka w
+// podgladzie az do nastepnego przebudowania HTML.
+async function downloadDriveImageWithRetry(itemId: string): Promise<Blob> {
+  let lastError: any = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await odDownloadFileBlob(itemId);
+    } catch (e: any) {
+      lastError = e;
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 export async function resolveDriveImages(html: string): Promise<string> {
   if (!html || !html.includes("data-drive-item-id")) return html;
   const doc = new DOMParser().parseFromString(html, "text/html");
   const imgs = Array.from(doc.querySelectorAll("img[data-drive-item-id]"));
-  await Promise.all(
-    imgs.map(async (img) => {
-      const itemId = img.getAttribute("data-drive-item-id");
-      if (!itemId) return;
-      try {
-        const blob = await odDownloadFileBlob(itemId);
-        img.setAttribute("src", URL.createObjectURL(blob));
-      } catch {
-        // brak dostepu do obrazka na Drive - zostaw stary/martwy src
-      }
-    }),
-  );
+  // Byla to pelna Promise.all bez limitu rownoleglosci - rozdzial z wieloma
+  // zdjeciami odpalal dziesiatki jednoczesnych requestow do
+  // onedrive-proxy/Graph, co bilo w rate-limit; kazdy taki blad byl cicho
+  // polykany (catch {}), zostawiajac martwy/wygasly src - stad obrazki
+  // "znikaly" losowo w podgladzie ogolnym (Podglad wydruku / Podglad
+  // rozdzialu poza edycja) przy dokumentach z wieksza liczba zdjec.
+  // Limit partii + retry powyzej usuwaja obie przyczyny naraz.
+  const CONCURRENCY = 3;
+  let failedCount = 0;
+  for (let i = 0; i < imgs.length; i += CONCURRENCY) {
+    const batch = imgs.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      batch.map(async (img) => {
+        const itemId = img.getAttribute("data-drive-item-id");
+        if (!itemId) return;
+        try {
+          const blob = await downloadDriveImageWithRetry(itemId);
+          img.setAttribute("src", URL.createObjectURL(blob));
+        } catch {
+          // brak dostepu do obrazka na Drive po 3 probach - zostaw stary/martwy src
+          failedCount += 1;
+        }
+      }),
+    );
+  }
+  if (failedCount > 0) {
+    console.warn(`[resolveDriveImages] ${failedCount} obrazek/ów nie udało się pobrać z Drive po 3 próbach.`);
+  }
   return doc.body.innerHTML;
 }
 
