@@ -69,6 +69,47 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
   const [linkingEvent, setLinkingEvent] = useState(false);
   const [selectedEventToLink, setSelectedEventToLink] = useState("");
   const [ticketFolderPath, setTicketFolderPath] = useState<string | null>(null);
+  const [showNewInternalTicket, setShowNewInternalTicket] = useState(false);
+  const [newTicketClientName, setNewTicketClientName] = useState("");
+  const [newTicketClientEmail, setNewTicketClientEmail] = useState("");
+  const [newTicketCompany, setNewTicketCompany] = useState("");
+  const [newTicketDeviceNumber, setNewTicketDeviceNumber] = useState("");
+  const [newTicketSubject, setNewTicketSubject] = useState("");
+  const [newTicketDescription, setNewTicketDescription] = useState("");
+  const [creatingInternalTicket, setCreatingInternalTicket] = useState(false);
+  const [newInternalTicketError, setNewInternalTicketError] = useState("");
+
+  const resetNewInternalTicketForm = () => {
+    setNewTicketClientName(""); setNewTicketClientEmail(""); setNewTicketCompany("");
+    setNewTicketDeviceNumber(""); setNewTicketSubject(""); setNewTicketDescription("");
+    setNewInternalTicketError("");
+  };
+
+  const submitInternalTicket = async () => {
+    if (!newTicketClientName.trim() || !newTicketSubject.trim() || !newTicketDescription.trim()) {
+      setNewInternalTicketError("Wypełnij imię i nazwisko, temat i opis.");
+      return;
+    }
+    setCreatingInternalTicket(true);
+    setNewInternalTicketError("");
+    try {
+      await actor.submitInternalTicket(
+        newTicketClientName.trim(),
+        newTicketClientEmail.trim(),
+        newTicketSubject.trim(),
+        newTicketDescription.trim(),
+        newTicketCompany.trim(),
+        newTicketDeviceNumber.trim(),
+      );
+      resetNewInternalTicketForm();
+      setShowNewInternalTicket(false);
+      await reload();
+    } catch (e: any) {
+      setNewInternalTicketError(e?.message || "Nie udało się utworzyć zgłoszenia.");
+    } finally {
+      setCreatingInternalTicket(false);
+    }
+  };
 
   const loadTicketLinks = async () => {
     try {
@@ -484,6 +525,12 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-sm overflow-hidden">
             <div className="p-2 space-y-1.5 border-b border-[var(--border-color-light)]">
+              <button
+                onClick={() => setShowNewInternalTicket(true)}
+                className="w-full text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white"
+              >
+                ☎ Nowe zgłoszenie (telefonicznie)
+              </button>
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -883,6 +930,52 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
           </div>
         </div>
       </div>
+
+      {showNewInternalTicket && (
+        <div className="fixed inset-0 z-[400] bg-black/60 flex items-center justify-center" onClick={() => { setShowNewInternalTicket(false); resetNewInternalTicketForm(); }}>
+          <div className="bg-[var(--bg-card)] rounded-lg shadow-2xl border border-[var(--border-color)] w-[520px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-[var(--border-color)]">
+              <h3 className="text-sm font-bold text-[var(--accent)]">☎ Nowe zgłoszenie (zgłoszone telefonicznie)</h3>
+              <p className="text-[11px] text-[var(--text-muted)] mt-1">Do wpisywania zgłoszeń przyjętych bezpośrednio przez pracownika, bez przechodzenia przez publiczny formularz supportu.</p>
+            </div>
+            <div className="flex-1 overflow-auto p-4 space-y-2 text-xs">
+              <div>
+                <label className="block mb-1 text-[var(--text-secondary)]">Imię i nazwisko klienta *</label>
+                <input value={newTicketClientName} onChange={(e) => setNewTicketClientName(e.target.value)} className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1.5" />
+              </div>
+              <div>
+                <label className="block mb-1 text-[var(--text-secondary)]">Email klienta</label>
+                <input value={newTicketClientEmail} onChange={(e) => setNewTicketClientEmail(e.target.value)} placeholder="opcjonalnie" className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1.5" />
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block mb-1 text-[var(--text-secondary)]">Firma</label>
+                  <input value={newTicketCompany} onChange={(e) => setNewTicketCompany(e.target.value)} className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1.5" />
+                </div>
+                <div className="flex-1">
+                  <label className="block mb-1 text-[var(--text-secondary)]">Numer urządzenia</label>
+                  <input value={newTicketDeviceNumber} onChange={(e) => setNewTicketDeviceNumber(e.target.value)} placeholder="np. BAS005" className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1.5" />
+                </div>
+              </div>
+              <div>
+                <label className="block mb-1 text-[var(--text-secondary)]">Temat *</label>
+                <input value={newTicketSubject} onChange={(e) => setNewTicketSubject(e.target.value)} className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1.5" />
+              </div>
+              <div>
+                <label className="block mb-1 text-[var(--text-secondary)]">Opis usterki *</label>
+                <textarea value={newTicketDescription} onChange={(e) => setNewTicketDescription(e.target.value)} rows={4} className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1.5" />
+              </div>
+              {newInternalTicketError && <p className="text-red-500">{newInternalTicketError}</p>}
+            </div>
+            <div className="flex justify-end gap-2 px-4 py-3 border-t border-[var(--border-color)]">
+              <button onClick={() => { setShowNewInternalTicket(false); resetNewInternalTicketForm(); }} className="text-xs px-3 py-1.5 rounded border border-[#ccc]">Anuluj</button>
+              <button onClick={submitInternalTicket} disabled={creatingInternalTicket} className="text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-white">
+                {creatingInternalTicket ? "Tworzenie…" : "Utwórz zgłoszenie"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

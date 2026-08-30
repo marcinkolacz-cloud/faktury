@@ -66,6 +66,41 @@ mixin (
     (newId, trackingToken);
   };
 
+  // Zgłoszenie wprowadzane wewnętrznie przez pracownika (np. klient zgłosił
+  // usterkę telefonicznie) — te same pola co formularz publiczny, ale bez
+  // honeypotu/limitu 5/min (autoryzowany caller) i z wpisem w audit logu.
+  public shared ({ caller }) func submitInternalTicket(
+    clientName : Text,
+    clientEmail : Text,
+    subject : Text,
+    description : Text,
+    company : Text,
+    deviceNumber : Text,
+  ) : async (Nat, Text) {
+    if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };
+
+    let newId = tickets.size();
+    let tokenPart1 = await InvitesLib.generateRandomCode();
+    let tokenPart2 = await InvitesLib.generateRandomCode();
+    let trackingToken = tokenPart1 # tokenPart2;
+    let ticket : Types.Ticket = {
+      id = newId;
+      clientName;
+      clientEmail;
+      subject;
+      description;
+      status = #open_;
+      replies = [];
+      createdAt = Time.now();
+    };
+    tickets.add(newId, ticket);
+    ticketTokens.add(trackingToken, newId);
+    ticketExtras.add(newId, { company; deviceNumber });
+    AuditLib.record(auditLog, caller, "ticket_created_internal", "Zgłoszenie #" # Nat.toText(newId) # " (" # clientName # ")");
+    (newId, trackingToken);
+  };
+
   public query ({ caller }) func listTicketExtras() : async [(Nat, Types.TicketExtras)] {
     if (not AccessLib.hasAnyRole(accessRoles, caller)) { Runtime.trap("Access required"); };
     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "tickets")) { Runtime.trap("Module access required: tickets"); };

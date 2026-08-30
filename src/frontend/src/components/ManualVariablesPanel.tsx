@@ -3,6 +3,12 @@ import { syncChapterToDrive, loadChapterContentFromDrive } from "../lib/document
 
 type Chapter = { id: number; title: string; contentHtml: string; order: number };
 type ManualVariable = { key: string; fieldLabel: string; currentValue: string };
+
+// 5 stałych kontenerów tematycznych do segregacji zmiennych referencyjnych.
+// Wyłącznie UI/porządkowanie po stronie przeglądarki (localStorage) — backend
+// i logika wyszukiwania/podmiany zmiennych bez zmian, żaden nowy stable-field.
+const GROUP_COUNT = 5;
+const DEFAULT_GROUP_NAMES = ["Ogólne", "Grupa 2", "Grupa 3", "Grupa 4", "Grupa 5"];
 // Dopasowanie znalezione w PRZEGLĄDARCE (prawdziwy DOM), nie na backendzie —
 // index to pozycja w czystym tekście (textContent), nie w surowym HTML.
 type DomMatch = { chapterId: number; chapterTitle: string; index: number; contextSnippet: string };
@@ -94,6 +100,40 @@ export function ManualVariablesPanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string>("");
   const [dirty, setDirty] = useState(false);
+  const groupNamesKey = `manualVarGroupNames_${bookId}`;
+  const [groupNames, setGroupNames] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(groupNamesKey);
+      if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed) && parsed.length === GROUP_COUNT) return parsed; }
+    } catch { /* ignoruj uszkodzony localStorage */ }
+    return DEFAULT_GROUP_NAMES;
+  });
+  const updateGroupName = (idx: number, name: string) => {
+    setGroupNames((g) => {
+      const n = [...g]; n[idx] = name;
+      try { localStorage.setItem(groupNamesKey, JSON.stringify(n)); } catch { /* brak miejsca w localStorage - pomiń */ }
+      return n;
+    });
+  };
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const toggleCollapsed = (idx: number) => setCollapsed((s) => { const n = new Set(s); if (n.has(idx)) n.delete(idx); else n.add(idx); return n; });
+  // Przypisanie zmienna(key) -> nr kontenera. Wyłącznie lokalne (localStorage per
+  // książka) — nie jest częścią stable-rekordu ManualVariable na backendzie.
+  const varGroupsKey = `manualVarGroups_${bookId}`;
+  const [varGroups, setVarGroups] = useState<Record<string, number>>(() => {
+    try {
+      const raw = localStorage.getItem(varGroupsKey);
+      if (raw) return JSON.parse(raw);
+    } catch { /* ignoruj uszkodzony localStorage */ }
+    return {};
+  });
+  const setVarGroup = (key: string, group: number) => {
+    setVarGroups((g) => {
+      const n = { ...g, [key]: group };
+      try { localStorage.setItem(varGroupsKey, JSON.stringify(n)); } catch { /* brak miejsca w localStorage - pomiń */ }
+      return n;
+    });
+  };
   const [conflict, setConflict] = useState<{ key: string; searchText: string; newValue: string; matches: DomMatch[]; picked: Set<number>; chapterHtml: Record<number, string>; queueRest: ManualVariable[] } | null>(null);
 
   const [rect, setRect] = useState(() => ({
@@ -145,14 +185,16 @@ export function ManualVariablesPanel({
     }
   };
 
-  const addRow = () => {
+  const addRow = (group: number = 0) => {
     let key = "pole_1";
     let n = vars.length + 1;
     const existing = new Set(vars.map((v) => v.key));
     while (existing.has(key)) { n += 1; key = `pole_${n}`; }
     setVars((v) => [...v, { key, fieldLabel: "Nowe pole", currentValue: "" }]);
+    setVarGroup(key, group);
     setDirty(true);
   };
+  const updateGroup = (key: string, group: number) => setVarGroup(key, group);
   const removeRow = (key: string) => {
     setVars((v) => v.filter((x) => x.key !== key));
     setSelected((s) => { const n = new Set(s); n.delete(key); return n; });
@@ -326,51 +368,82 @@ export function ManualVariablesPanel({
                   Wstaw zaznaczone ({selected.size})
                 </button>
               </div>
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-color)]">
-                    <th className="py-2 pr-2 w-8"></th>
-                    <th className="py-2 pr-2">Etykieta</th>
-                    <th className="py-2 pr-2">Aktualna wartość</th>
-                    <th className="py-2 pr-2">Nowa wartość</th>
-                    <th className="py-2 pr-2 w-24">Akcje</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vars.map((v) => (
-                    <tr key={v.key} className="border-b border-[var(--border-color)]">
-                      <td className="py-1.5 pr-2">
-                        <input type="checkbox" checked={selected.has(v.key)} onChange={(e) => toggleSelected(v.key, e.target.checked)} />
-                      </td>
-                      <td className="py-1.5 pr-2">
-                        <input value={v.fieldLabel} onChange={(e) => updateLabel(v.key, e.target.value)} className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1" />
-                      </td>
-                      <td className="py-1.5 pr-2">
-                        <input value={v.currentValue} onChange={(e) => updateCurrent(v.key, e.target.value)} className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1" />
-                      </td>
-                      <td className="py-1.5 pr-2">
-                        <input
-                          value={drafts[v.key] ?? ""}
-                          onChange={(e) => setDrafts((d) => ({ ...d, [v.key]: e.target.value }))}
-                          placeholder="nowa wartość…"
-                          className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1"
-                        />
-                      </td>
-                      <td className="py-1.5 pr-2 whitespace-nowrap">
-                        <button
-                          onClick={() => doInsert(v)}
-                          disabled={busy === v.key || !v.currentValue || !(drafts[v.key] ?? "")}
-                          className="text-[11px] px-2 py-1 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-white mr-1"
-                        >
-                          {busy === v.key ? "…" : "Wstaw"}
-                        </button>
-                        <button onClick={() => removeRow(v.key)} className="text-[11px] px-2 py-1 rounded border border-red-500 text-red-400">🗑</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <button onClick={addRow} className="mt-3 text-xs px-3 py-1.5 rounded border border-[#ccc]">+ Dodaj pole</button>
+              {Array.from({ length: GROUP_COUNT }, (_, gi) => gi).map((gi) => {
+                const rows = vars.filter((v) => (varGroups[v.key] ?? 0) === gi);
+                const isCollapsed = collapsed.has(gi);
+                return (
+                  <div key={gi} className="mb-4 rounded-lg border border-[var(--border-color)] overflow-hidden">
+                    <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-hover)]">
+                      <button onClick={() => toggleCollapsed(gi)} className="text-xs text-[var(--text-secondary)]">{isCollapsed ? "▶" : "▼"}</button>
+                      <input
+                        value={groupNames[gi]}
+                        onChange={(e) => updateGroupName(gi, e.target.value)}
+                        className="text-xs font-semibold bg-transparent border-b border-transparent hover:border-[var(--border-color)] focus:border-[var(--accent)] px-1 py-0.5 flex-1"
+                      />
+                      <span className="text-[10px] text-[var(--text-muted)]">{rows.length}</span>
+                    </div>
+                    {!isCollapsed && (
+                      <div className="p-2">
+                        <table className="w-full text-xs border-collapse">
+                          <thead>
+                            <tr className="text-left text-[var(--text-muted)] border-b border-[var(--border-color)]">
+                              <th className="py-2 pr-2 w-8"></th>
+                              <th className="py-2 pr-2">Etykieta</th>
+                              <th className="py-2 pr-2">Aktualna wartość</th>
+                              <th className="py-2 pr-2">Nowa wartość</th>
+                              <th className="py-2 pr-2 w-16">Grupa</th>
+                              <th className="py-2 pr-2 w-24">Akcje</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((v) => (
+                              <tr key={v.key} className="border-b border-[var(--border-color)]">
+                                <td className="py-1.5 pr-2">
+                                  <input type="checkbox" checked={selected.has(v.key)} onChange={(e) => toggleSelected(v.key, e.target.checked)} />
+                                </td>
+                                <td className="py-1.5 pr-2">
+                                  <input value={v.fieldLabel} onChange={(e) => updateLabel(v.key, e.target.value)} className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1" />
+                                </td>
+                                <td className="py-1.5 pr-2">
+                                  <input value={v.currentValue} onChange={(e) => updateCurrent(v.key, e.target.value)} className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1" />
+                                </td>
+                                <td className="py-1.5 pr-2">
+                                  <input
+                                    value={drafts[v.key] ?? ""}
+                                    onChange={(e) => setDrafts((d) => ({ ...d, [v.key]: e.target.value }))}
+                                    placeholder="nowa wartość…"
+                                    className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1"
+                                  />
+                                </td>
+                                <td className="py-1.5 pr-2">
+                                  <select
+                                    value={varGroups[v.key] ?? 0}
+                                    onChange={(e) => updateGroup(v.key, Number(e.target.value))}
+                                    className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-1 py-1"
+                                  >
+                                    {groupNames.map((n, i) => <option key={i} value={i}>{n}</option>)}
+                                  </select>
+                                </td>
+                                <td className="py-1.5 pr-2 whitespace-nowrap">
+                                  <button
+                                    onClick={() => doInsert(v)}
+                                    disabled={busy === v.key || !v.currentValue || !(drafts[v.key] ?? "")}
+                                    className="text-[11px] px-2 py-1 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40 text-white mr-1"
+                                  >
+                                    {busy === v.key ? "…" : "Wstaw"}
+                                  </button>
+                                  <button onClick={() => removeRow(v.key)} className="text-[11px] px-2 py-1 rounded border border-red-500 text-red-400">🗑</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <button onClick={() => addRow(gi)} className="mt-2 text-xs px-3 py-1.5 rounded border border-[#ccc]">+ Dodaj pole</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </>
         </div>
 
