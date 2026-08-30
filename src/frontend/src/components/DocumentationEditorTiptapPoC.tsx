@@ -1067,42 +1067,6 @@ export function DocumentationEditorTiptapPoC({
   const insertBreak = useCallback(() => {
     editor?.chain().focus().insertManualPageBreak().run();
   }, [editor]);
-  // Sprzatanie po bledzie z 2026-08-30 (spacer w SimplePagination powodowal
-  // masowe wstawianie pustych akapitow przy pisaniu, zanim zostal cofniety) -
-  // usuwa wszystkie PUSTE top-level akapity z dokumentu (node.content.size===0),
-  // od konca dokumentu (zeby wczesniejsze pozycje sie nie przesuwaly).
-  const removeEmptyParagraphs = useCallback(() => {
-    if (!editor) return;
-    const { state } = editor;
-    // Usuwamy TYLKO nadmiarowe puste akapity z serii 2+ pod rzad - pojedyncze
-    // puste linie (celowe odstepy, np. koniec rozdzialu) zostaja nietkniete;
-    // z kazdej serii zostaje pierwszy pusty akapit, reszta znika.
-    const nodes: { node: any; offset: number }[] = [];
-    state.doc.forEach((node, offset) => { nodes.push({ node, offset }); });
-    const ranges: { from: number; to: number }[] = [];
-    let i = 0;
-    while (i < nodes.length) {
-      if (nodes[i].node.type.name === "paragraph" && nodes[i].node.content.size === 0) {
-        let j = i;
-        while (j < nodes.length && nodes[j].node.type.name === "paragraph" && nodes[j].node.content.size === 0) j++;
-        if (j - i >= 2) {
-          for (let k = i + 1; k < j; k++) ranges.push({ from: nodes[k].offset, to: nodes[k].offset + nodes[k].node.nodeSize });
-        }
-        i = j;
-      } else {
-        i++;
-      }
-    }
-    if (ranges.length === 0) {
-      window.alert("Brak nadmiarowych pustych akapitów (pojedyncze puste linie zostają nietknięte).");
-      return;
-    }
-    if (!window.confirm(`Usunąć ${ranges.length} nadmiarowych pustych akapitów z serii (pojedyncze puste linie zostaną)?`)) return;
-    const tr = state.tr;
-    for (let k = ranges.length - 1; k >= 0; k--) tr.delete(ranges[k].from, ranges[k].to);
-    editor.view.dispatch(tr);
-    window.alert(`Usunięto ${ranges.length} nadmiarowych pustych akapitów. Zapisz/zaktualizuj kopię, żeby utrwalić zmianę.`);
-  }, [editor]);
   const openTableSizeModal = useCallback(() => {
     if (!editor) return;
     const hAttr = editor.getAttributes("tableRow").height;
@@ -1554,7 +1518,6 @@ export function DocumentationEditorTiptapPoC({
                 }}
               />
               <GroupBtn icon="⏎" label="Podział strony" onClick={insertBreak} />
-              <GroupBtn icon="🧹" label="Usuń puste akapity" onClick={removeEmptyParagraphs} />
               <GroupBtn icon="🖼" label={uploading ? "Wysyłanie…" : "Obraz"} disabled={uploading} onClick={pickImage} />
               <GroupBtn icon="📄" label={importingDocx ? "Import…" : "Import z Worda"} disabled={importingDocx} onClick={pickDocx} />
               <GroupBtn icon="💬" label="Komentarz" onClick={addComment} />
