@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -508,9 +508,9 @@ function downscaleImage(file: File): Promise<{ blob: Blob; width: number; height
 function settlePaginationAfterImagesLoad(editor: any) {
   const dom = editor.view.dom as HTMLElement;
   const resettle = () => {
-    editor.commands.disablePagination();
+    (editor.commands as any).disablePagination();
     requestAnimationFrame(() => {
-      editor.commands.enablePagination();
+      (editor.commands as any).enablePagination();
     });
   };
   const imgs = Array.from(dom.querySelectorAll("img")).filter((img: any) => !img.complete);
@@ -920,6 +920,15 @@ function createSimplePaginationExtension(cfgRef: { current: HfPagCfg }, forceRec
     },
   });
 }
+// Rozjazd Edytor<->Podglad: Podglad dotad odtwarzal wyglad z surowego HTML
+// (contentHtml / editor.getHTML()), czyli innej gałęzi DOM niż ta, którą
+// faktycznie widac w edytorze (np. ImageNodeView owija <img> we WRAPPER
+// <div> z float/margin, a wersja serializowana daje te style bezposrednio
+// na <img> bez wrappera - inna wysokosc bloku = inna paginacja). getLiveContentHtml
+// daje Podgladowi doslowny klon aktualnie wyrenderowanego DOM edytora
+// (bez dekoracji SimplePagination), zeby mierzyc dokladnie to, co na ekranie.
+export type DocEditorHandle = { getLiveContentHtml: () => string };
+
 type Props = {
   initialHtml: string;
   onChangeHtml: (html: string) => void;
@@ -953,7 +962,7 @@ type Props = {
   // tytułowy w DocumentationModule.tsx mógł pokazać aktualną liczbę stron.
   onPageCountChange?: (count: number) => void;
 };
-export function DocumentationEditorTiptapPoC({
+export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(function DocumentationEditorTiptapPoC({
   initialHtml,
   onChangeHtml,
   h1OffsetBefore = 0,
@@ -979,7 +988,7 @@ export function DocumentationEditorTiptapPoC({
   onImageUpload,
   toolbarPortalEl,
   onPageCountChange,
-}: Props) {
+}: Props, ref) {
   const [uploading, setUploading] = useState(false);
   const [importingDocx, setImportingDocx] = useState(false);
   const [commentPopup, setCommentPopup] = useState<{ id: string; draft: string; ax: number; ay: number } | null>(null);
@@ -1064,6 +1073,24 @@ export function DocumentationEditorTiptapPoC({
       },
     },
   });
+  useImperativeHandle(ref, () => ({
+    getLiveContentHtml: () => {
+      if (!editor) return "";
+      // disable->clone->enable: dekoracje SimplePagination (naglowek/stopka/
+      // przerwa) siedza jako realne wezly DOM wstawione MIEDZY tresc - gdyby
+      // je sklonowac razem z trescia, Podglad dostalby zdublowane naglowki
+      // wbudowane w tresc zamiast wlasnych. Wylaczenie pluginu przed
+      // klonowaniem gwarantuje, ze editor.view.dom to WYLACZNIE realna
+      // tresc dokumentu - identycznie jak to, co i tak zaraz robi zapis/
+      // eksport - tylko bez przechodzenia przez serializacje schematu.
+      (editor.commands as any).disablePagination();
+      const clone = editor.view.dom.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll(".simple-page-header,.simple-page-footer,.simple-page-gap").forEach((el) => el.remove());
+      const html = clone.innerHTML;
+      (editor.commands as any).enablePagination();
+      return html;
+    },
+  }), [editor]);
   const insertBreak = useCallback(() => {
     editor?.chain().focus().insertManualPageBreak().run();
   }, [editor]);
@@ -1714,4 +1741,4 @@ ${docContentCss("#doc-editor-content")}
       })(), document.body)}
     </div>
   );
-}
+});

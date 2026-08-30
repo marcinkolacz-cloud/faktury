@@ -1,0 +1,126 @@
+diff --git a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+index d423ab7..c45fe95 100755
+--- a/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
++++ b/src/frontend/src/components/DocumentationEditorTiptapPoC.tsx
+@@ -1,4 +1,4 @@
+-import { useCallback, useEffect, useRef, useState } from "react";
++import { useCallback, useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
+ import { createPortal } from "react-dom";
+ import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
+ import StarterKit from "@tiptap/starter-kit";
+@@ -920,6 +920,15 @@ function createSimplePaginationExtension(cfgRef: { current: HfPagCfg }, forceRec
+     },
+   });
+ }
++// Rozjazd Edytor<->Podglad: Podglad dotad odtwarzal wyglad z surowego HTML
++// (contentHtml / editor.getHTML()), czyli innej gałęzi DOM niż ta, którą
++// faktycznie widac w edytorze (np. ImageNodeView owija <img> we WRAPPER
++// <div> z float/margin, a wersja serializowana daje te style bezposrednio
++// na <img> bez wrappera - inna wysokosc bloku = inna paginacja). getLiveContentHtml
++// daje Podgladowi doslowny klon aktualnie wyrenderowanego DOM edytora
++// (bez dekoracji SimplePagination), zeby mierzyc dokladnie to, co na ekranie.
++export type DocEditorHandle = { getLiveContentHtml: () => string };
++
+ type Props = {
+   initialHtml: string;
+   onChangeHtml: (html: string) => void;
+@@ -953,7 +962,7 @@ type Props = {
+   // tytułowy w DocumentationModule.tsx mógł pokazać aktualną liczbę stron.
+   onPageCountChange?: (count: number) => void;
+ };
+-export function DocumentationEditorTiptapPoC({
++export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(function DocumentationEditorTiptapPoC({
+   initialHtml,
+   onChangeHtml,
+   h1OffsetBefore = 0,
+@@ -979,7 +988,7 @@ export function DocumentationEditorTiptapPoC({
+   onImageUpload,
+   toolbarPortalEl,
+   onPageCountChange,
+-}: Props) {
++}: Props, ref) {
+   const [uploading, setUploading] = useState(false);
+   const [importingDocx, setImportingDocx] = useState(false);
+   const [commentPopup, setCommentPopup] = useState<{ id: string; draft: string; ax: number; ay: number } | null>(null);
+@@ -1064,6 +1073,24 @@ export function DocumentationEditorTiptapPoC({
+       },
+     },
+   });
++  useImperativeHandle(ref, () => ({
++    getLiveContentHtml: () => {
++      if (!editor) return "";
++      // disable->clone->enable: dekoracje SimplePagination (naglowek/stopka/
++      // przerwa) siedza jako realne wezly DOM wstawione MIEDZY tresc - gdyby
++      // je sklonowac razem z trescia, Podglad dostalby zdublowane naglowki
++      // wbudowane w tresc zamiast wlasnych. Wylaczenie pluginu przed
++      // klonowaniem gwarantuje, ze editor.view.dom to WYLACZNIE realna
++      // tresc dokumentu - identycznie jak to, co i tak zaraz robi zapis/
++      // eksport - tylko bez przechodzenia przez serializacje schematu.
++      editor.commands.disablePagination();
++      const clone = editor.view.dom.cloneNode(true) as HTMLElement;
++      clone.querySelectorAll(".simple-page-header,.simple-page-footer,.simple-page-gap").forEach((el) => el.remove());
++      const html = clone.innerHTML;
++      editor.commands.enablePagination();
++      return html;
++    },
++  }), [editor]);
+   const insertBreak = useCallback(() => {
+     editor?.chain().focus().insertManualPageBreak().run();
+   }, [editor]);
+@@ -1714,4 +1741,4 @@ ${docContentCss("#doc-editor-content")}
+       })(), document.body)}
+     </div>
+   );
+-}
++});
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+index 425320a..8f6b471 100755
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -9,7 +9,7 @@ import { driveTimingSummary, driveMark } from "../lib/driveTiming";
+ import { isTocHeadingTitle } from "../lib/headingNumbering";
+ import { docContentCss } from "../lib/docContentStyle";
+ import { ManualVariablesPanel } from "./ManualVariablesPanel";
+-import { DocumentationEditorTiptapPoC } from "./DocumentationEditorTiptapPoC";
++import { DocumentationEditorTiptapPoC, DocEditorHandle } from "./DocumentationEditorTiptapPoC";
+ 
+ // SECURITY / DESIGN NOTE: the Agent AI chat (FloatingAgentChat.tsx) is
+ // intentionally never given any tool referencing device manual/documentation
+@@ -609,6 +609,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+   // kontrolowanym z zewnątrz, nie ma już bezpośredniego DOM-u contentEditable
+   // — saveChapter/eksport czytają stąd).
+   const tiptapHtmlRef = useRef<string>("");
++  // Klon-DOM edytora dla aktualnie edytowanego rozdzialu (patrz getLiveContentHtml
++  // w DocumentationEditorTiptapPoC.tsx) - eliminuje rozjazd Edytor<->Podglad
++  // wynikajacy z dwoch niezaleznych sciezek renderowania (zywy NodeView vs
++  // serializowany HTML parsowany od nowa w iframe podgladu).
++  const liveEditorRef = useRef<DocEditorHandle>(null);
+   const [tiptapRemountTick, setTiptapRemountTick] = useState(0);
+   const savingRef = useRef(false);
+   const commentAreaRef = useRef<HTMLDivElement>(null);
+@@ -1248,7 +1253,16 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+     // wants to skip getChaptersForExport()'s async "fetch missing content
+     // from Drive" step entirely — that step is only needed for multi-
+     // chapter export/print where some chapters may never have been opened.
+-    const numbered = numberHeadingsForExport(chaptersOverride || (await getChaptersForExport()), selectedSet);
++    const sourceChapters = chaptersOverride || (await getChaptersForExport());
++    // Gdy rozdzial jest aktualnie otwarty w edytorze, jego tresc do Podgladu
++    // bierzemy z zywego DOM edytora (getLiveContentHtml), a NIE z contentHtml
++    // (stan po ostatnim autozapisie / fetchu z Drive) - usuwa jednoczesnie
++    // (a) niespojnosc czasowa (podglad przed autozapisem) i (b) niespojnosc
++    // strukturalna (patrz komentarz przy DocEditorHandle).
++    const chaptersForNumbering = editMode && active && liveEditorRef.current
++      ? sourceChapters.map((c) => (c.id === active.id ? { ...c, contentHtml: liveEditorRef.current!.getLiveContentHtml() } : c))
++      : sourceChapters;
++    const numbered = numberHeadingsForExport(chaptersForNumbering, selectedSet);
+     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
+     // A4 usable content box in mm (must match .page-header/.page-footer
+     // heights below): width 210 - 2*1.27cm margins, height 297 - header
+@@ -2006,6 +2020,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
+                   {editMode && canEdit && active && (
+                     <div className="mx-auto" style={{ maxWidth: 900, transform: `scale(${zoomLevel / 100})`, transformOrigin: "top center" }}>
+                       <DocumentationEditorTiptapPoC
++                        ref={liveEditorRef}
+                         key={`${active.id}-${tiptapRemountTick}`}
+                         initialHtml={active.contentHtml || "<p></p>"}
+                         onChangeHtml={(html) => { tiptapHtmlRef.current = html; setDirty(true); }}

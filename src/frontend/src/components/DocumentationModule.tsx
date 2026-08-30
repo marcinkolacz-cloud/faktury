@@ -10,6 +10,7 @@ import { isTocHeadingTitle } from "../lib/headingNumbering";
 import { docContentCss } from "../lib/docContentStyle";
 import { ManualVariablesPanel } from "./ManualVariablesPanel";
 import { DocumentationEditorTiptapPoC } from "./DocumentationEditorTiptapPoC";
+import type { DocEditorHandle } from "./DocumentationEditorTiptapPoC";
 
 // SECURITY / DESIGN NOTE: the Agent AI chat (FloatingAgentChat.tsx) is
 // intentionally never given any tool referencing device manual/documentation
@@ -609,6 +610,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // kontrolowanym z zewnątrz, nie ma już bezpośredniego DOM-u contentEditable
   // — saveChapter/eksport czytają stąd).
   const tiptapHtmlRef = useRef<string>("");
+  // Klon-DOM edytora dla aktualnie edytowanego rozdzialu (patrz getLiveContentHtml
+  // w DocumentationEditorTiptapPoC.tsx) - eliminuje rozjazd Edytor<->Podglad
+  // wynikajacy z dwoch niezaleznych sciezek renderowania (zywy NodeView vs
+  // serializowany HTML parsowany od nowa w iframe podgladu).
+  const liveEditorRef = useRef<DocEditorHandle>(null);
   const [tiptapRemountTick, setTiptapRemountTick] = useState(0);
   const savingRef = useRef(false);
   const commentAreaRef = useRef<HTMLDivElement>(null);
@@ -935,6 +941,36 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       setBackupImageProgress(null);
     }
   };
+  // Odwrotny kierunek do createOrUpdateActiveBackup(): kopiuje tresc HTML
+  // 1:1 z kopii na kanistrze z powrotem na OneDrive (nadpisujac aktywny
+  // dokument). Nie parsuje ani nie modyfikuje HTML w zaden sposob - to jawna,
+  // reczna akcja admina na wyrazne zadanie, a nie automatyczna "naprawa"
+  // (patrz zelazna zasada silnika paginacji: on tylko liczy/wyswietla).
+  const restoreActiveFromBackup = async () => {
+    if (!active) return;
+    if (!window.confirm(`Nadpisać dokument "${active.title}" kopią z kanistra? Aktualna treść na OneDrive zostanie zastąpiona.`)) return;
+    setBackupBusy(true);
+    try {
+      const lenRes: any = await actor.getDeviceManualChapterContentLength(active.id);
+      const len = lenRes && lenRes.length ? Number(lenRes[0]) : 0;
+      if (len === 0) { alert("Brak kopii na kanistrze dla tego rozdziału."); return; }
+      const CHUNK = 1_000_000;
+      let full = "";
+      for (let start = 0; start < len; start += CHUNK) {
+        const chunkRes: any = await actor.getDeviceManualChapterContentChunk(active.id, BigInt(start), BigInt(CHUNK));
+        full += chunkRes && chunkRes.length ? chunkRes[0] : "";
+      }
+      await syncChapterToDrive(deviceLabel, active.id, active.order, active.title, full);
+      tiptapHtmlRef.current = full;
+      setChapters((prev) => prev.map((c) => (c.id === active.id ? { ...c, contentHtml: full } : c)));
+      setDirty(false);
+      alert("Przywrócono kopię z kanistra. Zamknij i otwórz ponownie ten rozdział, żeby zobaczyć zmiany w edytorze.");
+    } catch (e: any) {
+      alert("Błąd przywracania: " + (e?.message || String(e)));
+    } finally {
+      setBackupBusy(false);
+    }
+  };
 
   const requestRemoveBackup = () => {
     if (!active) return;
@@ -1248,7 +1284,16 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // wants to skip getChaptersForExport()'s async "fetch missing content
     // from Drive" step entirely — that step is only needed for multi-
     // chapter export/print where some chapters may never have been opened.
-    const numbered = numberHeadingsForExport(chaptersOverride || (await getChaptersForExport()), selectedSet);
+    const sourceChapters = chaptersOverride || (await getChaptersForExport());
+    // Gdy rozdzial jest aktualnie otwarty w edytorze, jego tresc do Podgladu
+    // bierzemy z zywego DOM edytora (getLiveContentHtml), a NIE z contentHtml
+    // (stan po ostatnim autozapisie / fetchu z Drive) - usuwa jednoczesnie
+    // (a) niespojnosc czasowa (podglad przed autozapisem) i (b) niespojnosc
+    // strukturalna (patrz komentarz przy DocEditorHandle).
+    const chaptersForNumbering = editMode && active && liveEditorRef.current
+      ? sourceChapters.map((c) => (c.id === active.id ? { ...c, contentHtml: liveEditorRef.current!.getLiveContentHtml() } : c))
+      : sourceChapters;
+    const numbered = numberHeadingsForExport(chaptersForNumbering, selectedSet);
     const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     // A4 usable content box in mm (must match .page-header/.page-footer
     // heights below): width 210 - 2*1.27cm margins, height 297 - header
@@ -1949,7 +1994,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                           onClick={createOrUpdateActiveBackup}
                         />
                         {chapterBackupFlags[active.id] && (
-                          <RailButton icon="🗑" label="Usuń kopię" onClick={requestRemoveBackup} />
+                          <>
+                            <RailButton icon="🗑" label="Usuń kopię" onClick={requestRemoveBackup} />
+                            <RailButton icon="♻️" label="Przywróć z kanistra" title="Nadpisuje aktualny dokument (OneDrive) kopią zapisaną na kanistrze" onClick={restoreActiveFromBackup} />
+                          </>
                         )}
                       </>
                     )}
@@ -2006,6 +2054,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   {editMode && canEdit && active && (
                     <div className="mx-auto" style={{ maxWidth: 900, transform: `scale(${zoomLevel / 100})`, transformOrigin: "top center" }}>
                       <DocumentationEditorTiptapPoC
+                        ref={liveEditorRef}
                         key={`${active.id}-${tiptapRemountTick}`}
                         initialHtml={active.contentHtml || "<p></p>"}
                         onChangeHtml={(html) => { tiptapHtmlRef.current = html; setDirty(true); }}

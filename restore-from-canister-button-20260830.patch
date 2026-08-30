@@ -1,0 +1,14 @@
+diff --git a/src/frontend/src/components/DocumentationModule.tsx b/src/frontend/src/components/DocumentationModule.tsx
+--- a/src/frontend/src/components/DocumentationModule.tsx
++++ b/src/frontend/src/components/DocumentationModule.tsx
+@@ -1949,6 +1949,9 @@
+                         />
+                         {chapterBackupFlags[active.id] && (
+-                          <RailButton icon="🗑" label="Usuń kopię" onClick={requestRemoveBackup} />
++                          <>
++                            <RailButton icon="🗑" label="Usuń kopię" onClick={requestRemoveBackup} />
++                            <RailButton icon="♻️" label="Przywróć z kanistra" title="Nadpisuje aktualny dokument (OneDrive) kopią zapisaną na kanistrze" onClick={restoreActiveFromBackup} />
++                          </>
+                         )}
+                       </>
+                     )}
