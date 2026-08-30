@@ -529,7 +529,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
                 onClick={() => setShowNewInternalTicket(true)}
                 className="w-full text-xs px-3 py-1.5 rounded bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white"
               >
-                ☎ Nowe zgłoszenie (telefonicznie)
+                ☎ Nowe zgłoszenie
               </button>
               <input
                 value={searchQuery}
@@ -932,10 +932,10 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
       </div>
 
       {showNewInternalTicket && (
-        <div className="fixed inset-0 z-[400] bg-black/60 flex items-center justify-center" onClick={() => { setShowNewInternalTicket(false); resetNewInternalTicketForm(); }}>
-          <div className="bg-[var(--bg-card)] rounded-lg shadow-2xl border border-[var(--border-color)] w-[520px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[400] bg-black/60 flex items-center justify-center">
+          <div className="bg-[var(--bg-card)] rounded-lg shadow-2xl border border-[var(--border-color)] w-[520px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden">
             <div className="px-4 py-3 border-b border-[var(--border-color)]">
-              <h3 className="text-sm font-bold text-[var(--accent)]">☎ Nowe zgłoszenie (zgłoszone telefonicznie)</h3>
+              <h3 className="text-sm font-bold text-[var(--accent)]">☎ Nowe zgłoszenie</h3>
               <p className="text-[11px] text-[var(--text-muted)] mt-1">Do wpisywania zgłoszeń przyjętych bezpośrednio przez pracownika, bez przechodzenia przez publiczny formularz supportu.</p>
             </div>
             <div className="flex-1 overflow-auto p-4 space-y-2 text-xs">
