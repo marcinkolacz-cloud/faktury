@@ -1076,19 +1076,17 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
   useImperativeHandle(ref, () => ({
     getLiveContentHtml: () => {
       if (!editor) return "";
-      // disable->clone->enable: dekoracje SimplePagination (naglowek/stopka/
-      // przerwa) siedza jako realne wezly DOM wstawione MIEDZY tresc - gdyby
-      // je sklonowac razem z trescia, Podglad dostalby zdublowane naglowki
-      // wbudowane w tresc zamiast wlasnych. Wylaczenie pluginu przed
-      // klonowaniem gwarantuje, ze editor.view.dom to WYLACZNIE realna
-      // tresc dokumentu - identycznie jak to, co i tak zaraz robi zapis/
-      // eksport - tylko bez przechodzenia przez serializacje schematu.
-      (editor.commands as any).disablePagination();
+      // Dekoracje SimplePagination (naglowek/stopka/przerwa) sa realnymi
+      // wezlami DOM wstawionymi przez ProseMirror-owe decoration widgets,
+      // ale NIE sa czescia dokumentu (modelu) - usuwamy je po klonowaniu po
+      // klasie, bez potrzeby jakiegokolwiek "wylaczania" silnika paginacji
+      // (ktory i tak nie wystawia zadnych komend Tiptap do wlaczania/
+      // wylaczania - wczesniejsze disablePagination()/enablePagination()
+      // rzucaly TypeError "not a function", przez co Podglad nie otwieral
+      // sie w ogole w trakcie edycji rozdzialu).
       const clone = editor.view.dom.cloneNode(true) as HTMLElement;
       clone.querySelectorAll(".simple-page-header,.simple-page-footer,.simple-page-gap").forEach((el) => el.remove());
-      const html = clone.innerHTML;
-      (editor.commands as any).enablePagination();
-      return html;
+      return clone.innerHTML;
     },
   }), [editor]);
   const insertBreak = useCallback(() => {
