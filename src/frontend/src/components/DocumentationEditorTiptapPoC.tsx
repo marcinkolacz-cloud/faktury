@@ -614,6 +614,7 @@ type HfPagCfg = {
   headerLeft: string; headerCenter: string; headerRight: string;
   headerEvenLeft: string; headerEvenCenter: string; headerEvenRight: string;
   footerLeft: string; footerCenter: string; footerRight: string;
+  footerEvenLeft: string; footerEvenCenter: string; footerEvenRight: string;
   enableHeader: boolean; enableFooter: boolean;
   headerHeightCm: number; footerHeightCm: number;
   headerFontSize: number; footerFontSize: number;
@@ -659,6 +660,10 @@ function buildHeaderEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
 }
 
 function buildFooterEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
+  const isOdd = pageNum % 2 === 1;
+  const left = isOdd ? cfg.footerLeft : (cfg.footerEvenLeft || cfg.footerLeft);
+  const center = isOdd ? cfg.footerCenter : (cfg.footerEvenCenter || cfg.footerCenter);
+  const right = isOdd ? cfg.footerRight : (cfg.footerEvenRight || cfg.footerRight);
   const el = document.createElement("div");
   el.className = "simple-page-footer";
   el.contentEditable = "false";
@@ -666,9 +671,9 @@ function buildFooterEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
   el.style.fontSize = `${cfg.footerFontSize}pt`;
   el.style.margin = `0 -${SIDE_MARGIN_PX}px`;
   el.style.padding = `6px ${SIDE_MARGIN_PX}px 0`;
-  el.style.alignItems = headerFooterAlignItems(cfg.footerLeft, cfg.footerCenter, cfg.footerRight);
+  el.style.alignItems = headerFooterAlignItems(left, center, right);
   if (cfg.footerBorder) el.style.borderTop = "1px solid #ccc";
-  el.innerHTML = `<span>${nl2brSimple(cfg.footerLeft)}</span><span>${nl2brSimple(cfg.footerCenter)}</span><span>${nl2brSimple(cfg.footerRight)}</span>`;
+  el.innerHTML = `<span>${nl2brSimple(left)}</span><span>${nl2brSimple(center)}</span><span>${nl2brSimple(right)}</span>`;
   if (cfg.showPageNumbers) {
     const pageLabel = document.createElement("div");
     pageLabel.className = "simple-page-number-badge";
@@ -942,6 +947,9 @@ type Props = {
   footerLeft?: string;
   footerCenter?: string;
   footerRight?: string;
+  footerEvenLeft?: string;
+  footerEvenCenter?: string;
+  footerEvenRight?: string;
   enableHeader?: boolean;
   enableFooter?: boolean;
   headerHeightCm?: number;
@@ -975,6 +983,9 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
   footerLeft = "",
   footerCenter = "Strona {page}",
   footerRight = "",
+  footerEvenLeft = "",
+  footerEvenCenter = "",
+  footerEvenRight = "",
   enableHeader = true,
   enableFooter = true,
   headerHeightCm = 3.75,
@@ -1007,7 +1018,7 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
   const [tableToolbarRect, setTableToolbarRect] = useState<{ top: number; left: number } | null>(null);
   const hfConfigRef = useRef<HfPagCfg>({
     headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
-    footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
+    footerLeft, footerCenter, footerRight, footerEvenLeft, footerEvenCenter, footerEvenRight, enableHeader, enableFooter,
     headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers,
     onPageCountChange,
   });
@@ -1015,14 +1026,14 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
   useEffect(() => {
     hfConfigRef.current = {
       headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
-      footerLeft, footerCenter, footerRight, enableHeader, enableFooter,
+      footerLeft, footerCenter, footerRight, footerEvenLeft, footerEvenCenter, footerEvenRight, enableHeader, enableFooter,
       headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers,
       onPageCountChange,
     };
     // Zmiana ustawien nagl/stopki (modal) NIE jest zmiana editor.state.doc,
     // wiec silnik paginacji sam by tego nie przeliczyl - wymuszamy recompute.
     forceRecomputeRef.current?.();
-  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers, onPageCountChange]);
+  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, footerEvenLeft, footerEvenCenter, footerEvenRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers, onPageCountChange]);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false }),
@@ -1588,14 +1599,14 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
   margin: 0 auto;
 }
 .doc-editor-tiptap-poc .simple-page-header,
-.doc-editor-tiptap-poc .simple-page-footer { display: flex; align-items: center; justify-content: space-between; color: #555; box-sizing: border-box; position: relative; }
+.doc-editor-tiptap-poc .simple-page-footer { display: flex; align-items: center; justify-content: space-between; color: #555; box-sizing: border-box; position: relative; width: calc(100% + 96px); flex: none; }
 .doc-editor-tiptap-poc .simple-page-header > span,
 .doc-editor-tiptap-poc .simple-page-footer > span { flex: 1; }
 .doc-editor-tiptap-poc .simple-page-header > span:nth-child(2),
 .doc-editor-tiptap-poc .simple-page-footer > span:nth-child(2) { text-align: center; }
 .doc-editor-tiptap-poc .simple-page-header > span:nth-child(3),
 .doc-editor-tiptap-poc .simple-page-footer > span:nth-child(3) { text-align: right; }
-.doc-editor-tiptap-poc .simple-page-gap { height: 16px; background: #888; margin: 0 -48px; position: relative; }
+.doc-editor-tiptap-poc .simple-page-gap { height: 16px; background: #888; margin: 0 -48px; width: calc(100% + 96px); box-sizing: border-box; position: relative; }
 .doc-editor-tiptap-poc .simple-page-gap-label { position: absolute; top: 1px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #fff; font-family: monospace; white-space: nowrap; }
 .doc-editor-tiptap-poc .simple-page-number-badge { position: absolute; bottom: 2px; right: 0; font-size: 9px; color: #999; }
 .doc-editor-tiptap-poc .ProseMirror, .doc-editor-tiptap-poc .rm-page-content { background: #fff !important; color: #000 !important; }
@@ -1636,8 +1647,21 @@ ${docContentCss("#doc-editor-content")}
               placeholder="Wklej tutaj (Ctrl+V)…"
             />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
-              <button type="button" onClick={() => setShowPlainPasteModal(false)}>Anuluj</button>
-              <button type="button" onClick={insertPlainPasteText} disabled={!plainPasteText.trim()}>Wstaw jako Normal</button>
+              <button
+                type="button"
+                onClick={() => setShowPlainPasteModal(false)}
+                className="text-sm px-3 py-1.5 rounded-md border border-[var(--border-color,#ddd)] bg-[var(--bg-hover,#f2f2f2)] text-[var(--text-primary,#333)] hover:opacity-80"
+              >
+                Anuluj
+              </button>
+              <button
+                type="button"
+                onClick={insertPlainPasteText}
+                disabled={!plainPasteText.trim()}
+                className="text-sm px-3 py-1.5 rounded-md bg-[var(--accent,#6d5cfc)] text-white disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90"
+              >
+                Wstaw jako Normal
+              </button>
             </div>
           </div>
         </div>

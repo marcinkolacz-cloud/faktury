@@ -140,6 +140,9 @@ type HeaderFooterSettings = {
   headerTextEvenRight: string;
   footerTextLeft: string;
   footerTextRight: string;
+  footerTextEvenLeft: string;
+  footerTextEvenCenter: string;
+  footerTextEvenRight: string;
   enableHeader: boolean;
   enableFooter: boolean;
   headerHeightCm: number;
@@ -153,7 +156,7 @@ type HeaderFooterSettings = {
 
 const HF_EXTRA_STORAGE_KEY = "faktury_doc_hf_extra_v1";
 
-type HfExtras = Pick<HeaderFooterSettings, "headerTextEvenLeft" | "headerTextCenter" | "headerTextRight" | "headerTextEvenCenter" | "headerTextEvenRight" | "footerTextLeft" | "footerTextRight" | "enableHeader" | "enableFooter" | "headerHeightCm" | "footerHeightCm" | "headerFontSize" | "footerFontSize" | "headerBorder" | "footerBorder" | "headerAlign">;
+type HfExtras = Pick<HeaderFooterSettings, "headerTextEvenLeft" | "headerTextCenter" | "headerTextRight" | "headerTextEvenCenter" | "headerTextEvenRight" | "footerTextLeft" | "footerTextRight" | "footerTextEvenLeft" | "footerTextEvenCenter" | "footerTextEvenRight" | "enableHeader" | "enableFooter" | "headerHeightCm" | "footerHeightCm" | "headerFontSize" | "footerFontSize" | "headerBorder" | "footerBorder" | "headerAlign">;
 
 function loadHfExtras(): HfExtras {
   try {
@@ -168,6 +171,9 @@ function loadHfExtras(): HfExtras {
         headerTextEvenRight: parsed.headerTextEvenRight ?? "",
         footerTextLeft: parsed.footerTextLeft ?? "",
         footerTextRight: parsed.footerTextRight ?? "",
+        footerTextEvenLeft: parsed.footerTextEvenLeft ?? "",
+        footerTextEvenCenter: parsed.footerTextEvenCenter ?? "",
+        footerTextEvenRight: parsed.footerTextEvenRight ?? "",
         enableHeader: parsed.enableHeader ?? true,
         enableFooter: parsed.enableFooter ?? true,
         headerHeightCm: parsed.headerHeightCm ?? 3.75,
@@ -180,7 +186,7 @@ function loadHfExtras(): HfExtras {
       };
     }
   } catch { /* fall back to defaults below */ }
-  return { headerTextEvenLeft: "", headerTextCenter: "", headerTextRight: "", headerTextEvenCenter: "", headerTextEvenRight: "", footerTextLeft: "", footerTextRight: "", enableHeader: true, enableFooter: true, headerHeightCm: 3.75, footerHeightCm: 1.27, headerFontSize: 9, footerFontSize: 9, headerBorder: true, footerBorder: true, headerAlign: "left" };
+  return { headerTextEvenLeft: "", headerTextCenter: "", headerTextRight: "", headerTextEvenCenter: "", headerTextEvenRight: "", footerTextLeft: "", footerTextRight: "", footerTextEvenLeft: "", footerTextEvenCenter: "", footerTextEvenRight: "", enableHeader: true, enableFooter: true, headerHeightCm: 3.75, footerHeightCm: 1.27, headerFontSize: 9, footerFontSize: 9, headerBorder: true, footerBorder: true, headerAlign: "left" };
 }
 
 function saveHfExtras(s: HeaderFooterSettings) {
@@ -193,6 +199,9 @@ function saveHfExtras(s: HeaderFooterSettings) {
       headerTextEvenRight: s.headerTextEvenRight,
       footerTextLeft: s.footerTextLeft,
       footerTextRight: s.footerTextRight,
+      footerTextEvenLeft: s.footerTextEvenLeft,
+      footerTextEvenCenter: s.footerTextEvenCenter,
+      footerTextEvenRight: s.footerTextEvenRight,
       enableHeader: s.enableHeader,
       enableFooter: s.enableFooter,
       headerHeightCm: s.headerHeightCm,
@@ -219,6 +228,9 @@ const DEFAULT_HF_SETTINGS: HeaderFooterSettings = {
   headerTextEvenRight: "",
   footerTextLeft: "",
   footerTextRight: "",
+  footerTextEvenLeft: "",
+  footerTextEvenCenter: "",
+  footerTextEvenRight: "",
   enableHeader: true,
   enableFooter: true,
   headerHeightCm: 3.75,
@@ -1276,9 +1288,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     const headerEvenLeft = nl2br(hfSettings.headerTextEvenLeft.trim()) || headerOddLeft;
     const headerEvenCenter = nl2br(hfSettings.headerTextEvenCenter.trim()) || headerOddCenter;
     const headerEvenRight = nl2br(hfSettings.headerTextEvenRight.trim()) || headerOddRight;
-    const footerHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
-    const footerLeftHtml = hfSettings.footerTextLeft.trim();
-    const footerRightHtml = hfSettings.footerTextRight.trim();
+    const footerOddHtml = hfSettings.footerText.trim() || "Bartolini Air Simulation";
+    const footerOddLeftHtml = hfSettings.footerTextLeft.trim();
+    const footerOddRightHtml = hfSettings.footerTextRight.trim();
+    const footerEvenHtml = hfSettings.footerTextEvenCenter.trim() || footerOddHtml;
+    const footerEvenLeftHtml = hfSettings.footerTextEvenLeft.trim() || footerOddLeftHtml;
+    const footerEvenRightHtml = hfSettings.footerTextEvenRight.trim() || footerOddRightHtml;
     // chaptersOverride: caller already has fully-loaded chapter content in
     // hand (e.g. the single currently-active chapter in the read view) and
     // wants to skip getChaptersForExport()'s async "fetch missing content
@@ -1323,11 +1338,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         .sheet{width:210mm;min-height:297mm;margin:12px auto;background:#fff;box-shadow:0 0 8px rgba(0,0,0,0.4);box-sizing:border-box;padding:${hfSettings.headerHeightCm}cm 1.27cm ${hfSettings.footerHeightCm}cm 1.27cm;position:relative;}
         #pages.pages-grid{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:center;gap:16px;}
         #pages.pages-grid .sheet{margin:0;}
-        .page-header{position:absolute;top:0;left:1.27cm;right:1.27cm;height:${hfSettings.headerHeightCm}cm;box-sizing:border-box;padding:6px 0;font-size:${hfSettings.headerFontSize}pt;color:#555;${hfSettings.headerBorder ? "border-bottom:1px solid #ccc;" : ""}display:flex;align-items:flex-end;justify-content:space-between;}
+        .page-header{position:absolute;top:0;left:0;right:0;height:${hfSettings.headerHeightCm}cm;box-sizing:border-box;padding:6px 1.27cm;font-size:${hfSettings.headerFontSize}pt;color:#555;${hfSettings.headerBorder ? "border-bottom:1px solid #ccc;" : ""}display:flex;align-items:flex-end;justify-content:space-between;}
         .page-header>span{flex:1;}
         .page-header>span:nth-child(2){text-align:center;}
         .page-header>span:nth-child(3){text-align:right;}
-        .page-footer{position:absolute;left:1.27cm;right:1.27cm;bottom:0;height:${hfSettings.footerHeightCm}cm;box-sizing:border-box;padding:6px 0;font-size:${hfSettings.footerFontSize}pt;color:#555;${hfSettings.footerBorder ? "border-top:1px solid #ccc;" : ""}display:flex;align-items:center;justify-content:space-between;}
+        .page-footer{position:absolute;left:0;right:0;bottom:0;height:${hfSettings.footerHeightCm}cm;box-sizing:border-box;padding:6px 1.27cm;font-size:${hfSettings.footerFontSize}pt;color:#555;${hfSettings.footerBorder ? "border-top:1px solid #ccc;" : ""}display:flex;align-items:center;justify-content:space-between;}
         .page-content{padding:0;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
         .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:6px;font-size:8pt;color:#999;text-align:center;}
         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
@@ -1370,9 +1385,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         var headerEvenLeft = ${JSON.stringify(headerEvenLeft)};
         var headerEvenCenter = ${JSON.stringify(headerEvenCenter)};
         var headerEvenRight = ${JSON.stringify(headerEvenRight)};
-        var footerHtml = ${JSON.stringify(footerHtml)};
-        var footerLeftHtml = ${JSON.stringify(footerLeftHtml)};
-        var footerRightHtml = ${JSON.stringify(footerRightHtml)};
+        var footerOddHtml = ${JSON.stringify(footerOddHtml)};
+        var footerOddLeftHtml = ${JSON.stringify(footerOddLeftHtml)};
+        var footerOddRightHtml = ${JSON.stringify(footerOddRightHtml)};
+        var footerEvenHtml = ${JSON.stringify(footerEvenHtml)};
+        var footerEvenLeftHtml = ${JSON.stringify(footerEvenLeftHtml)};
+        var footerEvenRightHtml = ${JSON.stringify(footerEvenRightHtml)};
         var skipFirst = ${hfSettings.skipFirstPage ? "true" : "false"};
         var enableHeader = ${hfSettings.enableHeader ? "true" : "false"};
         var enableFooter = ${hfSettings.enableFooter ? "true" : "false"};
@@ -1456,7 +1474,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             var showHeader = enableHeader && !hideThisPage;
             var showFooter = enableFooter && !hideThisPage;
             var thisHeaderHtml = '<span>' + (isOdd ? headerOddLeft : headerEvenLeft) + '</span><span>' + (isOdd ? headerOddCenter : headerEvenCenter) + '</span><span>' + (isOdd ? headerOddRight : headerEvenRight) + '</span>';
-            var footerRowHtml = '<span>' + footerLeftHtml + '</span><span>' + footerHtml + '</span><span>' + footerRightHtml + '</span>';
+            var footerRowHtml = '<span>' + (isOdd ? footerOddLeftHtml : footerEvenLeftHtml) + '</span><span>' + (isOdd ? footerOddHtml : footerEvenHtml) + '</span><span>' + (isOdd ? footerOddRightHtml : footerEvenRightHtml) + '</span>';
             return '<div class="sheet">' +
               (showHeader ? '<div class="page-header">' + thisHeaderHtml + '</div>' : '') +
               '<div class="page-content">' + html + '</div>' +
@@ -2069,6 +2087,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         footerLeft={hfSettings.footerTextLeft}
                         footerCenter={hfSettings.footerText}
                         footerRight={hfSettings.footerTextRight}
+                        footerEvenLeft={hfSettings.footerTextEvenLeft}
+                        footerEvenCenter={hfSettings.footerTextEvenCenter}
+                        footerEvenRight={hfSettings.footerTextEvenRight}
                         enableHeader={hfSettings.enableHeader}
                         enableFooter={hfSettings.enableFooter}
                         headerHeightCm={hfSettings.headerHeightCm}
@@ -2128,8 +2149,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                 eksporcie PDF i eksporcie Word.
               </p>
               <p className="mb-1">
-                Nagłówek ma osobne pola <b>Lewo / Środek / Prawo</b> dla stron <b>nieparzystych</b> i osobne dla <b>parzystych</b> —
-                puste pole parzyste kopiuje treść z nieparzystego. Stopka jest wspólna dla wszystkich stron.
+                Nagłówek i stopka mają osobne pola <b>Lewo / Środek / Prawo</b> dla stron <b>nieparzystych</b> i osobne dla <b>parzystych</b> —
+                puste pole parzyste kopiuje treść z nieparzystego.
               </p>
               <p className="mb-1">
                 Puste pole = brak tekstu w tym miejscu (bez automatycznego uzupełniania nazwą urządzenia).
@@ -2202,7 +2223,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
 
             <div>
               <div className="text-xs text-[var(--text-secondary)] mb-1">Tekst stopki</div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="text-[11px] font-semibold text-[var(--text-muted)] mb-1">Strony nieparzyste</div>
+              <div className="grid grid-cols-3 gap-2 mb-2">
                 <label className="block text-xs text-[var(--text-secondary)]">
                   Lewo
                   <textarea rows={5}
@@ -2225,6 +2247,33 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   <textarea rows={5}
                     value={hfDraft.footerTextRight}
                     onChange={(e) => setHfDraft((d) => ({ ...d, footerTextRight: e.target.value }))}
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
+                  />
+                </label>
+              </div>
+              <div className="text-[11px] font-semibold text-[var(--text-muted)] mb-1">Strony parzyste (puste = jak nieparzyste)</div>
+              <div className="grid grid-cols-3 gap-2">
+                <label className="block text-xs text-[var(--text-secondary)]">
+                  Lewo
+                  <textarea rows={5}
+                    value={hfDraft.footerTextEvenLeft}
+                    onChange={(e) => setHfDraft((d) => ({ ...d, footerTextEvenLeft: e.target.value }))}
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
+                  />
+                </label>
+                <label className="block text-xs text-[var(--text-secondary)]">
+                  Środek
+                  <textarea rows={5}
+                    value={hfDraft.footerTextEvenCenter}
+                    onChange={(e) => setHfDraft((d) => ({ ...d, footerTextEvenCenter: e.target.value }))}
+                    className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
+                  />
+                </label>
+                <label className="block text-xs text-[var(--text-secondary)]">
+                  Prawo
+                  <textarea rows={5}
+                    value={hfDraft.footerTextEvenRight}
+                    onChange={(e) => setHfDraft((d) => ({ ...d, footerTextEvenRight: e.target.value }))}
                     className="w-full border border-[var(--border-color)] bg-[var(--bg-hover)] text-[var(--text-primary)] rounded px-2 py-1.5 text-sm mt-1"
                   />
                 </label>
