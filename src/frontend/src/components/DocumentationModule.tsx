@@ -459,7 +459,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const [lockBusyMsg, setLockBusyMsg] = useState("");
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showVarsPanel, setShowVarsPanel] = useState(false);
-  const previewGridView = false;
   const A4_USABLE_WIDTH_CM = 18.46; // 21cm - 1.27cm marginesy z każdej strony
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
@@ -1526,12 +1525,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   };
   const openPrintPreview = async () => {
     setPreviewPageCount(null);
-    setPreviewHtml(await buildChapterPreviewHtml(false, previewGridView, editMode && active ? new Set([active.id]) : undefined));
+    setPreviewHtml(await buildChapterPreviewHtml(false, false, editMode && active ? new Set([active.id]) : undefined));
     setShowPrintPreview(true);
   };
   const refreshPrintPreview = async () => {
     setPreviewPageCount(null);
-    setPreviewHtml(await buildChapterPreviewHtml(false, previewGridView, editMode && active ? new Set([active.id]) : undefined));
+    setPreviewHtml(await buildChapterPreviewHtml(false, false, editMode && active ? new Set([active.id]) : undefined));
   };
   // Real, JS-measured live "2 pages side by side" view - reuses the exact
   // same pagination engine as Podgląd wydruku/eksport (accurate margins,
