@@ -607,7 +607,6 @@ const BlockIndent = Extension.create({
 // po zaladowaniu obrazkow + po resize.
 const SIMPLE_PAGE_BREAK_KEY = new PluginKey("simplePageBreaks");
 const MM_TO_PX = 96 / 25.4;
-const PAGE_H_PX = Math.round(297 * MM_TO_PX);
 const SIDE_MARGIN_PX = Math.round(12.7 * MM_TO_PX);
 
 type HfPagCfg = {
@@ -746,9 +745,12 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   const dom = view.dom as HTMLElement;
   const proseRect = dom.getBoundingClientRect();
   if (proseRect.height === 0) return DecorationSet.empty;
-  const headerHPx = cmToPx(cfg.headerHeightCm);
-  const footerHPx = cmToPx(cfg.footerHeightCm);
-  const contentH = PAGE_H_PX - headerHPx - footerHPx;
+  // Jedno zaokrąglenie na końcu (nie trzy osobne dla 297mm/header/footer) -
+  // musi być identyczne z paginateInner w buildChapterPreviewHtml (Podgląd),
+  // inaczej liczba stron w edytorze i w Podglądzie rozjeżdża się o ±1px na
+  // stronę dla ok. połowy kombinacji wysokości header/footer (patrz audyt
+  // 2026-08-31), co na długim rozdziale przesuwa złamania stron.
+  const contentH = Math.round((297 - cfg.headerHeightCm * 10 - cfg.footerHeightCm * 10) * MM_TO_PX);
   const breakOffsets = computeBreakOffsets(view, contentH);
   const totalPages = breakOffsets.length + 1;
   cfg.onPageCountChange?.(totalPages);

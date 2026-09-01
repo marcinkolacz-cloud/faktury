@@ -512,60 +512,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // Startuje tuż obok głównego lewego menu aplikacji (TopBar.tsx ustawia
   // document.body.style.paddingLeft na jego bieżącą szerokość - zwiniętą
   // lub rozwiniętą), więc nigdy go domyślnie nie zasłania.
-  const getMainSidebarWidth = () => parseInt(document.body.style.paddingLeft || "64", 10) || 64;
-  const computeDefaultEditWinRect = () => {
-    const sidebarW = getMainSidebarWidth();
-    const margin = 12;
-    return {
-      x: sidebarW + margin,
-      y: margin,
-      width: Math.max(400, window.innerWidth - sidebarW - margin * 2),
-      height: Math.max(300, window.innerHeight - margin * 2),
-    };
-  };
-  const [editWinRect, setEditWinRect] = useState(computeDefaultEditWinRect);
-  const editDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const onEditWinDragStart = (e: React.MouseEvent) => {
-    editDragRef.current = { startX: e.clientX, startY: e.clientY, origX: editWinRect.x, origY: editWinRect.y };
-    const onMove = (ev: MouseEvent) => {
-      if (!editDragRef.current) return;
-      const { startX, startY, origX, origY } = editDragRef.current;
-      setEditWinRect((r) => {
-        const minX = getMainSidebarWidth();
-        const nx = Math.min(Math.max(minX, origX + (ev.clientX - startX)), window.innerWidth - 100);
-        const ny = Math.min(Math.max(0, origY + (ev.clientY - startY)), window.innerHeight - 60);
-        return { ...r, x: nx, y: ny };
-      });
-    };
-    const onUp = () => {
-      editDragRef.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-  const editResizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number } | null>(null);
-  const onEditWinResizeStart = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    editResizeRef.current = { startX: e.clientX, startY: e.clientY, origW: editWinRect.width, origH: editWinRect.height };
-    const onMove = (ev: MouseEvent) => {
-      if (!editResizeRef.current) return;
-      const { startX, startY, origW, origH } = editResizeRef.current;
-      setEditWinRect((r) => ({
-        ...r,
-        width: Math.max(400, origW + (ev.clientX - startX)),
-        height: Math.max(300, origH + (ev.clientY - startY)),
-      }));
-    };
-    const onUp = () => {
-      editResizeRef.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
   const [hfWinRect, setHfWinRect] = useState(() => ({
     x: Math.max(20, Math.round(window.innerWidth * 0.15)),
     y: Math.max(20, Math.round(window.innerHeight * 0.08)),
@@ -816,7 +762,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       const got = await actor.acquireEditLock(activeId);
       if (got) {
         setLockedBy(null);
-        setEditWinRect(computeDefaultEditWinRect());
         setEditMode(true);
       } else {
         const lock = await actor.getEditLock(activeId);
@@ -1910,16 +1855,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             </div>
 
             <div
-              className={editMode ? "fixed z-[200] flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] overflow-hidden rounded-lg shadow-2xl border-2 border-[var(--accent)]" : "flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] relative"}
-              style={editMode ? { left: editWinRect.x, top: editWinRect.y, width: editWinRect.width, height: editWinRect.height } : undefined}
+              className="flex-1 flex flex-col bg-[var(--bg-card)] text-[var(--text-primary)] relative"
             >
               {editMode && canEdit && active && (
                 <div
-                  onMouseDown={onEditWinDragStart}
-                  title="Przeciągnij, żeby przesunąć okno"
-                  className="flex items-center gap-3 px-3 py-1.5 bg-[var(--accent)] text-white text-xs font-medium cursor-move select-none shrink-0 flex-wrap"
+                  className="flex items-center gap-3 px-3 py-1.5 bg-[var(--accent)] text-white text-xs font-medium select-none shrink-0 flex-wrap"
                 >
-                  <span className="text-sm leading-none">✥</span>
                   <span className="truncate">{active.title}</span>
                   <span className="ml-auto flex items-center gap-3 opacity-95 font-normal">
                     <span title="Liczba stron (na żywo, w edytorze)">📄 {livePageCount != null ? `${livePageCount} str.` : "licz…"}</span>
@@ -1970,8 +1911,12 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                     {editMode && canEdit && (
                       <RailButton icon="🔄" label={refreshingAndSaving ? "Odświeżam…" : "Odśwież i zapisz"} disabled={refreshingAndSaving} title="Zapisz, potem pobierz treść na nowo z OneDrive" onClick={refreshAndSave} />
                     )}
-                    <div className="w-8 h-px bg-[var(--border-color)] my-1" />
-                    <RailButton icon="🖨" label="Podgląd" onClick={openPrintPreview} />
+                    {!editMode && (
+                      <>
+                        <div className="w-8 h-px bg-[var(--border-color)] my-1" />
+                        <RailButton icon="🖨" label="Podgląd" onClick={openPrintPreview} />
+                      </>
+                    )}
                     <RailButton
                       icon="🖥"
                       label="Dopasuj"
@@ -2112,14 +2057,6 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                   </div>
                   </div>
                 </>
-              )}
-              {editMode && (
-                <div
-                  onMouseDown={onEditWinResizeStart}
-                  title="Przeciągnij, żeby zmienić rozmiar okna"
-                  className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize opacity-60 hover:opacity-100"
-                  style={{ background: "linear-gradient(135deg, transparent 50%, var(--text-secondary) 50%)" }}
-                />
               )}
             </div>
           </div>
