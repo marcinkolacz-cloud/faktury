@@ -710,11 +710,20 @@ function buildSpacerEl(heightCm: number) {
   return el;
 }
 
-function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingPageNum: number, totalPages: number) {
+function buildFillerEl(heightPx: number) {
+  const el = document.createElement("div");
+  el.className = "simple-page-fill";
+  el.contentEditable = "false";
+  el.style.height = `${Math.round(heightPx)}px`;
+  return el;
+}
+
+function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingPageNum: number, totalPages: number, leftover: number = 0) {
   return () => {
     const wrap = document.createElement("div");
     wrap.className = "simple-page-boundary";
     wrap.contentEditable = "false";
+    if (leftover > 0.5) wrap.appendChild(buildFillerEl(leftover));
     if (cfg.enableFooter && !(cfg.skipFirstPage && endingPageNum === 1)) {
       wrap.appendChild(buildFooterEl(cfg, endingPageNum, totalPages));
     } else {
@@ -747,14 +756,23 @@ const MIN_LEAD = 60; // px - unikaj osamotnionego nagłówka na dole strony (jak
 // żeby zobaczyć na żywo dlaczego strony łamią się za wcześnie.
 const DEBUG_PAG = true;
 
-function computeBreakOffsets(view: any, contentH: number, scale: number): number[] {
-  const breakOffsets: number[] = [];
+type BreakInfo = { offset: number; leftover: number };
+
+// Gdy strona konczy sie wczesniej niz contentH (np. regula unikania
+// osieroconego naglowka nizej), zostawala niewykorzystana przestrzen ktora
+// nigdy nie byla wizualnie wypelniana - pasek graniczny wskakiwal zaraz po
+// ostatnim tekscie i strona wygladala krocej niz realne A4. leftover =
+// dokladnie ta brakujaca wysokosc; buildPageBoundaryWidget wstawia w tym
+// miejscu bialy filler, tak jak min-height:297mm robi to automatycznie w
+// Podgladzie (tam kazda strona ma wlasny DOM-owy kontener .sheet).
+function computeBreakOffsets(view: any, contentH: number, scale: number): BreakInfo[] {
+  const breakOffsets: BreakInfo[] = [];
   let currentH = 0;
   view.state.doc.forEach((_node: any, offset: number) => {
     const domNode = view.nodeDOM(offset);
     if (!(domNode instanceof HTMLElement)) return;
     if (domNode.classList.contains(PAGE_BREAK_CLASS)) {
-      breakOffsets.push(offset);
+      breakOffsets.push({ offset, leftover: Math.max(0, contentH - currentH) });
       currentH = 0;
       return;
     }
@@ -768,11 +786,11 @@ function computeBreakOffsets(view: any, contentH: number, scale: number): number
     const isHeading = /^H[1-4]$/.test(domNode.tagName);
     let broke = false;
     if (currentH > 0 && currentH + h > contentH) {
-      breakOffsets.push(offset);
+      breakOffsets.push({ offset, leftover: Math.max(0, contentH - currentH) });
       currentH = 0;
       broke = true;
     } else if (isHeading && currentH > 0 && (contentH - currentH) < (h + MIN_LEAD)) {
-      breakOffsets.push(offset);
+      breakOffsets.push({ offset, leftover: Math.max(0, contentH - currentH) });
       currentH = 0;
       broke = true;
     }
@@ -809,11 +827,11 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   }
   cfg.onPageCountChange?.(totalPages);
   const decos: Decoration[] = [];
-  breakOffsets.forEach((offset, i) => {
+  breakOffsets.forEach(({ offset, leftover }, i) => {
     const endingPage = i + 1;
     const startingPage = i + 2;
     const key = `spb-${offset}`;
-    decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, startingPage, totalPages), { side: -1, key }));
+    decos.push(Decoration.widget(offset, buildPageBoundaryWidget(cfg, endingPage, startingPage, totalPages, leftover), { side: -1, key }));
   });
   if (cfg.enableHeader && !cfg.skipFirstPage) {
     decos.push(Decoration.widget(0, () => buildHeaderEl(cfg, 1, totalPages), { side: -1, key: "spb-header-first" }));
@@ -1654,8 +1672,9 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
   box-shadow: 0 2px 10px rgba(0,0,0,0.35);
   margin: 0 auto;
 }
-.doc-editor-tiptap-poc .simple-page-boundary { background: #888; margin: 0 -48px; width: calc(100% + 96px); box-sizing: border-box; box-shadow: inset 0 8px 10px -8px rgba(0,0,0,0.5), inset 0 -8px 10px -8px rgba(0,0,0,0.5); }
-.doc-editor-tiptap-poc .simple-page-margin-spacer { box-sizing: border-box; }
+.doc-editor-tiptap-poc .simple-page-boundary { position: relative; left: -48px; width: 794px; box-sizing: border-box; }
+.doc-editor-tiptap-poc .simple-page-margin-spacer { box-sizing: border-box; background: #fff; }
+.doc-editor-tiptap-poc .simple-page-fill { box-sizing: border-box; background: #fff; }
 .doc-editor-tiptap-poc .simple-page-header,
 .doc-editor-tiptap-poc .simple-page-footer { display: flex; align-items: center; justify-content: space-between; color: #555; box-sizing: border-box; position: relative; width: 100%; flex: none; }
 .doc-editor-tiptap-poc .simple-page-header > span,
