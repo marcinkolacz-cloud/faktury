@@ -644,8 +644,8 @@ function buildHeaderEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
   el.contentEditable = "false";
   el.style.height = `${cmToPx(cfg.headerHeightCm)}px`;
   el.style.fontSize = `${cfg.headerFontSize}pt`;
-  el.style.margin = `0 -${SIDE_MARGIN_PX}px`;
   el.style.padding = `0 ${SIDE_MARGIN_PX}px 6px`;
+  el.style.background = "#fff";
   el.style.alignItems = headerFooterAlignItems(left, center, right);
   if (cfg.headerBorder) el.style.borderBottom = "1px solid #ccc";
   el.innerHTML = `<span>${nl2brSimple(left)}</span><span>${nl2brSimple(center)}</span><span>${nl2brSimple(right)}</span>`;
@@ -668,8 +668,8 @@ function buildFooterEl(cfg: HfPagCfg, pageNum: number, totalPages: number) {
   el.contentEditable = "false";
   el.style.height = `${cmToPx(cfg.footerHeightCm)}px`;
   el.style.fontSize = `${cfg.footerFontSize}pt`;
-  el.style.margin = `0 -${SIDE_MARGIN_PX}px`;
   el.style.padding = `6px ${SIDE_MARGIN_PX}px 0`;
+  el.style.background = "#fff";
   el.style.alignItems = headerFooterAlignItems(left, center, right);
   if (cfg.footerBorder) el.style.borderTop = "1px solid #ccc";
   el.innerHTML = `<span>${nl2brSimple(left)}</span><span>${nl2brSimple(center)}</span><span>${nl2brSimple(right)}</span>`;
@@ -693,13 +693,39 @@ function buildGapEl(pageNum: number, totalPages: number) {
   return el;
 }
 
+// Gdy header/footer są wyłączone, wcześniej pomijaliśmy całkowicie ich
+// wysokość na granicy stron - wizualna przerwa była tylko 16px (sam
+// simple-page-gap), mimo że computeBreakOffsets ZAWSZE liczy contentH
+// pomniejszone o headerHeightCm+footerHeightCm (patrz niżej), niezależnie
+// od enableHeader/enableFooter. Efekt: szary pasek pokazywał skrócony,
+// nierealny odstęp między stronami zamiast faktycznej wysokości A4.
+// buildSpacerEl wypełnia dokładnie tę różnicę pustym blokiem (bez
+// obramowania/treści), żeby odstęp w edytorze zawsze odpowiadał realnej
+// stronie A4, nawet bez włączonego nagłówka/stopki.
+function buildSpacerEl(heightCm: number) {
+  const el = document.createElement("div");
+  el.className = "simple-page-margin-spacer";
+  el.contentEditable = "false";
+  el.style.height = `${cmToPx(heightCm)}px`;
+  return el;
+}
+
 function buildPageBoundaryWidget(cfg: HfPagCfg, endingPageNum: number, startingPageNum: number, totalPages: number) {
   return () => {
     const wrap = document.createElement("div");
+    wrap.className = "simple-page-boundary";
     wrap.contentEditable = "false";
-    if (cfg.enableFooter && !(cfg.skipFirstPage && endingPageNum === 1)) wrap.appendChild(buildFooterEl(cfg, endingPageNum, totalPages));
+    if (cfg.enableFooter && !(cfg.skipFirstPage && endingPageNum === 1)) {
+      wrap.appendChild(buildFooterEl(cfg, endingPageNum, totalPages));
+    } else {
+      wrap.appendChild(buildSpacerEl(cfg.footerHeightCm));
+    }
     wrap.appendChild(buildGapEl(endingPageNum, totalPages));
-    if (cfg.enableHeader && !(cfg.skipFirstPage && startingPageNum === 1)) wrap.appendChild(buildHeaderEl(cfg, startingPageNum, totalPages));
+    if (cfg.enableHeader && !(cfg.skipFirstPage && startingPageNum === 1)) {
+      wrap.appendChild(buildHeaderEl(cfg, startingPageNum, totalPages));
+    } else {
+      wrap.appendChild(buildSpacerEl(cfg.headerHeightCm));
+    }
     return wrap;
   };
 }
@@ -716,7 +742,12 @@ const MIN_LEAD = 60; // px - unikaj osamotnionego nagłówka na dole strony (jak
 // tiptap-pagination-plus (2026-08-28). Sumowanie wysokości per-blok jest
 // na to odporne i jest DOKŁADNIE tym samym algorytmem co paginateInner w
 // podglądzie (buildChapterPreviewHtml) - stąd liczba stron się zgadza.
-function computeBreakOffsets(view: any, contentH: number): number[] {
+// TYMCZASOWE — do usunięcia po zdiagnozowaniu błędnej paginacji (2026-09-01).
+// Pokazuje realną wysokość (px) każdego bloku dokumentu i próg strony,
+// żeby zobaczyć na żywo dlaczego strony łamią się za wcześnie.
+const DEBUG_PAG = true;
+
+function computeBreakOffsets(view: any, contentH: number, scale: number): number[] {
   const breakOffsets: number[] = [];
   let currentH = 0;
   view.state.doc.forEach((_node: any, offset: number) => {
@@ -727,14 +758,26 @@ function computeBreakOffsets(view: any, contentH: number): number[] {
       currentH = 0;
       return;
     }
-    const h = domNode.getBoundingClientRect().height;
+    // getBoundingClientRect() zwraca wysokość PO ewentualnym transform:scale
+    // z przodka (zoom edytora "Dopasuj do ekranu" / ręczny zoom) - dzielimy
+    // przez ten sam współczynnik, żeby porównywać z contentH (który jest
+    // liczony z cm, czyli zawsze "prawdziwą", nieprzeskalowaną wysokością
+    // strony). Bez tego przy zoomie != 100% strony łamały się po
+    // wielokrotnie za małej (lub za dużej) ilości treści.
+    const h = domNode.getBoundingClientRect().height / scale;
     const isHeading = /^H[1-4]$/.test(domNode.tagName);
+    let broke = false;
     if (currentH > 0 && currentH + h > contentH) {
       breakOffsets.push(offset);
       currentH = 0;
+      broke = true;
     } else if (isHeading && currentH > 0 && (contentH - currentH) < (h + MIN_LEAD)) {
       breakOffsets.push(offset);
       currentH = 0;
+      broke = true;
+    }
+    if (DEBUG_PAG) {
+      domNode.setAttribute("data-dbgh", `${domNode.tagName} ${Math.round(h)}px${broke ? " CIĘCIE" : ""}`);
     }
     currentH += h;
   });
@@ -751,8 +794,19 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   // stronę dla ok. połowy kombinacji wysokości header/footer (patrz audyt
   // 2026-08-31), co na długim rozdziale przesuwa złamania stron.
   const contentH = Math.round((297 - cfg.headerHeightCm * 10 - cfg.footerHeightCm * 10) * MM_TO_PX);
-  const breakOffsets = computeBreakOffsets(view, contentH);
+  const scale = proseRect.width / 794 || 1;
+  const breakOffsets = computeBreakOffsets(view, contentH, scale);
   const totalPages = breakOffsets.length + 1;
+  if (DEBUG_PAG) {
+    let badge = document.getElementById("pag-debug-badge");
+    if (!badge) {
+      badge = document.createElement("div");
+      badge.id = "pag-debug-badge";
+      badge.style.cssText = "position:fixed;top:8px;right:8px;z-index:9999;background:#000;color:#0f0;font:11px monospace;padding:4px 8px;border-radius:4px;white-space:pre;";
+      document.body.appendChild(badge);
+    }
+    badge.textContent = `contentH=${contentH}px  scale=${scale.toFixed(2)}  header=${cfg.headerHeightCm}cm  footer=${cfg.footerHeightCm}cm  breaks=${breakOffsets.length}  strony=${totalPages}`;
+  }
   cfg.onPageCountChange?.(totalPages);
   const decos: Decoration[] = [];
   breakOffsets.forEach((offset, i) => {
@@ -1600,23 +1654,36 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
   box-shadow: 0 2px 10px rgba(0,0,0,0.35);
   margin: 0 auto;
 }
+.doc-editor-tiptap-poc .simple-page-boundary { background: #888; margin: 0 -48px; width: calc(100% + 96px); box-sizing: border-box; box-shadow: inset 0 8px 10px -8px rgba(0,0,0,0.5), inset 0 -8px 10px -8px rgba(0,0,0,0.5); }
+.doc-editor-tiptap-poc .simple-page-margin-spacer { box-sizing: border-box; }
 .doc-editor-tiptap-poc .simple-page-header,
-.doc-editor-tiptap-poc .simple-page-footer { display: flex; align-items: center; justify-content: space-between; color: #555; box-sizing: border-box; position: relative; width: calc(100% + 96px); flex: none; }
+.doc-editor-tiptap-poc .simple-page-footer { display: flex; align-items: center; justify-content: space-between; color: #555; box-sizing: border-box; position: relative; width: 100%; flex: none; }
 .doc-editor-tiptap-poc .simple-page-header > span,
 .doc-editor-tiptap-poc .simple-page-footer > span { flex: 1; }
 .doc-editor-tiptap-poc .simple-page-header > span:nth-child(2),
 .doc-editor-tiptap-poc .simple-page-footer > span:nth-child(2) { text-align: center; }
 .doc-editor-tiptap-poc .simple-page-header > span:nth-child(3),
 .doc-editor-tiptap-poc .simple-page-footer > span:nth-child(3) { text-align: right; }
-.doc-editor-tiptap-poc .simple-page-gap { height: 16px; background: #888; margin: 0 -48px; width: calc(100% + 96px); box-sizing: border-box; position: relative; }
-.doc-editor-tiptap-poc .simple-page-gap-label { position: absolute; top: 1px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #fff; font-family: monospace; white-space: nowrap; }
+.doc-editor-tiptap-poc .simple-page-gap { height: 20px; background: #666; box-sizing: border-box; position: relative; }
+.doc-editor-tiptap-poc .simple-page-gap-label { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #fff; font-family: monospace; white-space: nowrap; }
 .doc-editor-tiptap-poc .simple-page-number-badge { position: absolute; bottom: 2px; right: 0; font-size: 9px; color: #999; }
 .doc-editor-tiptap-poc .ProseMirror, .doc-editor-tiptap-poc .rm-page-content { background: #fff !important; color: #000 !important; }
 .doc-editor-tiptap-poc h1[data-num]::before,
 .doc-editor-tiptap-poc h2[data-num]::before,
 .doc-editor-tiptap-poc h3[data-num]::before { content: attr(data-num) ". "; }
-.doc-editor-tiptap-poc .manual-page-break { position: relative; height: 0; border-top: 2px dashed #7b7bd6; margin: 24px 0; }
-.doc-editor-tiptap-poc .manual-page-break::after { content: attr(data-label); position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #fff; padding: 0 8px; font-size: 11px; color: #7b7bd6; white-space: nowrap; }
+/* Manualny podzial strony jest tu CELOWO niewidoczny (bez ramki/etykiety) -
+   dokladnie jak w Podgladzie/PDF (buildChapterPreviewHtml), gdzie sam tylko
+   cicho wymusza koniec strony (flush()) bez zadnego znacznika. Silnik
+   paginacji (computeBreakOffsets) i tak zawsze wstawia w tym samym miejscu
+   wlasciwy szary pasek "Strona X/Y" (buildPageBoundaryWidget) - wlasna,
+   widoczna kreska+etykieta tego wezla tylko dublowala te sama granice
+   strony dwoma nakladajacymi sie znacznikami. */
+.doc-editor-tiptap-poc .manual-page-break { height: 0 !important; margin: 0 !important; border: none !important; }
+.doc-editor-tiptap-poc .manual-page-break::before,
+.doc-editor-tiptap-poc .manual-page-break::after { content: none !important; }
+/* TYMCZASOWE debug (DEBUG_PAG) - usunąć razem z flagą po diagnozie */
+.doc-editor-tiptap-poc [data-dbgh] { position: relative; }
+.doc-editor-tiptap-poc [data-dbgh]::after { content: attr(data-dbgh); position: absolute; right: -2px; top: 0; background: #ffeb3b; color: #b71c1c; font: bold 9px monospace; padding: 0 3px; z-index: 50; }
 .doc-editor-tiptap-poc .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }
 .doc-editor-tiptap-poc .ProseMirror img { max-width: 100%; max-height: 850px; height: auto; }
 .doc-editor-tiptap-poc .ProseMirror table { border-collapse: collapse; table-layout: fixed; margin: 8px 0; }
