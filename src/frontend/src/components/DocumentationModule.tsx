@@ -807,7 +807,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // z "chapters" (ostatni zapisany stan) - nieotwarte nigdy rozdzialy maja
   // puste contentHtml dopoki nie zostana raz otwarte, wiec ich naglowki
   // nie pojawia sie w liscie do tego momentu (znana uproszczona wersja).
-  const tocEntries = useMemo(() => buildTocEntries(chapters, selectedForPrint), [chapters, selectedForPrint]);
+  // Spis tresci - zawsze CALY podrecznik, niezaleznie od checkboxow "do
+  // druku" (te sluza tylko wyborowi co fizycznie trafia do PDF/Worda) -
+  // decyzja 2026-09-04 po tym, jak brak zaznaczonych checkboxow dawal
+  // pusty spis i wygladalo to jak blad. Wpis dla rozdzialu spoza biezacego
+  // wydruku po prostu nie dostanie numeru strony w Podgladzie/PDF (patrz
+  // buildChapterPreviewHtml) - fizycznie go tam nie ma - ale zostaje
+  // widoczny w spisie.
+  const tocEntries = useMemo(() => buildTocEntries(chapters), [chapters]);
   const handleTocEntryClick = (entry: TocEntry) => {
     if (entry.chapterId === activeId) {
       liveEditorRef.current?.scrollToHeadingIndex(entry.headingIndex);
@@ -1304,7 +1311,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // budowana od nowa tutaj.
     if (body.includes("doc-toc-field")) {
       const tocDoc = new DOMParser().parseFromString(body, "text/html");
-      const tocEntriesForExport = buildTocEntries(chaptersForNumbering, selectedSet);
+      const tocEntriesForExport = buildTocEntries(chaptersForNumbering);
       const tocHtml = buildTocListHtml(tocEntriesForExport);
       tocDoc.body.querySelectorAll(".doc-toc-field").forEach((el) => { el.innerHTML = tocHtml; });
       body = tocDoc.body.innerHTML;
