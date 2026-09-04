@@ -9,7 +9,7 @@ import { driveTimingSummary, driveMark } from "../lib/driveTiming";
 import { isTocHeadingTitle } from "../lib/headingNumbering";
 import { docContentCss } from "../lib/docContentStyle";
 import { ManualVariablesPanel } from "./ManualVariablesPanel";
-import { DocumentationEditorTiptapPoC } from "./DocumentationEditorTiptapPoC";
+import { DocumentationEditorTiptapPoC, normalizeEmptyBreakParagraphs } from "./DocumentationEditorTiptapPoC";
 import type { DocEditorHandle } from "./DocumentationEditorTiptapPoC";
 
 // SECURITY / DESIGN NOTE: the Agent AI chat (FloatingAgentChat.tsx) is
@@ -1091,7 +1091,9 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     // Tiptap's HeadingNumbering extension writes them as real node
     // attributes for live display, but they're recomputed fresh on every
     // load, so saved content should stay clean of them.
-    const html = (tiptapHtmlRef.current || active.contentHtml || "").replace(/\s*data-num="[^"]*"/g, "");
+    const html = normalizeEmptyBreakParagraphs(
+      (tiptapHtmlRef.current || active.contentHtml || "").replace(/\s*data-num="[^"]*"/g, "")
+    );
     try {
       await syncChapterToDrive(deviceLabel, active.id, active.order, active.title, html);
     } catch (e: any) {

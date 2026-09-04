@@ -232,6 +232,34 @@ function stripPastedInlineStyle(el: HTMLElement, keepProps?: Set<string>) {
   else el.removeAttribute("style");
 }
 
+// Silnik paginacji (SimplePagination) mierzy i dzieli dokument blokami
+// DOM-owymi (getBoundingClientRect per element) - <p> zawierajacy KILKA
+// pustych linii zbitych w jeden atomowy blok (<p><br><br><br></p>, efekt
+// wielokrotnego Shift+Enter) jest dla niego niepodzielny i cala jego
+// wysokosc "ucieka" na kolejna strone naraz. Rozbijamy taki blok na N
+// osobnych pustych <p><br></p> - kazdy mierzalny/dzielony niezaleznie.
+// Celowo NIE dotyka to akapitow z tresc + pojedynczym <br> (swiadomy
+// mieciekki zawijacz linii w obrebie jednego akapitu, np. adres) - tylko
+// akapitow calkowicie pustych z 2+ <br>.
+export function normalizeEmptyBreakParagraphs(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.body.querySelectorAll("p").forEach((p) => {
+    if ((p.textContent || "").trim() !== "") return;
+    const brs = p.querySelectorAll("br");
+    if (brs.length < 2) return;
+    const attrs = Array.from(p.attributes);
+    const frag = doc.createDocumentFragment();
+    for (let i = 0; i < brs.length; i++) {
+      const newP = doc.createElement("p");
+      attrs.forEach((a) => newP.setAttribute(a.name, a.value));
+      newP.appendChild(doc.createElement("br"));
+      frag.appendChild(newP);
+    }
+    p.replaceWith(frag);
+  });
+  return doc.body.innerHTML;
+}
+
 function sanitizePastedHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   // Legacy <font face/size/color> (stary HTML, Outlook) - usuń całkowicie,
@@ -258,7 +286,7 @@ function sanitizePastedHtml(html: string): string {
     el.style.borderStyle = "solid";
     el.style.borderColor = "#000";
   });
-  return doc.body.innerHTML;
+  return normalizeEmptyBreakParagraphs(doc.body.innerHTML);
 }
 
 // --- Obrazki: resize/align/drag&drop (§5 inventory) ---
@@ -779,6 +807,15 @@ function computeBreakOffsets(view: any, contentH: number, scale: number): BreakI
     if (domNode.classList.contains(PAGE_BREAK_CLASS)) {
       breakOffsets.push({ offset, leftover: Math.max(0, contentH - currentH) });
       currentH = 0;
+      // Wczesniej ten branch konczyl sie tu "return" bez inkrementacji
+      // dbgPage - w rezultacie console.table("EDYTOR") pokazywal numer
+      // strony NIE zliczajac recznych podzialow strony, przez co jego
+      // kolumna "strona" rozjezdzala sie z console.table("PODGLAD")
+      // (ktory to poprawnie liczyl) o 1 za kazdym recznym podzialem w
+      // dokumencie - myllacy artefakt samego debugu, nie realnej
+      // paginacji (totalPages i tak liczony jest z breakOffsets.length,
+      // nie z dbgPage). Znalezione 2026-09-04.
+      if (DEBUG_PAG) dbgPage += 1;
       return;
     }
     // getBoundingClientRect() zwraca wysokość PO ewentualnym transform:scale
@@ -1713,6 +1750,21 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
 .doc-editor-tiptap-poc [data-dbgh]::after { content: attr(data-dbgh); position: absolute; right: -2px; top: 0; background: #ffeb3b; color: #b71c1c; font: bold 9px monospace; padding: 0 3px; z-index: 50; }
 .doc-editor-tiptap-poc .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }
 .doc-editor-tiptap-poc .ProseMirror img { max-width: 100%; max-height: 850px; height: auto; }
+/* ProseMirror doleja WLASNY, niewidzialny <br class="ProseMirror-trailingBreak">
+   na koncu kazdego akapitu konczacego sie realnym <br> (potrzebne mu to,
+   zeby dalo sie tam ustawic kursor) - w zywym DOM edytora ten sztuczny <br>
+   fizycznie zajmuje dodatkowa linie wysokosci, ktorej NIE MA w statycznym
+   HTML mierzonym przez Podglad/PDF (ten sam ".getHTML()" string bez
+   ProseMirror-owej dekoracji widoku). To realny rozjazd wysokosci
+   pojedynczych blokow (nie tylko sumaryczny bledny licznik stron w debug
+   console.table) - kumuluje sie w dlugich rozdzialach i przesuwa zlamania
+   stron wzgledem Podgladu (znalezione 2026-09-04, dane z console.table
+   EDYTOR vs PODGLAD: ten sam pusty akapit 43px w edytorze vs 22px w
+   podgladzie). :not(:only-child) celowo NIE dotyka prawdziwie pustego
+   <p></p> (bez zadnego wlasnego <br>), gdzie ProseMirror-owy trailing
+   break jest jedynym dzieckiem i JEST jedyna trescia dajaca wysokosc tej
+   linii - tam musi zostac widoczny. */
+.doc-editor-tiptap-poc .ProseMirror br.ProseMirror-trailingBreak:not(:only-child) { display: none; }
 .doc-editor-tiptap-poc .ProseMirror table { border-collapse: collapse; table-layout: fixed; margin: 8px 0; }
 .doc-editor-tiptap-poc .ProseMirror table td, .doc-editor-tiptap-poc .ProseMirror table th { border: 1px solid #999; min-width: 60px; padding: 4px 8px; position: relative; }
 .doc-editor-tiptap-poc .ProseMirror .selectedCell:after { z-index: 2; position: absolute; content: ""; left: 0; right: 0; top: 0; bottom: 0; background: rgba(79, 195, 247, 0.35); pointer-events: none; }
