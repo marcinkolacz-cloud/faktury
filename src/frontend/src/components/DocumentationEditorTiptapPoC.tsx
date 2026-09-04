@@ -768,6 +768,11 @@ type BreakInfo = { offset: number; leftover: number };
 function computeBreakOffsets(view: any, contentH: number, scale: number): BreakInfo[] {
   const breakOffsets: BreakInfo[] = [];
   let currentH = 0;
+  // TYMCZASOWE (2026-09-04): wiersze do console.table("EDYTOR") - do porownania
+  // 1:1 z analogicznym dumpem "PODGLAD" z paginateInner (DocumentationModule.tsx),
+  // zeby znalezc miejsce rozjazdu edytor/podglad bez tabel/obrazow w tresci.
+  const dbgRows: any[] = [];
+  let dbgPage = 1;
   view.state.doc.forEach((_node: any, offset: number) => {
     const domNode = view.nodeDOM(offset);
     if (!(domNode instanceof HTMLElement)) return;
@@ -796,9 +801,12 @@ function computeBreakOffsets(view: any, contentH: number, scale: number): BreakI
     }
     if (DEBUG_PAG) {
       domNode.setAttribute("data-dbgh", `${domNode.tagName} ${Math.round(h)}px${broke ? " CIĘCIE" : ""}`);
+      if (broke) dbgPage += 1;
+      dbgRows.push({ strona: dbgPage, tag: domNode.tagName, tekst: (domNode.textContent || "").slice(0, 40), h: Math.round(h), cum: Math.round(currentH), broke });
     }
     currentH += h;
   });
+  if (DEBUG_PAG) console.table(dbgRows);
   return breakOffsets;
 }
 

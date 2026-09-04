@@ -1390,23 +1390,34 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           var pages = [];
           var current = [];
           var currentH = 0;
+          // TYMCZASOWE (2026-09-04): wiersze do console.table("PODGLAD") - do
+          // porownania 1:1 z dumpem "EDYTOR" (computeBreakOffsets w
+          // DocumentationEditorTiptapPoC.tsx), zeby znalezc rozjazd.
+          var dbgRows = [];
+          var dbgPage = 1;
           function flush(){
             if (current.length) pages.push(current.map(function(el){ return el.outerHTML; }).join(''));
             current = []; currentH = 0;
           }
           units.forEach(function(el){
-            if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) { flush(); return; }
+            if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) { flush(); dbgPage += 1; return; }
             var h = el.getBoundingClientRect().height;
             var isHeading = /^H[1-4]$/.test(el.tagName);
+            var broke = false;
             if (currentH > 0 && currentH + h > PAGE_H) {
               flush();
+              broke = true;
             } else if (isHeading && currentH > 0 && (PAGE_H - currentH) < (h + MIN_LEAD)) {
               flush();
+              broke = true;
             }
+            if (broke) dbgPage += 1;
+            dbgRows.push({ strona: dbgPage, tag: el.tagName, tekst: (el.textContent || '').slice(0, 40), h: Math.round(h), cum: Math.round(currentH), broke: broke });
             current.push(el);
             currentH += h;
           });
           flush();
+          console.table(dbgRows);
           if (pages.length === 0) pages = [''];
           // TYMCZASOWA diagnostyka w nawiasie - do usunięcia jak znajdziemy
           // przyczynę "1 strona zamiast wielu"; sam licznik zostaje na stałe.
