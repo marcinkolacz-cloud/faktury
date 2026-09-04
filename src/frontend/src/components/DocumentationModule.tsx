@@ -1274,12 +1274,34 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       ? sourceChapters.map((c) => (c.id === active.id ? { ...c, contentHtml: liveEditorRef.current!.getLiveContentHtml() } : c))
       : sourceChapters;
     const numbered = numberHeadingsForExport(chaptersForNumbering, selectedSet);
+    // Tagujemy kazdy naglowek h1-h4 danymi data-toc-chapter/data-toc-heading-index
+    // (dokladnie ten sam schemat liczenia co buildTocEntries: headingIndex
+    // 0-based, reset per rozdzial, liczony przez WSZYSTKIE h1-h4 lacznie z
+    // pomijanymi typu "Spis tresci") - to pozwala silnikowi paginacji w
+    // iframe (ponizej, paginateInner) odczytac na ktorej fizycznej stronie
+    // wyladowal kazdy naglowek i wpisac prawdziwy numer strony do spisu
+    // tresci (dwuprzebiegowe liczenie - patrz paginateInner).
+    const includedChapterIds = chaptersForNumbering.filter((c) => !selectedSet || selectedSet.has(c.id)).map((c) => c.id);
+    numbered.forEach((n, i) => {
+      const chapterId = includedChapterIds[i];
+      if (chapterId == null) return;
+      const doc = new DOMParser().parseFromString(n.html, "text/html");
+      let headingIndex = -1;
+      doc.body.querySelectorAll("h1, h2, h3, h4").forEach((el) => {
+        headingIndex += 1;
+        el.setAttribute("data-toc-chapter", String(chapterId));
+        el.setAttribute("data-toc-heading-index", String(headingIndex));
+      });
+      n.html = doc.body.innerHTML;
+    });
     let body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
     // Wstawienie realnej listy do kazdego pola "Spis tresci" (TocField,
     // patrz DocumentationEditorTiptapPoC.tsx) - caly podrecznik czyli
-    // wszystkie rozdzialy zaznaczone do druku (selectedSet), na razie bez
-    // numerow stron (decyzja 2026-09-04). Puste markery zostaja w
-    // zapisanej tresci - lista jest zawsze budowana od nowa tutaj.
+    // wszystkie rozdzialy zaznaczone do druku (selectedSet). Numery stron
+    // sa jeszcze nieznane na tym etapie (dopisuje je dwuprzebiegowa
+    // paginateInner w iframe, ponizej) - tu wstawiamy tresc bez nich.
+    // Puste markery zostaja w zapisanej tresci - lista jest zawsze
+    // budowana od nowa tutaj.
     if (body.includes("doc-toc-field")) {
       const tocDoc = new DOMParser().parseFromString(body, "text/html");
       const tocEntriesForExport = buildTocEntries(chaptersForNumbering, selectedSet);
@@ -1323,7 +1345,10 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         .page-content{padding:0;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
         .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:6px;font-size:8pt;color:#999;text-align:center;}
         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
-        .doc-toc-entry{padding-top:3px;padding-bottom:3px;font-size:10pt;}
+        .doc-toc-entry{padding-top:3px;padding-bottom:3px;font-size:10pt;display:flex;align-items:baseline;}
+        .doc-toc-label{white-space:normal;}
+        .doc-toc-leader{flex:1 1 auto;border-bottom:1px dotted #999;margin:0 4px 2px;}
+        .doc-toc-page{white-space:nowrap;}
         .doc-toc-num{color:#555;}
         .doc-toc-empty{color:#999;font-style:italic;font-size:10pt;}
         ${forPrint ? "@page{size:A4;margin:0;} body{background:#fff;} .sheet{box-shadow:none;margin:0;} .sheet + .sheet{page-break-before:always;} .page-number{display:none;} #page-count-badge{display:none;}" : ""}
@@ -1405,7 +1430,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             try { parent.postMessage({ type: 'docPreviewPageCount', count: 1, error: String(e && e.message || e), token: __TOKEN__ }, '*'); } catch (e3) {}
           }
         }
-        function paginateInner(){
+        function paginateInner(secondPass){
           hoistPageBreaks(measure);
           function collectUnits(el){
             if (el.classList && el.classList.contains('${PAGE_BREAK_CLASS}')) return [el];
@@ -1433,6 +1458,11 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           // DocumentationEditorTiptapPoC.tsx), zeby znalezc rozjazd.
           var dbgRows = [];
           var dbgPage = 1;
+          // Numer fizycznej strony kazdego otagowanego naglowka (data-toc-chapter
+          // / data-toc-heading-index, patrz tagowanie w buildChapterPreviewHtml) -
+          // klucz "chapterId:headingIndex" -> numer strony. Zbierane w KAZDYM
+          // przebiegu (pierwszym i drugim) tej samej petli.
+          var headingPages = {};
           function flush(){
             if (current.length) pages.push(current.map(function(el){ return el.outerHTML; }).join(''));
             current = []; currentH = 0;
@@ -1451,11 +1481,46 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
             }
             if (broke) dbgPage += 1;
             if (el.setAttribute) el.setAttribute('data-dbgh', el.tagName + ' ' + Math.round(h) + 'px' + (broke ? ' CIĘCIE' : ''));
+            var tChap = el.getAttribute && el.getAttribute('data-toc-chapter');
+            if (tChap !== null && tChap !== undefined) {
+              headingPages[tChap + ':' + el.getAttribute('data-toc-heading-index')] = dbgPage;
+            }
             dbgRows.push({ strona: dbgPage, tag: el.tagName, tekst: (el.textContent || '').slice(0, 40), h: Math.round(h), cum: Math.round(currentH), broke: broke });
             current.push(el);
             currentH += h;
           });
           flush();
+          if (!secondPass) {
+            // PIERWSZY PRZEBIEG: teraz znamy numer strony kazdego naglowka -
+            // dopisz go (kropkowany "leader" + numer) do odpowiadajacych
+            // wierszy spisu tresci w #measure i policz WSZYSTKO jeszcze raz
+            // (DRUGI przebieg), zeby ostateczne strony renderowaly juz pelny
+            // spis. Dopisanie samego numeru na koncu istniejacej linii nie
+            // zmienia wysokosci wiersza (ten sam line-height), wiec podzial
+            // stron w drugim przebiegu wychodzi identyczny jak w pierwszym -
+            // stad numery z pierwszego przebiegu sa juz ostatecznie poprawne.
+            var tocRows = measure.querySelectorAll('.doc-toc-entry');
+            var anyToc = tocRows.length > 0;
+            tocRows.forEach(function(row){
+              var chap = row.getAttribute('data-toc-chapter');
+              var hidx = row.getAttribute('data-toc-heading-index');
+              var page = headingPages[chap + ':' + hidx];
+              if (page == null) return;
+              var label = document.createElement('span');
+              label.className = 'doc-toc-label';
+              label.innerHTML = row.innerHTML;
+              var leader = document.createElement('span');
+              leader.className = 'doc-toc-leader';
+              var pageSpan = document.createElement('span');
+              pageSpan.className = 'doc-toc-page';
+              pageSpan.textContent = String(page);
+              row.innerHTML = '';
+              row.appendChild(label);
+              row.appendChild(leader);
+              row.appendChild(pageSpan);
+            });
+            if (anyToc) { paginateInner(true); return; }
+          }
           console.table(dbgRows);
           if (pages.length === 0) pages = [''];
           // TYMCZASOWA diagnostyka w nawiasie - do usunięcia jak znajdziemy
