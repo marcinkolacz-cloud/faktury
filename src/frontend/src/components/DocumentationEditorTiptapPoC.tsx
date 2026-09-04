@@ -26,6 +26,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { TableMap, CellSelection } from "@tiptap/pm/tables";
 import { convertDocxToHtml } from "../lib/docxImport";
 import { docContentCss } from "../lib/docContentStyle";
+import { tocEntryHtml, type TocEntry } from "../lib/tocEntries";
 
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
@@ -89,6 +90,38 @@ const ManualPageBreak = Node.create({
   },
   addKeyboardShortcuts() {
     return { "Mod-Enter": () => this.editor.commands.insertManualPageBreak() };
+  },
+});
+
+const TOC_FIELD_CLASS = "doc-toc-field";
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    tocField: { insertTocField: () => ReturnType };
+  }
+}
+// Atom-node placeholder wstawiany recznie przez usera w miejscu, gdzie ma
+// sie pojawic spis tresci (§ decyzja 2026-09-04: obie strony - zywy
+// edytor + Podglad/PDF, caly podrecznik czyli wszystkie rozdzialy
+// zaznaczone do druku, na razie bez numerow stron). Jego rzeczywista
+// zawartosc (liste wpisow) dopisuje imperatywnie computeBreakOffsets -
+// TA SAMA petla co paginacja, wiec odswieza sie przy kazdej zmianie
+// dokumentu i przy forceRecomputeRef (analogicznie do naglowka/stopki).
+// Sam node w modelu/HTML zapisanym na Drive zostaje PUSTY (<div
+// class="doc-toc-field"></div>) - lista dopisywana jest tylko na
+// potrzeby wyswietlania (zywy edytor: DOM po renderze; Podglad/PDF/
+// eksport: buildChapterPreviewHtml/buildWordExportHtml postprocessing),
+// nigdy nie trafia do zapisanej tresci rozdzialu.
+const TocField = Node.create({
+  name: "tocField",
+  group: "block",
+  atom: true,
+  selectable: false,
+  parseHTML() { return [{ tag: `div.${TOC_FIELD_CLASS}` }]; },
+  renderHTML() {
+    return ["div", mergeAttributes({ class: TOC_FIELD_CLASS, contenteditable: "false" })];
+  },
+  addCommands() {
+    return { insertTocField: () => ({ commands }) => commands.insertContent({ type: this.name }) };
   },
 });
 
@@ -649,6 +682,8 @@ type HfPagCfg = {
   skipFirstPage: boolean;
   showPageNumbers: boolean;
   onPageCountChange?: (count: number) => void;
+  tocEntries: TocEntry[];
+  onTocEntryClick?: (entry: TocEntry) => void;
 };
 
 function cmToPx(cm: number) { return Math.round(cm * 10 * MM_TO_PX); }
@@ -851,6 +886,22 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   const dom = view.dom as HTMLElement;
   const proseRect = dom.getBoundingClientRect();
   if (proseRect.height === 0) return DecorationSet.empty;
+  // Wypelnij tresc kazdego wstawionego pola "Spis tresci" (TocField)
+  // PRZED pomiarem wysokosci blokow ponizej - inaczej pusty <div
+  // class="doc-toc-field"> mialby 0px i lista nie liczylaby sie do
+  // paginacji w ogole. Sam model dokumentu (to, co trafia do zapisu)
+  // zostaje pusty - dopisujemy tylko do juz wyrenderowanego DOM.
+  dom.querySelectorAll(`.${TOC_FIELD_CLASS}`).forEach((el) => {
+    el.innerHTML = cfg.tocEntries.map(tocEntryHtml).join("") || `<div class="doc-toc-empty">(brak nagłówków do wypisania)</div>`;
+    (el as HTMLElement).querySelectorAll<HTMLElement>(".doc-toc-entry").forEach((row) => {
+      row.onclick = () => {
+        const chapterId = Number(row.getAttribute("data-toc-chapter"));
+        const headingIndex = Number(row.getAttribute("data-toc-heading-index"));
+        const entry = cfg.tocEntries.find((e) => e.chapterId === chapterId && e.headingIndex === headingIndex);
+        if (entry) cfg.onTocEntryClick?.(entry);
+      };
+    });
+  });
   // Jedno zaokrąglenie na końcu (nie trzy osobne dla 297mm/header/footer) -
   // musi być identyczne z paginateInner w buildChapterPreviewHtml (Podgląd),
   // inaczej liczba stron w edytorze i w Podglądzie rozjeżdża się o ±1px na
@@ -1051,7 +1102,7 @@ function createSimplePaginationExtension(cfgRef: { current: HfPagCfg }, forceRec
 // na <img> bez wrappera - inna wysokosc bloku = inna paginacja). getLiveContentHtml
 // daje Podgladowi doslowny klon aktualnie wyrenderowanego DOM edytora
 // (bez dekoracji SimplePagination), zeby mierzyc dokladnie to, co na ekranie.
-export type DocEditorHandle = { getLiveContentHtml: () => string };
+export type DocEditorHandle = { getLiveContentHtml: () => string; scrollToHeadingIndex: (index: number) => void };
 
 type Props = {
   initialHtml: string;
@@ -1079,6 +1130,8 @@ type Props = {
   footerBorder?: boolean;
   skipFirstPage?: boolean;
   showPageNumbers?: boolean;
+  tocEntries?: TocEntry[];
+  onTocEntryClick?: (entry: TocEntry) => void;
   onImageUpload?: (blob: Blob, filename: string) => Promise<{ url: string; itemId: string }>;
   // Gdy podany, toolbar renderuje się przez portal w tym elemencie (lewy
   // sidebar w DocumentationModule.tsx) zamiast jako osobna kolumna obok
@@ -1118,6 +1171,8 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
   onImageUpload,
   toolbarPortalEl,
   onPageCountChange,
+  tocEntries = [],
+  onTocEntryClick,
 }: Props, ref) {
   const [uploading, setUploading] = useState(false);
   const [importingDocx, setImportingDocx] = useState(false);
@@ -1139,7 +1194,7 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
     headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
     footerLeft, footerCenter, footerRight, footerEvenLeft, footerEvenCenter, footerEvenRight, enableHeader, enableFooter,
     headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers,
-    onPageCountChange,
+    onPageCountChange, tocEntries, onTocEntryClick,
   });
   const forceRecomputeRef = useRef<(() => void) | null>(null);
   useEffect(() => {
@@ -1147,12 +1202,12 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
       headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight,
       footerLeft, footerCenter, footerRight, footerEvenLeft, footerEvenCenter, footerEvenRight, enableHeader, enableFooter,
       headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers,
-      onPageCountChange,
+      onPageCountChange, tocEntries, onTocEntryClick,
     };
     // Zmiana ustawien nagl/stopki (modal) NIE jest zmiana editor.state.doc,
     // wiec silnik paginacji sam by tego nie przeliczyl - wymuszamy recompute.
     forceRecomputeRef.current?.();
-  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, footerEvenLeft, footerEvenCenter, footerEvenRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers, onPageCountChange]);
+  }, [headerLeft, headerCenter, headerRight, headerEvenLeft, headerEvenCenter, headerEvenRight, footerLeft, footerCenter, footerRight, footerEvenLeft, footerEvenCenter, footerEvenRight, enableHeader, enableFooter, headerHeightCm, footerHeightCm, headerFontSize, footerFontSize, headerBorder, footerBorder, skipFirstPage, showPageNumbers, onPageCountChange, tocEntries, onTocEntryClick]);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false }),
@@ -1164,6 +1219,7 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
       TableCell,
       AlignableImage,
       ManualPageBreak,
+      TocField,
       CommentMark,
       TextStyle,
       FontSize,
@@ -1216,11 +1272,30 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
       // sie w ogole w trakcie edycji rozdzialu).
       const clone = editor.view.dom.cloneNode(true) as HTMLElement;
       clone.querySelectorAll(".simple-page-header,.simple-page-footer,.simple-page-gap").forEach((el) => el.remove());
+      // computeSimplePageBreaks dopisuje zawartosc pola spisu tresci
+      // bezposrednio do wyrenderowanego DOM (patrz TocField/TOC_FIELD_CLASS)
+      // - to NIGDY nie ma trafic do zapisanej tresci rozdzialu (lista i tak
+      // jest budowana na nowo przy kazdym wyswietleniu), wiec czyscimy ja tu
+      // tak samo jak dekoracje naglowka/stopki powyzej.
+      clone.querySelectorAll(`.${TOC_FIELD_CLASS}`).forEach((el) => { el.innerHTML = ""; });
       return clone.innerHTML;
+    },
+    // Klikniecie wpisu spisu tresci nalezacego do biezaco otwartego
+    // rozdzialu (patrz onTocEntryClick w DocumentationModule.tsx) - liczy
+    // "index-ty" naglowek h1..h4 w DOM edytora (headingIndex z TocEntry
+    // liczony jest identycznie w buildTocEntries, wiec sie zgadzaja).
+    scrollToHeadingIndex: (index: number) => {
+      if (!editor) return;
+      const headings = editor.view.dom.querySelectorAll("h1, h2, h3, h4");
+      const target = headings[index];
+      if (target) (target as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
     },
   }), [editor]);
   const insertBreak = useCallback(() => {
     editor?.chain().focus().insertManualPageBreak().run();
+  }, [editor]);
+  const insertToc = useCallback(() => {
+    editor?.chain().focus().insertTocField().run();
   }, [editor]);
   const openTableSizeModal = useCallback(() => {
     if (!editor) return;
@@ -1673,6 +1748,7 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
                 }}
               />
               <GroupBtn icon="⏎" label="Podział strony" onClick={insertBreak} />
+              <GroupBtn icon="📑" label="Spis treści" onClick={insertToc} />
               <GroupBtn icon="🖼" label={uploading ? "Wysyłanie…" : "Obraz"} disabled={uploading} onClick={pickImage} />
               <GroupBtn icon="📄" label={importingDocx ? "Import…" : "Import z Worda"} disabled={importingDocx} onClick={pickDocx} />
               <GroupBtn icon="💬" label="Komentarz" onClick={addComment} />
@@ -1745,9 +1821,14 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
 .doc-editor-tiptap-poc .manual-page-break { height: 0 !important; margin: 0 !important; border: none !important; }
 .doc-editor-tiptap-poc .manual-page-break::before,
 .doc-editor-tiptap-poc .manual-page-break::after { content: none !important; }
+.doc-editor-tiptap-poc .doc-toc-field { border: 1px dashed #9aa; padding: 8px 12px; background: rgba(79,195,247,0.06); }
+.doc-editor-tiptap-poc .doc-toc-entry { padding-top: 3px; padding-bottom: 3px; cursor: pointer; font-size: 10pt; }
+.doc-editor-tiptap-poc .doc-toc-entry:hover { background: rgba(79,195,247,0.15); }
+.doc-editor-tiptap-poc .doc-toc-num { color: #555; }
+.doc-editor-tiptap-poc .doc-toc-empty { color: #999; font-style: italic; font-size: 10pt; }
 /* TYMCZASOWE debug (DEBUG_PAG) - usunąć razem z flagą po diagnozie */
 .doc-editor-tiptap-poc [data-dbgh] { position: relative; }
-.doc-editor-tiptap-poc [data-dbgh]::after { content: attr(data-dbgh); position: absolute; right: -2px; top: 0; background: #ffeb3b; color: #b71c1c; font: bold 9px monospace; padding: 0 3px; z-index: 50; }
+.doc-editor-tiptap-poc [data-dbgh]::after { content: attr(data-dbgh); display: none; position: absolute; right: -2px; top: 0; background: #ffeb3b; color: #b71c1c; font: bold 9px monospace; padding: 0 3px; z-index: 50; }
 .doc-editor-tiptap-poc .doc-comment-anchor { background: #fff3b0; border-bottom: 2px solid #e6b800; cursor: pointer; }
 .doc-editor-tiptap-poc .ProseMirror img { max-width: 100%; max-height: 850px; height: auto; }
 /* ProseMirror doleja WLASNY, niewidzialny <br class="ProseMirror-trailingBreak">

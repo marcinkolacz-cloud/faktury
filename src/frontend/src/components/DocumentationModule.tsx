@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuthContext } from "../providers/AuthProvider";
 import { useBackendActor } from "../lib/useBackend";
 import { TopBar } from "./TopBar";
@@ -8,6 +8,7 @@ import { CANISTER_ID } from "../lib/actor";
 import { driveTimingSummary, driveMark } from "../lib/driveTiming";
 import { isTocHeadingTitle } from "../lib/headingNumbering";
 import { docContentCss } from "../lib/docContentStyle";
+import { buildTocEntries, buildTocListHtml, type TocEntry } from "../lib/tocEntries";
 import { ManualVariablesPanel } from "./ManualVariablesPanel";
 import { DocumentationEditorTiptapPoC, normalizeEmptyBreakParagraphs } from "./DocumentationEditorTiptapPoC";
 import type { DocEditorHandle } from "./DocumentationEditorTiptapPoC";
@@ -801,6 +802,24 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
     }
     setActiveId(id);
   };
+  // Spis tresci - caly podrecznik (wszystkie rozdzialy zaznaczone do
+  // druku, patrz decyzja 2026-09-04), na razie bez numerow stron. Liczony
+  // z "chapters" (ostatni zapisany stan) - nieotwarte nigdy rozdzialy maja
+  // puste contentHtml dopoki nie zostana raz otwarte, wiec ich naglowki
+  // nie pojawia sie w liscie do tego momentu (znana uproszczona wersja).
+  const tocEntries = useMemo(() => buildTocEntries(chapters, selectedForPrint), [chapters, selectedForPrint]);
+  const handleTocEntryClick = (entry: TocEntry) => {
+    if (entry.chapterId === activeId) {
+      liveEditorRef.current?.scrollToHeadingIndex(entry.headingIndex);
+      return;
+    }
+    switchActiveChapter(entry.chapterId).then(() => {
+      // switchActiveChapter przemontowuje edytor na nowym "key" (patrz
+      // komentarz przy tej funkcji) - dajemy mu chwile na zamontowanie
+      // zanim spróbujemy przewinąć.
+      setTimeout(() => liveEditorRef.current?.scrollToHeadingIndex(entry.headingIndex), 300);
+    });
+  };
   const [lockStolenBy, setLockStolenBy] = useState<string | null>(null);
   useEffect(() => {
     if (!editMode || activeId === null) return;
@@ -1255,7 +1274,19 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       ? sourceChapters.map((c) => (c.id === active.id ? { ...c, contentHtml: liveEditorRef.current!.getLiveContentHtml() } : c))
       : sourceChapters;
     const numbered = numberHeadingsForExport(chaptersForNumbering, selectedSet);
-    const body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
+    let body = numbered.map((n) => n.html).join(`<div class="${PAGE_BREAK_CLASS}"></div>`);
+    // Wstawienie realnej listy do kazdego pola "Spis tresci" (TocField,
+    // patrz DocumentationEditorTiptapPoC.tsx) - caly podrecznik czyli
+    // wszystkie rozdzialy zaznaczone do druku (selectedSet), na razie bez
+    // numerow stron (decyzja 2026-09-04). Puste markery zostaja w
+    // zapisanej tresci - lista jest zawsze budowana od nowa tutaj.
+    if (body.includes("doc-toc-field")) {
+      const tocDoc = new DOMParser().parseFromString(body, "text/html");
+      const tocEntriesForExport = buildTocEntries(chaptersForNumbering, selectedSet);
+      const tocHtml = buildTocListHtml(tocEntriesForExport);
+      tocDoc.body.querySelectorAll(".doc-toc-field").forEach((el) => { el.innerHTML = tocHtml; });
+      body = tocDoc.body.innerHTML;
+    }
     // A4 usable content box in mm (must match .page-header/.page-footer
     // heights below): width 210 - 2*1.27cm margins, height 297 - header
     // (3.75cm) - footer (1.27cm).
@@ -1292,8 +1323,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
         .page-content{padding:0;box-sizing:border-box;max-width:900px;margin:0 auto;--text-secondary:#5c574d;--bg-hover:#efece3;}
         .page-number{position:absolute;left:1.27cm;right:1.27cm;bottom:6px;font-size:8pt;color:#999;text-align:center;}
         .${PAGE_BREAK_CLASS}{page-break-before:always;border:none;}
+        .doc-toc-entry{padding-top:3px;padding-bottom:3px;font-size:10pt;}
+        .doc-toc-num{color:#555;}
+        .doc-toc-empty{color:#999;font-style:italic;font-size:10pt;}
         ${forPrint ? "@page{size:A4;margin:0;} body{background:#fff;} .sheet{box-shadow:none;margin:0;} .sheet + .sheet{page-break-before:always;} .page-number{display:none;} #page-count-badge{display:none;}" : ""}
         img{max-width:100%;}
+        [data-dbgh]{position:relative;}
+        [data-dbgh]::after{content:attr(data-dbgh);display:none;position:absolute;right:-2px;top:0;background:#ffeb3b;color:#b71c1c;font:bold 9px monospace;padding:0 3px;z-index:50;}
         #measure{position:absolute;left:-99999px;top:0;width:${innerContentWidthPx}px;padding:0;max-width:none;visibility:hidden;--text-secondary:#5c574d;--bg-hover:#efece3;}
         ${docContentCss(".page-content")}
       </style>
@@ -1414,6 +1450,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               broke = true;
             }
             if (broke) dbgPage += 1;
+            if (el.setAttribute) el.setAttribute('data-dbgh', el.tagName + ' ' + Math.round(h) + 'px' + (broke ? ' CIĘCIE' : ''));
             dbgRows.push({ strona: dbgPage, tag: el.tagName, tekst: (el.textContent || '').slice(0, 40), h: Math.round(h), cum: Math.round(currentH), broke: broke });
             current.push(el);
             currentH += h;
@@ -2057,6 +2094,8 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
                         footerBorder={hfSettings.footerBorder}
                         skipFirstPage={hfSettings.skipFirstPage}
                         showPageNumbers={hfSettings.showPageNumbers}
+                        tocEntries={tocEntries}
+                        onTocEntryClick={handleTocEntryClick}
                         toolbarPortalEl={toolbarSlotEl}
                         onImageUpload={async (blob, filename) => {
                           const ext = filename.toLowerCase().endsWith(".png") ? "png" : "jpg";
