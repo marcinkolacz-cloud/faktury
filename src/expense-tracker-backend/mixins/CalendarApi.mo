@@ -170,6 +170,16 @@ mixin (
     };
   };
 
+  public shared ({ caller }) func updateCalendarEventTitle(id : Nat, newTitle : Text) : async Bool {
+    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
+    if (newTitle == "") { Runtime.trap("Tytuł nie może być pusty"); };
+    switch (calendarEvents.get(id)) {
+      case (?e) { calendarEvents.add(id, { e with title = newTitle }); true; };
+      case null { false };
+    };
+  };
+
   public shared ({ caller }) func trashCalendarEvent(id : Nat) : async Bool {
     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };

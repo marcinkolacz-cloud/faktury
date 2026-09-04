@@ -103,7 +103,7 @@ export async function odUploadFilePublic(path: string, file: File, bearerToken: 
 
 export async function odList(path: string, skipThumbs: boolean = false) {
   const qs = "/list?path=" + encodeURIComponent(path) + (skipThumbs ? "&thumbs=0" : "");
-  const resp = await fetch(ONEDRIVE_WORKER_URL + qs, { headers: await authHeaders() });
+  const resp = await fetch(ONEDRIVE_WORKER_URL + qs, { headers: await authHeaders(), cache: "no-store" });
   return resp.json();
 }
 

@@ -1,0 +1,82 @@
+diff --git a/src/expense-tracker-backend/mixins/CalendarApi.mo b/src/expense-tracker-backend/mixins/CalendarApi.mo
+index e1f9f9c..8d0f7a7 100644
+--- a/src/expense-tracker-backend/mixins/CalendarApi.mo
++++ b/src/expense-tracker-backend/mixins/CalendarApi.mo
+@@ -170,6 +170,16 @@ mixin (
+     };
+   };
+ 
++  public shared ({ caller }) func updateCalendarEventTitle(id : Nat, newTitle : Text) : async Bool {
++    if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
++    if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
++    if (newTitle == "") { Runtime.trap("Tytuł nie może być pusty"); };
++    switch (calendarEvents.get(id)) {
++      case (?e) { calendarEvents.add(id, { e with title = newTitle }); true; };
++      case null { false };
++    };
++  };
++
+   public shared ({ caller }) func trashCalendarEvent(id : Nat) : async Bool {
+     if (not AccessLib.hasWriteAccess(accessRoles, caller)) { Runtime.trap("Write access required"); };
+     if (not AccessLib.hasModuleAccess(moduleAccess, caller, "calendar")) { Runtime.trap("Module access required: calendar"); };
+diff --git a/src/frontend/src/components/CalendarModule.tsx b/src/frontend/src/components/CalendarModule.tsx
+index 35b9860..a5cd0b4 100644
+--- a/src/frontend/src/components/CalendarModule.tsx
++++ b/src/frontend/src/components/CalendarModule.tsx
+@@ -83,6 +83,8 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome:
+   const [addingNoteFor, setAddingNoteFor] = useState<string | null>(null);
+   const [viewMonth, setViewMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
+   const [selectedDay, setSelectedDay] = useState<string | null>(null);
++  const [editingEventId, setEditingEventId] = useState<string | null>(null);
++  const [editEventTitle, setEditEventTitle] = useState("");
+   const [editNoteTitle, setEditNoteTitle] = useState("");
+   const [editNoteContent, setEditNoteContent] = useState("");
+   const [notifyNoteFor, setNotifyNoteFor] = useState<Record<string, boolean>>({});
+@@ -182,6 +184,19 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome:
+     </div>
+   );
+ 
++  const startEditEvent = (e: any) => {
++    setEditingEventId(String(e.id));
++    setEditEventTitle(e.title);
++  };
++
++  const saveEditEventTitle = async (id: bigint) => {
++    const t = editEventTitle.trim();
++    if (!t) return;
++    await actor.updateCalendarEventTitle(id, t);
++    setEditingEventId(null);
++    reload();
++  };
++
+   const startEditNote = (note: any) => {
+     setEditingNoteId(String(note.id));
+     setEditNoteTitle(note.title);
+@@ -453,7 +468,26 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome:
+                     <div className="flex-1 min-w-0">
+                       <div className="flex items-center gap-2 flex-wrap">
+                         <span className={"text-[10px] font-medium px-1.5 py-0.5 rounded border " + TYPE_COLORS[type]}>{TYPE_LABELS[type]}</span>
+-                        <span className={"font-medium text-sm text-[var(--text-primary)]" + (e.done ? " line-through opacity-60" : "")}>{e.title}</span>
++                        {editingEventId === String(e.id) ? (
++                          <div className="flex items-center gap-1">
++                            <input
++                              autoFocus
++                              value={editEventTitle}
++                              onChange={(ev) => setEditEventTitle(ev.target.value)}
++                              onKeyDown={(ev) => { if (ev.key === "Enter") saveEditEventTitle(e.id); if (ev.key === "Escape") setEditingEventId(null); }}
++                              className="text-sm px-1 py-0.5 border border-[var(--border-color)] rounded bg-[var(--bg-card)] text-[var(--text-primary)]"
++                            />
++                            <button onClick={() => saveEditEventTitle(e.id)} className="text-xs text-[var(--accent)] hover:underline">Zapisz</button>
++                            <button onClick={() => setEditingEventId(null)} className="text-xs text-[var(--text-muted)] hover:underline">Anuluj</button>
++                          </div>
++                        ) : (
++                          <span className="inline-flex items-center gap-1 group">
++                            <span className={"font-medium text-sm text-[var(--text-primary)]" + (e.done ? " line-through opacity-60" : "")}>{e.title}</span>
++                            {canWrite && (
++                              <button onClick={() => startEditEvent(e)} title="Edytuj nazwę" className="text-[10px] text-[var(--text-muted)] hover:text-[var(--accent)] opacity-0 group-hover:opacity-100">✎</button>
++                            )}
++                          </span>
++                        )}
+                       </div>
+                       {e.description && (
+   <div className="mt-1">

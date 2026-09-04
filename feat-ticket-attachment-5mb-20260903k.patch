@@ -1,0 +1,82 @@
+diff --git a/src/frontend/src/components/TicketsModule.tsx b/src/frontend/src/components/TicketsModule.tsx
+index ba55a90..de0493d 100644
+--- a/src/frontend/src/components/TicketsModule.tsx
++++ b/src/frontend/src/components/TicketsModule.tsx
+@@ -78,11 +78,14 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
+   const [newTicketDescription, setNewTicketDescription] = useState("");
+   const [creatingInternalTicket, setCreatingInternalTicket] = useState(false);
+   const [newInternalTicketError, setNewInternalTicketError] = useState("");
++  const [newTicketFiles, setNewTicketFiles] = useState<File[]>([]);
++  const NEW_TICKET_MAX_FILE_SIZE = 5_000_000;
++  const NEW_TICKET_CHUNK_SIZE = 1_500_000;
+ 
+   const resetNewInternalTicketForm = () => {
+     setNewTicketClientName(""); setNewTicketClientEmail(""); setNewTicketCompany("");
+     setNewTicketDeviceNumber(""); setNewTicketSubject(""); setNewTicketDescription("");
+-    setNewInternalTicketError("");
++    setNewInternalTicketError(""); setNewTicketFiles([]);
+   };
+ 
+   const submitInternalTicket = async () => {
+@@ -93,7 +96,7 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
+     setCreatingInternalTicket(true);
+     setNewInternalTicketError("");
+     try {
+-      await actor.submitInternalTicket(
++      const [ticketId] = await actor.submitInternalTicket(
+         newTicketClientName.trim(),
+         newTicketClientEmail.trim(),
+         newTicketSubject.trim(),
+@@ -101,6 +104,18 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
+         newTicketCompany.trim(),
+         newTicketDeviceNumber.trim(),
+       );
++      for (const file of newTicketFiles) {
++        const totalChunks = Math.ceil(file.size / NEW_TICKET_CHUNK_SIZE);
++        const attachmentId = await actor.createTicketAttachment(
++          ticketId, file.name, file.type || "application/octet-stream", file.size, totalChunks, newTicketClientName.trim(), "", [],
++        );
++        for (let i = 0; i < totalChunks; i++) {
++          const start = i * NEW_TICKET_CHUNK_SIZE;
++          const end = Math.min(start + NEW_TICKET_CHUNK_SIZE, file.size);
++          const chunk = new Uint8Array(await file.slice(start, end).arrayBuffer());
++          await actor.uploadTicketAttachmentChunk(attachmentId, i, chunk, []);
++        }
++      }
+       resetNewInternalTicketForm();
+       setShowNewInternalTicket(false);
+       await reload();
+@@ -965,6 +980,33 @@ export function TicketsModule({ onHome, onNavigate, currentModule }: { onHome: (
+                 <label className="block mb-1 text-[var(--text-secondary)]">Opis usterki *</label>
+                 <textarea value={newTicketDescription} onChange={(e) => setNewTicketDescription(e.target.value)} rows={4} className="w-full bg-[var(--bg-hover)] border border-[var(--border-color)] rounded px-2 py-1.5" />
+               </div>
++              <div>
++                <label className="block mb-1 text-[var(--text-secondary)]">Załączniki</label>
++                <input
++                  type="file"
++                  multiple
++                  onChange={(e) => {
++                    const selected = Array.from(e.target.files || []);
++                    const tooBig = selected.filter((f) => f.size > NEW_TICKET_MAX_FILE_SIZE);
++                    if (tooBig.length > 0) {
++                      setNewInternalTicketError("Plik zbyt duży (max 5MB): " + tooBig.map((f) => f.name).join(", "));
++                      e.target.value = "";
++                      return;
++                    }
++                    setNewInternalTicketError("");
++                    setNewTicketFiles(selected);
++                  }}
++                  className="w-full text-xs text-[var(--text-secondary)]"
++                />
++                <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Opcjonalnie, max 5MB na plik.</p>
++                {newTicketFiles.length > 0 && (
++                  <ul className="text-[10px] text-[var(--text-secondary)] mt-1">
++                    {newTicketFiles.map((f, i) => (
++                      <li key={i}>{f.name} ({(f.size / 1024).toFixed(0)} KB)</li>
++                    ))}
++                  </ul>
++                )}
++              </div>
+               {newInternalTicketError && <p className="text-red-500">{newInternalTicketError}</p>}
+             </div>
+             <div className="flex justify-end gap-2 px-4 py-3 border-t border-[var(--border-color)]">

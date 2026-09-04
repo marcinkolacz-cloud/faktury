@@ -83,6 +83,8 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
   const [addingNoteFor, setAddingNoteFor] = useState<string | null>(null);
   const [viewMonth, setViewMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editEventTitle, setEditEventTitle] = useState("");
   const [editNoteTitle, setEditNoteTitle] = useState("");
   const [editNoteContent, setEditNoteContent] = useState("");
   const [notifyNoteFor, setNotifyNoteFor] = useState<Record<string, boolean>>({});
@@ -181,6 +183,26 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
       {noteNotifyResult[key] && <p className="text-[10px] text-[var(--text-muted)]">{noteNotifyResult[key]}</p>}
     </div>
   );
+
+  const startEditEvent = (e: any) => {
+    setEditingEventId(String(e.id));
+    setEditEventTitle(e.title);
+  };
+
+  const [editEventTitleError, setEditEventTitleError] = useState<string | null>(null);
+
+  const saveEditEventTitle = async (id: bigint) => {
+    const t = editEventTitle.trim();
+    if (!t) return;
+    setEditEventTitleError(null);
+    try {
+      await actor.updateCalendarEventTitle(id, t);
+      setEditingEventId(null);
+      reload();
+    } catch (e: any) {
+      setEditEventTitleError(e?.message || String(e));
+    }
+  };
 
   const startEditNote = (note: any) => {
     setEditingNoteId(String(note.id));
@@ -372,7 +394,7 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
             )}
             {eventNotifyResult && <p className="text-[10px] text-[var(--text-muted)]">{eventNotifyResult}</p>}
             <button onClick={addEvent} disabled={!title.trim() || !startDate} className="px-3 py-1.5 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium disabled:opacity-50">
-              Dodaj
+              Dodaj wydarzenie
             </button>
           </div>
         )}
@@ -453,7 +475,29 @@ export function CalendarModule({ onHome, onNavigate, currentModule }: { onHome: 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={"text-[10px] font-medium px-1.5 py-0.5 rounded border " + TYPE_COLORS[type]}>{TYPE_LABELS[type]}</span>
-                        <span className={"font-medium text-sm text-[var(--text-primary)]" + (e.done ? " line-through opacity-60" : "")}>{e.title}</span>
+                        {editingEventId === String(e.id) ? (
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1">
+                              <input
+                                autoFocus
+                                value={editEventTitle}
+                                onChange={(ev) => setEditEventTitle(ev.target.value)}
+                                onKeyDown={(ev) => { if (ev.key === "Enter") saveEditEventTitle(e.id); if (ev.key === "Escape") { setEditingEventId(null); setEditEventTitleError(null); } }}
+                                className="text-sm px-1 py-0.5 border border-[var(--border-color)] rounded bg-[var(--bg-card)] text-[var(--text-primary)]"
+                              />
+                              <button onClick={() => saveEditEventTitle(e.id)} className="text-xs text-[var(--accent)] hover:underline">Zapisz</button>
+                              <button onClick={() => { setEditingEventId(null); setEditEventTitleError(null); }} className="text-xs text-[var(--text-muted)] hover:underline">Anuluj</button>
+                            </div>
+                            {editEventTitleError && <span className="text-[10px] text-red-500">{editEventTitleError}</span>}
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 group">
+                            <span className={"font-medium text-sm text-[var(--text-primary)]" + (e.done ? " line-through opacity-60" : "")}>{e.title}</span>
+                            {canWrite && (
+                              <button onClick={() => startEditEvent(e)} title="Edytuj nazwę" className="text-[10px] text-[var(--text-muted)] hover:text-[var(--accent)] opacity-0 group-hover:opacity-100">✎</button>
+                            )}
+                          </span>
+                        )}
                       </div>
                       {e.description && (
   <div className="mt-1">
