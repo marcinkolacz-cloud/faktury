@@ -49,17 +49,18 @@ const LEVEL_INDENT_PX = 20;
 // Wspolny wyglad wpisu spisu tresci (uzywany zarowno przez zywy DOM w
 // edytorze jak i przez string-owy HTML w Podgladzie/PDF) - bez numeru
 // strony (na razie), sama hierarchia wciec + numer (H1-H3) / sam tekst
-// (H4/Sekcja).
+// (H4/Sekcja). Jeden jednolity styl dla kazdego poziomu (bez pogrubien,
+// bez wersalikow) - dokladnie jak we wzorcowym spisie tresci z docx
+// (2026-09-04): "IOS Manual" (bez numeru) i "1. Introduction" wygladaja
+// identycznie, roznicuje je tylko wciecie w glab hierarchii.
 export function tocEntryHtml(entry: TocEntry): string {
   const numHtml = entry.number ? `<span class="doc-toc-num">${entry.number}\u00A0</span>` : "";
-  const weight = entry.level <= 1 ? "font-weight:bold;" : "";
-  const upper = entry.level === 4 ? "text-transform:uppercase;letter-spacing:0.5px;" : "";
-  return `<div class="doc-toc-entry" data-toc-chapter="${entry.chapterId}" data-toc-heading-index="${entry.headingIndex}" style="padding-left:${(entry.level - 1) * LEVEL_INDENT_PX}px;${weight}${upper}">${numHtml}${entry.text.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div>`;
+  return `<div class="doc-toc-entry" data-toc-chapter="${entry.chapterId}" data-toc-heading-index="${entry.headingIndex}" style="padding-left:${(entry.level - 1) * LEVEL_INDENT_PX}px;">${numHtml}${entry.text.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div>`;
 }
 
 export function buildTocListHtml(entries: TocEntry[]): string {
   if (entries.length === 0) {
-    return `<div class="doc-toc-empty">(brak nagłówków do wypisania)</div>`;
+    return `<div class="doc-toc-empty">(brak nagłówków — zaznacz przynajmniej jeden rozdział checkboxem "do druku")</div>`;
   }
   return entries.map(tocEntryHtml).join("");
 }

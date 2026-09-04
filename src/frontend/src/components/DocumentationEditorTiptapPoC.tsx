@@ -111,20 +111,6 @@ declare module "@tiptap/core" {
 // potrzeby wyswietlania (zywy edytor: DOM po renderze; Podglad/PDF/
 // eksport: buildChapterPreviewHtml/buildWordExportHtml postprocessing),
 // nigdy nie trafia do zapisanej tresci rozdzialu.
-const TocField = Node.create({
-  name: "tocField",
-  group: "block",
-  atom: true,
-  selectable: false,
-  parseHTML() { return [{ tag: `div.${TOC_FIELD_CLASS}` }]; },
-  renderHTML() {
-    return ["div", mergeAttributes({ class: TOC_FIELD_CLASS, contenteditable: "false" })];
-  },
-  addCommands() {
-    return { insertTocField: () => ({ commands }) => commands.insertContent({ type: this.name }) };
-  },
-});
-
 // --- Komentarze inline (§9 inventory) ---
 // Ta sama klasa/atrybuty co DocumentationModule.tsx (doc-comment-anchor /
 // data-comment-id / data-comment-text), żeby istniejący eksport/print,
@@ -886,22 +872,6 @@ function computeSimplePageBreaks(view: any, cfg: HfPagCfg) {
   const dom = view.dom as HTMLElement;
   const proseRect = dom.getBoundingClientRect();
   if (proseRect.height === 0) return DecorationSet.empty;
-  // Wypelnij tresc kazdego wstawionego pola "Spis tresci" (TocField)
-  // PRZED pomiarem wysokosci blokow ponizej - inaczej pusty <div
-  // class="doc-toc-field"> mialby 0px i lista nie liczylaby sie do
-  // paginacji w ogole. Sam model dokumentu (to, co trafia do zapisu)
-  // zostaje pusty - dopisujemy tylko do juz wyrenderowanego DOM.
-  dom.querySelectorAll(`.${TOC_FIELD_CLASS}`).forEach((el) => {
-    el.innerHTML = cfg.tocEntries.map(tocEntryHtml).join("") || `<div class="doc-toc-empty">(brak nagłówków do wypisania)</div>`;
-    (el as HTMLElement).querySelectorAll<HTMLElement>(".doc-toc-entry").forEach((row) => {
-      row.onclick = () => {
-        const chapterId = Number(row.getAttribute("data-toc-chapter"));
-        const headingIndex = Number(row.getAttribute("data-toc-heading-index"));
-        const entry = cfg.tocEntries.find((e) => e.chapterId === chapterId && e.headingIndex === headingIndex);
-        if (entry) cfg.onTocEntryClick?.(entry);
-      };
-    });
-  });
   // Jedno zaokrąglenie na końcu (nie trzy osobne dla 297mm/header/footer) -
   // musi być identyczne z paginateInner w buildChapterPreviewHtml (Podgląd),
   // inaczej liczba stron w edytorze i w Podglądzie rozjeżdża się o ±1px na
@@ -1038,6 +1008,53 @@ function findEnclosingTable(state: any): { pos: number } | null {
     if ($from.node(d).type.spec.tableRole === "table") return { pos: $from.before(d) };
   }
   return null;
+}
+
+// Prawdziwy Tiptap NodeView (nie surowa manipulacja DOM) - inaczej
+// ProseMirror kasuje recznie wstrzykniety innerHTML tuz po wyrenderowaniu
+// przy najblizszej wewnetrznej synchronizacji widoku (objaw zglosony
+// 2026-09-04: "spis tresci widoczny na ulamek sekundy") - NodeView
+// przejmuje na wlasnosc ten fragment DOM i ProseMirror go juz nie rusza,
+// dopoki update() zwraca true. update() jest wywolywane przy KAZDEJ
+// synchronizacji widoku (w tym przy samym dispatchu dekoracji paginacji,
+// bez zmiany dokumentu), wiec renderujemy tresc na nowo za kazdym razem z
+// cfgRef.current - to gwarantuje swiezosc bez osobnego mechanizmu
+// odswiezania.
+function createTocFieldExtension(cfgRef: { current: HfPagCfg }) {
+  return Node.create({
+    name: "tocField",
+    group: "block",
+    atom: true,
+    selectable: false,
+    parseHTML() { return [{ tag: `div.${TOC_FIELD_CLASS}` }]; },
+    renderHTML() {
+      return ["div", mergeAttributes({ class: TOC_FIELD_CLASS, contenteditable: "false" })];
+    },
+    addCommands() {
+      return { insertTocField: () => ({ commands }: any) => commands.insertContent({ type: "tocField" }) };
+    },
+    addNodeView() {
+      return () => {
+        const dom = document.createElement("div");
+        dom.className = TOC_FIELD_CLASS;
+        dom.setAttribute("contenteditable", "false");
+        const render = () => {
+          const entries = cfgRef.current.tocEntries;
+          dom.innerHTML = entries.map(tocEntryHtml).join("") || `<div class="doc-toc-empty">(brak nagłówków — zaznacz przynajmniej jeden rozdział checkboxem "do druku")</div>`;
+          dom.querySelectorAll<HTMLElement>(".doc-toc-entry").forEach((row) => {
+            row.onclick = () => {
+              const chapterId = Number(row.getAttribute("data-toc-chapter"));
+              const headingIndex = Number(row.getAttribute("data-toc-heading-index"));
+              const entry = entries.find((e) => e.chapterId === chapterId && e.headingIndex === headingIndex);
+              if (entry) cfgRef.current.onTocEntryClick?.(entry);
+            };
+          });
+        };
+        render();
+        return { dom, update: () => { render(); return true; }, ignoreMutation: () => true };
+      };
+    },
+  });
 }
 
 function createSimplePaginationExtension(cfgRef: { current: HfPagCfg }, forceRecomputeRef: { current: (() => void) | null }) {
@@ -1219,7 +1236,7 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
       TableCell,
       AlignableImage,
       ManualPageBreak,
-      TocField,
+      createTocFieldExtension(hfConfigRef),
       CommentMark,
       TextStyle,
       FontSize,
