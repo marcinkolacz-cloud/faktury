@@ -463,6 +463,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   const A4_USABLE_WIDTH_CM = 18.46; // 21cm - 1.27cm marginesy z każdej strony
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewPageCount, setPreviewPageCount] = useState<number | null>(null);
+  // Numery stron naglowkow z OSTATNIO wygenerowanego Podgladu (klucz
+  // "chapterId:headingIndex" -> numer strony) - uzywane do dociagniecia
+  // realnych numerow stron takze do zywej listy spisu tresci w edytorze
+  // (patrz tocEntries nizej). Moze sie zdezaktualizowac jesli tresc
+  // zmieni sie bez ponownego wygenerowania Podgladu - to swiadomy
+  // kompromis, zamiast duplikowac caly silnik paginacji multi-rozdzialowej
+  // w zywym edytorze.
+  const [tocPageNumbers, setTocPageNumbers] = useState<Record<string, number>>({});
   const [paginationError, setPaginationError] = useState<string>("");
   const [driveTimingInfo, setDriveTimingInfo] = useState<string>(""); // TYMCZASOWE - diagnostyka szybkosci ladowania z Drive
   // Which chapters are checked for "podgląd wydruku"/export. Defaults to
@@ -814,7 +822,13 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
   // wydruku po prostu nie dostanie numeru strony w Podgladzie/PDF (patrz
   // buildChapterPreviewHtml) - fizycznie go tam nie ma - ale zostaje
   // widoczny w spisie.
-  const tocEntries = useMemo(() => buildTocEntries(chapters), [chapters]);
+  const tocEntries = useMemo(() => {
+    const base = buildTocEntries(chapters);
+    return base.map((e) => {
+      const page = tocPageNumbers[`${e.chapterId}:${e.headingIndex}`];
+      return page != null ? { ...e, page } : e;
+    });
+  }, [chapters, tocPageNumbers]);
   const handleTocEntryClick = (entry: TocEntry) => {
     if (entry.chapterId === activeId) {
       liveEditorRef.current?.scrollToHeadingIndex(entry.headingIndex);
@@ -1513,17 +1527,14 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
               var hidx = row.getAttribute('data-toc-heading-index');
               var page = headingPages[chap + ':' + hidx];
               if (page == null) return;
-              var label = document.createElement('span');
-              label.className = 'doc-toc-label';
-              label.innerHTML = row.innerHTML;
-              var leader = document.createElement('span');
-              leader.className = 'doc-toc-leader';
+              // Wiersz juz ma <span class="doc-toc-label"> i <span
+              // class="doc-toc-leader"> (tocEntryHtml dodaje je zawsze,
+              // niezaleznie od numeru strony) - dopisujemy tylko brakujacy
+              // <span class="doc-toc-page"> na koncu, bez przebudowy calej
+              // struktury (uniknac zagniezdzonych/podwojnych leaderow).
               var pageSpan = document.createElement('span');
               pageSpan.className = 'doc-toc-page';
               pageSpan.textContent = String(page);
-              row.innerHTML = '';
-              row.appendChild(label);
-              row.appendChild(leader);
               row.appendChild(pageSpan);
             });
             if (anyToc) { paginateInner(true); return; }
@@ -1556,7 +1567,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
           // strona jeszcze kilka sekund donaladowywala obrazki na oczach
           // uzytkownika.
           function notifyReady(){
-            try { parent.postMessage({ type: 'docPreviewPageCount', count: pages.length, token: __TOKEN__ }, '*'); } catch (e) {}
+            try { parent.postMessage({ type: 'docPreviewPageCount', count: pages.length, headingPages: headingPages, token: __TOKEN__ }, '*'); } catch (e) {}
           }
           var finalImgs = Array.prototype.slice.call(pagesEl.querySelectorAll('img'));
           try { parent.postMessage({ type: 'docPreviewTiming', label: 'images2-start-' + finalImgs.length, token: __TOKEN__ }, '*'); } catch (e) {}
@@ -1770,6 +1781,7 @@ export function DocumentationModule({ onHome, onNavigate, currentModule }: { onH
       if (e.data && e.data.type === "docPreviewPageCount") {
         setPreviewPageCount(e.data.count);
         setPaginationError(e.data.error || "");
+        if (e.data.headingPages) setTocPageNumbers(e.data.headingPages);
       }
       if (e.data && e.data.type === "docPreviewTiming") {
         driveMark(String(e.data.label));

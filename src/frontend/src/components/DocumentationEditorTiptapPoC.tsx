@@ -1838,7 +1838,7 @@ export const DocumentationEditorTiptapPoC = forwardRef<DocEditorHandle, Props>(f
 .doc-editor-tiptap-poc .manual-page-break { height: 0 !important; margin: 0 !important; border: none !important; }
 .doc-editor-tiptap-poc .manual-page-break::before,
 .doc-editor-tiptap-poc .manual-page-break::after { content: none !important; }
-.doc-editor-tiptap-poc .doc-toc-field { border: 1px dashed #9aa; padding: 8px 12px; background: rgba(79,195,247,0.06); }
+.doc-editor-tiptap-poc .doc-toc-field { padding: 2px 0; }
 .doc-editor-tiptap-poc .doc-toc-entry { padding-top: 3px; padding-bottom: 3px; cursor: pointer; font-size: 10pt; display: flex; align-items: baseline; }
 .doc-editor-tiptap-poc .doc-toc-label { white-space: normal; }
 .doc-editor-tiptap-poc .doc-toc-leader { flex: 1 1 auto; border-bottom: 1px dotted #999; margin: 0 4px 2px; }

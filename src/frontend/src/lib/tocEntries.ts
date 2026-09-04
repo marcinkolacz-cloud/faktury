@@ -54,17 +54,16 @@ const LEVEL_INDENT_PX = 20;
 // edytorze jak i przez string-owy HTML w Podgladzie/PDF) - jeden jednolity
 // styl dla kazdego poziomu (bez pogrubien, bez wersalikow), sama hierarchia
 // wciec + numer (H1-H3) / sam tekst (H4/Sekcja) - dokladnie jak we
-// wzorcowym spisie tresci z docx (2026-09-04). Kropkowany "leader" +
-// numer strony (styl Word) doklejane TYLKO gdy entry.page jest podany
-// (Podglad/PDF po drugim przebiegu paginacji) - w zywym edytorze
-// (entry.page===undefined) wiersz konczy sie po prostu na tekscie, bez
-// kropek prowadzacych donikad.
+// wzorcowym spisie tresci z docx (2026-09-04). Kropkowany "leader" widoczny
+// ZAWSZE (tak w Podgladzie/PDF jak i w zywym edytorze) - numer strony
+// (styl Word) doklejany na jego koncu TYLKO gdy entry.page jest znany
+// (Podglad/PDF po drugim przebiegu paginacji); w zywym edytorze kropki po
+// prostu prowadza do konca linii bez numeru.
 export function tocEntryHtml(entry: TocEntry): string {
   const numHtml = entry.number ? `<span class="doc-toc-num">${entry.number}\u00A0</span>` : "";
   const textHtml = entry.text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  const inner = entry.page != null
-    ? `<span class="doc-toc-label">${numHtml}${textHtml}</span><span class="doc-toc-leader"></span><span class="doc-toc-page">${entry.page}</span>`
-    : `${numHtml}${textHtml}`;
+  const pageHtml = entry.page != null ? `<span class="doc-toc-page">${entry.page}</span>` : "";
+  const inner = `<span class="doc-toc-label">${numHtml}${textHtml}</span><span class="doc-toc-leader"></span>${pageHtml}`;
   return `<div class="doc-toc-entry" data-toc-chapter="${entry.chapterId}" data-toc-heading-index="${entry.headingIndex}" style="padding-left:${(entry.level - 1) * LEVEL_INDENT_PX}px;">${inner}</div>`;
 }
 
